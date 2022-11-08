@@ -90,6 +90,7 @@ parser.add_argument("--cors-allow-origins", type=str, help="Allowed CORS origins
 parser.add_argument("--tls-keyfile", type=str, help="Partially enables TLS, requires --tls-certfile to fully function", default=None)
 parser.add_argument("--tls-certfile", type=str, help="Partially enables TLS, requires --tls-keyfile to fully function", default=None)
 parser.add_argument("--server-name", type=str, help="Sets hostname of server", default=None)
+parser.add_argument("--pureui", action='store_true', help="Pure UI without local inference and progress bar", default=False)
 
 cmd_opts = parser.parse_args()
 restricted_opts = {
@@ -490,6 +491,8 @@ class Options:
 opts = Options()
 if os.path.exists(config_filename):
     opts.load(config_filename)
+if cmd_opts.pureui:
+    opts.show_progressbar = False
 
 sd_upscalers = []
 

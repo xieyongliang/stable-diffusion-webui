@@ -6,6 +6,7 @@ from inflection import underscore
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import sd_upscalers, opts, parser
 from typing import Dict, List
+from typing import Union
 
 API_NOT_ALLOWED = [
     "self",
@@ -239,3 +240,14 @@ class ArtistItem(BaseModel):
     score: float = Field(title="Score")
     category: str = Field(title="Category")
 
+class InvocationsRequest(BaseModel):
+    task: str
+    payload: Union[StableDiffusionTxt2ImgProcessingAPI, StableDiffusionImg2ImgProcessingAPI]
+
+class InvocationsResponse(BaseModel):
+    images: list[str] = Field(default=None, title="Image", description="The generated image in base64 format.")
+    parameters: dict
+    info: str
+
+class PingResponse(BaseModel):
+    status: str

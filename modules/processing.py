@@ -78,10 +78,10 @@ class StableDiffusionProcessing():
     """
     The first set of paramaters: sd_models -> do_not_reload_embeddings represent the minimum required to create a StableDiffusionProcessing
     """
-    def __init__(self, sd_model=None, outpath_samples=None, outpath_grids=None, prompt: str = "", styles: List[str] = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_index: int = 0, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params: Dict[Any, Any] = None, overlay_images: Any = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, denoising_strength: float = 0, ddim_discretize: str = None, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, override_settings: Dict[str, Any] = None):
+    def __init__(self, sd_model=None, outpath_samples=None, outpath_grids=None, prompt: str = "", styles: List[str] = None, seed: int = -1, subseed: int = -1, subseed_strength: float = 0, seed_resize_from_h: int = -1, seed_resize_from_w: int = -1, seed_enable_extras: bool = True, sampler_index: int = 0, batch_size: int = 1, n_iter: int = 1, steps: int = 50, cfg_scale: float = 7.0, width: int = 512, height: int = 512, restore_faces: bool = False, tiling: bool = False, do_not_save_samples: bool = False, do_not_save_grid: bool = False, extra_generation_params: Dict[Any, Any] = None, overlay_images: Any = None, negative_prompt: str = None, eta: float = None, do_not_reload_embeddings: bool = False, denoising_strength: float = 0, ddim_discretize: str = None, s_churn: float = 0.0, s_tmax: float = None, s_tmin: float = 0.0, s_noise: float = 1.0, script_args: str = None, override_settings: Dict[str, Any] = None):
         self.sd_model = sd_model
-        self.outpath_samples: str = outpath_samples
-        self.outpath_grids: str = outpath_grids
+        self.outpath_samples: str = outpath_samples or opts.outdir_samples or opts.outdir_txt2img_samples
+        self.outpath_grids: str = outpath_grids or opts.outdir_grids or opts.outdir_txt2img_grids
         self.prompt: str = prompt
         self.prompt_for_display: str = None
         self.negative_prompt: str = (negative_prompt or "")
@@ -116,15 +116,14 @@ class StableDiffusionProcessing():
         self.s_tmax = s_tmax or float('inf')  # not representable as a standard ui option
         self.s_noise = s_noise or opts.s_noise
         self.override_settings = {k: v for k, v in (override_settings or {}).items() if k not in shared.restricted_opts}
-
+        self.script_args = json.loads(script_args) if script_args != None else None
+        
         if not seed_enable_extras:
             self.subseed = -1
             self.subseed_strength = 0
             self.seed_resize_from_h = 0
             self.seed_resize_from_w = 0
 
-        self.scripts = None
-        self.script_args = None
         self.all_prompts = None
         self.all_seeds = None
         self.all_subseeds = None

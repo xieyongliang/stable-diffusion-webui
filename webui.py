@@ -8,6 +8,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 
+import requests
+import json
+import time
+from PIL import Image
+import base64
+import io
+
 from modules.paths import script_path
 
 from modules import devices, sd_samplers, upscaler, extensions, localization
@@ -29,16 +36,93 @@ import modules.script_callbacks
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts
+from modules.shared import cmd_opts,  opts
 import modules.hypernetworks.hypernetwork
 
 queue_lock = threading.Lock()
 server_name = "0.0.0.0" if cmd_opts.listen else cmd_opts.server_name
 
+api_endpoint = os.environ['api_endpoint']
+endpoint_name = os.environ['endpoint_name']
+
 def wrap_queued_call(func):
+    def sagemaker_inference(task, *args, **kwargs):
+        script_args = []
+        for i in range(23, len(args)):
+            script_args.append(args[i])
+ 
+        payload = {
+              "prompt": args[0],
+              "negative_prompt": args[1],
+              "styles": [args[2], args[3]],
+              "steps": args[4],
+              "sampler_index": sd_samplers.samplers[args[5]].name,
+              "restore_faces": args[6],
+              "tiling": args[7],
+              "batch_count": args[8],
+              "batch_size": args[9],
+              "cfg_scale": args[10],
+              "seed": args[11],
+              "subseed": args[12],
+              "subseed_strength": args[13],
+              "seed_resize_from_h": args[14],
+              "seed_resize_from_w": args[15],
+              "seed_checkbox": args[16],
+              "width": args[17],
+              "height": args[18],
+              "enable_hr": args[19],
+              "denoising_strength": args[20],
+              "firstphase_width": args[21],
+              "firstphase_height": args[22],
+              "script_args": json.dumps(script_args),
+              "eta": opts.eta_ddim if sd_samplers.samplers[args[5]].name == 'DDIM' or sd_samplers.samplers[args[5]].name == 'PLMS' else opts.eta_ancestral,
+              "s_churn": opts.s_churn,
+              "s_tmax": None,
+              "s_tmin": opts.s_tmin,
+              "s_noise": opts.s_noise,
+            }
+        inputs = {
+            'task': task,
+            'payload': payload
+        }
+        params = {
+            'endpoint_name': endpoint_name, 
+            'infer_type': 'async'
+        }
+
+        response = requests.post(url=f'{api_endpoint}/inference', params =  params, json = inputs)
+        s3uri = response.text
+        params = {'s3uri': s3uri}
+        start = time.time()
+        while True:
+            response = requests.get(url=f'{api_endpoint}/s3', params = params)
+            text = json.loads(response.text)
+
+            if text['count'] > 0:
+                break
+            else:
+                time.sleep(1)
+        
+        httpuri = text['payload'][0]['httpuri']
+        response = requests.get(url=httpuri)
+        processed = json.loads(response.text)
+        images = []
+        for image in processed['images']:
+            images.append(Image.open(io.BytesIO(base64.b64decode(image.split(',')[1]))))
+        parameters = processed['parameters']
+        info = processed['info']
+        print(f"Time taken: {time.time() - start}s")
+        
+        return images, json.dumps(payload), modules.ui.plaintext_to_html(info)
+
     def f(*args, **kwargs):
-        with queue_lock:
-            res = func(*args, **kwargs)
+        if cmd_opts.pureui and func == modules.txt2img.txt2img:
+            res = sagemaker_inference('text-to-image', *args, **kwargs)
+        elif(cmd_opts.pureui and func == modules.img2img.img2img):
+            res = sagemaker_inference('image-to-image', *args, **kwargs)
+        else:
+            with queue_lock:
+                res = func(*args, **kwargs)
 
         return res
 

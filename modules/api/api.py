@@ -77,6 +77,8 @@ class Api:
         self.app.add_api_route("/sdapi/v1/prompt-styles", self.get_promp_styles, methods=["GET"], response_model=List[PromptStyleItem])
         self.app.add_api_route("/sdapi/v1/artist-categories", self.get_artists_categories, methods=["GET"], response_model=List[str])
         self.app.add_api_route("/sdapi/v1/artists", self.get_artists, methods=["GET"], response_model=List[ArtistItem])
+        self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=InvocationsResponse)
+        self.app.add_api_route("/ping", self.ping, methods=["GET"], response_model=PingResponse)
 
     def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
         sampler_index = sampler_to_index(txt2imgreq.sampler_index)
@@ -92,13 +94,17 @@ class Api:
             }
         )
         p = StableDiffusionProcessingTxt2Img(**vars(populate))
+
         # Override object param
 
         shared.state.begin()
 
         with self.queue_lock:
-            processed = process_images(p)
-
+            if p.script_args is not None:
+                processed = p.scripts.run(p, *p.script_args)
+            if processed is None:
+                processed = process_images(p)
+        
         shared.state.end()
 
         b64images = list(map(encode_pil_to_base64, processed.images))
@@ -141,7 +147,10 @@ class Api:
         shared.state.begin()
 
         with self.queue_lock:
-            processed = process_images(p)
+            if p.script_args is not None:
+                processed = p.scripts.run(p, *p.script_args)
+            if processed is None:
+                processed = process_images(p)
 
         shared.state.end()
 
@@ -296,6 +305,17 @@ class Api:
 
     def get_artists(self):
         return [{"name":x[0], "score":x[1], "category":x[2]} for x in shared.artist_db.artists]
+
+    def invocations(self, req: InvocationsRequest):
+        if req.task == 'text-to-image':
+            return self.text2imgapi(req.payload)
+        elif req.task == 'image-to-image':
+            return self.img2imgapi(req.payload)
+        else:
+            raise NotImplementedError
+    
+    def ping(self):
+        return {'status': 'Healthy'}
 
     def launch(self, server_name, port):
         self.app.include_router(self.router)

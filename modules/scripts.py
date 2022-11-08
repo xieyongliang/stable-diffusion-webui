@@ -201,6 +201,22 @@ class ScriptRunner:
         self.titles = []
         self.infotext_fields = []
 
+    def setup_scripts(self, is_img2img):
+        for script_class, path, basedir in scripts_data:
+            script = script_class()
+            script.filename = path
+
+            visibility = script.show(is_img2img)
+
+            if visibility == AlwaysVisible:
+                self.scripts.append(script)
+                self.alwayson_scripts.append(script)
+                script.alwayson = True
+
+            elif visibility:
+                self.scripts.append(script)
+                self.selectable_scripts.append(script)
+
     def setup_ui(self, is_img2img):
         for script_class, path, basedir in scripts_data:
             script = script_class()

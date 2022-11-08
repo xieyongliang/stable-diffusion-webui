@@ -60,19 +60,6 @@ printf "\e[1m\e[32mInstall script for stable-diffusion + Web UI\n"
 printf "\e[1m\e[34mTested on Debian 11 (Bullseye)\e[0m"
 printf "\n%s\n" "${delimiter}"
 
-# Do not run as root
-if [[ $(id -u) -eq 0 ]]
-then
-    printf "\n%s\n" "${delimiter}"
-    printf "\e[1m\e[31mERROR: This script must not be launched as root, aborting...\e[0m"
-    printf "\n%s\n" "${delimiter}"
-    exit 1
-else
-    printf "\n%s\n" "${delimiter}"
-    printf "Running on \e[1m\e[32m%s\e[0m user" "$(whoami)"
-    printf "\n%s\n" "${delimiter}"
-fi
-
 if [[ -d .git ]]
 then
     printf "\n%s\n" "${delimiter}"
@@ -106,6 +93,7 @@ cd "${install_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/, aborting...
 if [[ -d "${clone_dir}" ]]
 then
     cd "${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
+    "${GIT}" pull
 else
     printf "\n%s\n" "${delimiter}"
     printf "Clone stable-diffusion-webui"
