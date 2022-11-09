@@ -42,10 +42,19 @@ import modules.hypernetworks.hypernetwork
 queue_lock = threading.Lock()
 server_name = "0.0.0.0" if cmd_opts.listen else cmd_opts.server_name
 
-api_endpoint = os.environ['api_endpoint']
-endpoint_name = os.environ['endpoint_name']
+api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
+endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
 
 def wrap_queued_call(func):
+    def f(*args, **kwargs):
+        
+        with queue_lock:
+            res = func(*args, **kwargs)
+        return res
+    
+    return f
+
+def wrap_gradio_gpu_call(func, extra_outputs=None):    
     def sagemaker_inference(task, *args, **kwargs):
         script_args = []
         for i in range(23, len(args)):
@@ -121,23 +130,12 @@ def wrap_queued_call(func):
         elif(cmd_opts.pureui and func == modules.img2img.img2img):
             res = sagemaker_inference('image-to-image', *args, **kwargs)
         else:
+            shared.state.begin()
+
             with queue_lock:
                 res = func(*args, **kwargs)
 
-        return res
-
-    return f
-
-
-def wrap_gradio_gpu_call(func, extra_outputs=None):
-    def f(*args, **kwargs):
-
-        shared.state.begin()
-
-        with queue_lock:
-            res = func(*args, **kwargs)
-
-        shared.state.end()
+            shared.state.end()
 
         return res
 
