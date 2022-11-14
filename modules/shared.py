@@ -91,6 +91,9 @@ parser.add_argument("--tls-keyfile", type=str, help="Partially enables TLS, requ
 parser.add_argument("--tls-certfile", type=str, help="Partially enables TLS, requires --tls-keyfile to fully function", default=None)
 parser.add_argument("--server-name", type=str, help="Sets hostname of server", default=None)
 parser.add_argument("--pureui", action='store_true', help="Pure UI without local inference and progress bar", default=False)
+parser.add_argument("--train", action='store_true', help="Train only on SageMaker", default=False)
+parser.add_argument("--train-task", type=str, help='Train task - embedding or hypernetwork', default='embedding')
+parser.add_argument("--train-args", type=str, help='Train args', default='')
 
 cmd_opts = parser.parse_args()
 restricted_opts = {

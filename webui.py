@@ -38,6 +38,9 @@ import modules.ui
 from modules import modelloader
 from modules.shared import cmd_opts,  opts
 import modules.hypernetworks.hypernetwork
+import modules.textual_inversion.textual_inversion
+
+import uuid
 
 queue_lock = threading.Lock()
 server_name = "0.0.0.0" if cmd_opts.listen else cmd_opts.server_name
@@ -276,9 +279,193 @@ def webui():
         modules.sd_models.list_models()
         print('Restarting Gradio')
 
+def train():
+    os.system('mount -t efs -o tls fs-06810c18b16c76fed:/ /mnt/efs')
+    os.system('mkdir -p /mnt/efs/embedding')
+    os.system('mkdir -p /mnt/efs/hypernetwork')
+
+    initialize()
+
+    train_task = cmd_opts.train_task
+    train_args = json.loads(cmd_opts.train_args)
+
+    if train_task == 'embedding':
+        name = train_args['embedding_settings']['name']
+        nvpt = train_args['embedding_settings']['nvpt']
+        overwrite_old = train_args['embedding_settings']['overwrite_old']
+        initialization_text = train_args['embedding_settings']['initialization_text']
+        modules.textual_inversion.textual_inversion.create_embedding(
+            name, 
+            nvpt, 
+            overwrite_old, 
+            init_text=initialization_text
+        )
+        process_src = '/opt/ml/input/data/images'
+        process_dst = str(uuid.uuid4())
+        process_width = train_args['images_preprocessing_settings']['process_width']
+        process_height = train_args['images_preprocessing_settings']['process_height']
+        preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+        process_flip = train_args['images_preprocessing_settings']['process_flip']
+        process_split = train_args['images_preprocessing_settings']['process_split']
+        process_caption = train_args['images_preprocessing_settings']['process_caption']    
+        process_caption_deepbooru = train_args['images_preprocessing_settings']['process_caption_deepbooru']    
+        process_split_threshold = train_args['images_preprocessing_settings']['process_split_threshold']
+        process_overlap_ratio = train_args['images_preprocessing_settings']['process_overlap_ratio']
+        process_focal_crop = train_args['images_preprocessing_settings']['process_focal_crop']
+        process_focal_crop_face_weight = train_args['images_preprocessing_settings']['process_focal_crop_face_weight']    
+        process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
+        process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+        process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+        modules.textual_inversion.preprocess.preprocess(
+            process_src,
+            process_dst,
+            process_width,
+            process_height,
+            preprocess_txt_action,
+            process_flip,
+            process_split,
+            process_caption,
+            process_caption_deepbooru,
+            process_split_threshold,
+            process_overlap_ratio,
+            process_focal_crop,
+            process_focal_crop_face_weight,
+            process_focal_crop_entropy_weight,
+            process_focal_crop_edges_weight,
+            process_focal_crop_debug,
+        )
+        train_embedding_name = name
+        embedding_learn_rate = train_args['train_embedding_settings']['embedding_learn_rate']
+        batch_size = train_args['train_embedding_settings']['batch_size']
+        dataset_directory = process_dst
+        log_directory = 'textual_inversion'
+        training_width = train_args['train_embedding_settings']['training_width']
+        training_height = train_args['train_embedding_settings']['training_height']
+        steps = train_args['train_embedding_settings']['steps']
+        create_image_every = train_args['train_embedding_settings']['create_image_every']
+        save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
+        template_file = 'style_filewords.txt'
+        save_image_with_stored_embedding = train_args['train_embedding_settings']['save_image_with_stored_embedding']
+        preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
+        txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
+        _, filename = modules.textual_inversion.textual_inversion.train_embedding(
+            train_embedding_name,
+            embedding_learn_rate,
+            batch_size,
+            dataset_directory,
+            log_directory,
+            training_width,
+            training_height,
+            steps,
+            create_image_every,
+            save_embedding_every,
+            template_file,
+            save_image_with_stored_embedding,
+            preview_from_txt2img,
+            *txt2img_preview_params
+        )
+    elif train_task == 'hypernetwork':
+        name = train_args['hypernetwork_settings']['name']
+        enable_sizes = train_args['hypernetwork_settings']['enable_sizes']
+        overwrite_old = train_args['hypernetwork_settings']['overwrite_old']
+        layer_structure = train_args['hypernetwork_settings']['layer_structure'] if 'layer_structure' in train_args['hypernetwork_settings'] else None
+        activation_func = train_args['hypernetwork_settings']['activation_func'] if 'activation_func' in train_args['hypernetwork_settings'] else None
+        weight_init = train_args['hypernetwork_settings']['weight_init'] if 'weight_init' in train_args['hypernetwork_settings'] else None
+        add_layer_norm = train_args['hypernetwork_settings']['add_layer_norm'] if 'add_layer_norm' in train_args['hypernetwork_settings'] else False
+        use_dropout = train_args['hypernetwork_settings']['use_dropout'] if 'use_dropout' in train_args['hypernetwork_settings'] else False
+        
+        name = "".join( x for x in name if (x.isalnum() or x in "._- "))
+
+        fn = os.path.join(shared.cmd_opts.hypernetwork_dir, f"{name}.pt")
+        if not overwrite_old:
+            assert not os.path.exists(fn), f"file {fn} already exists"
+
+        if type(layer_structure) == str:
+            layer_structure = [float(x.strip()) for x in layer_structure.split(",")]
+
+        hypernet = modules.hypernetworks.hypernetwork.Hypernetwork(
+            name=name,
+            enable_sizes=[int(x) for x in enable_sizes],
+            layer_structure=layer_structure,
+            activation_func=activation_func,
+            weight_init=weight_init,
+            add_layer_norm=add_layer_norm,
+            use_dropout=use_dropout,
+        )
+        hypernet.save(fn)
+
+        process_src = '/opt/ml/input/data/images'
+        process_dst = str(uuid.uuid4())
+        process_width = train_args['images_preprocessing_settings']['process_width']
+        process_height = train_args['images_preprocessing_settings']['process_height']
+        preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+        process_flip = train_args['images_preprocessing_settings']['process_flip']
+        process_split = train_args['images_preprocessing_settings']['process_split']
+        process_caption = train_args['images_preprocessing_settings']['process_caption']    
+        process_caption_deepbooru = train_args['images_preprocessing_settings']['process_caption_deepbooru']    
+        process_split_threshold = train_args['images_preprocessing_settings']['process_split_threshold']
+        process_overlap_ratio = train_args['images_preprocessing_settings']['process_overlap_ratio']
+        process_focal_crop = train_args['images_preprocessing_settings']['process_focal_crop']
+        process_focal_crop_face_weight = train_args['images_preprocessing_settings']['process_focal_crop_face_weight']    
+        process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
+        process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+        process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+        modules.textual_inversion.preprocess.preprocess(
+            process_src,
+            process_dst,
+            process_width,
+            process_height,
+            preprocess_txt_action,
+            process_flip,
+            process_split,
+            process_caption,
+            process_caption_deepbooru,
+            process_split_threshold,
+            process_overlap_ratio,
+            process_focal_crop,
+            process_focal_crop_face_weight,
+            process_focal_crop_entropy_weight,
+            process_focal_crop_edges_weight,
+            process_focal_crop_debug,
+        )
+        train_embedding_name = name
+        embedding_learn_rate = train_args['train_embedding_settings']['embedding_learn_rate']
+        batch_size = train_args['train_embedding_settings']['batch_size']
+        dataset_directory = process_dst
+        log_directory = 'textual_inversion'
+        training_width = train_args['train_embedding_settings']['training_width']
+        training_height = train_args['train_embedding_settings']['training_height']
+        steps = train_args['train_embedding_settings']['steps']
+        create_image_every = train_args['train_embedding_settings']['create_image_every']
+        save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
+        template_file = 'style_filewords.txt'
+        save_image_with_stored_embedding = train_args['train_embedding_settings']['save_image_with_stored_embedding']
+        preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
+        txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
+        _, filename = modules.textual_inversion.textual_inversion.train_embedding(
+            train_embedding_name,
+            embedding_learn_rate,
+            batch_size,
+            dataset_directory,
+            log_directory,
+            training_width,
+            training_height,
+            steps,
+            create_image_every,
+            save_embedding_every,
+            template_file,
+            save_image_with_stored_embedding,
+            preview_from_txt2img,
+            *txt2img_preview_params
+        )
+    else:
+        print('Incorrect trainingg task')
+        exit(-1)
 
 if __name__ == "__main__":
-    if cmd_opts.nowebui:
+    if cmd_opts.train:
+        train()
+    elif cmd_opts.nowebui:
         api_only()
     else:
         webui()
