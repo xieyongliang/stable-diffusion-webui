@@ -6,7 +6,7 @@ from inflection import underscore
 from modules.processing import StableDiffusionProcessingTxt2Img, StableDiffusionProcessingImg2Img
 from modules.shared import sd_upscalers, opts, parser
 from typing import Dict, List
-from typing import Union
+from typing import Optional
 
 API_NOT_ALLOWED = [
     "self",
@@ -142,7 +142,7 @@ class ExtrasSingleImageRequest(ExtrasBaseRequest):
     image: str = Field(default="", title="Image", description="Image to work on, must be a Base64 string containing the image's data.")
 
 class ExtrasSingleImageResponse(ExtraBaseResponse):
-    image: str = Field(default=None, title="Image", description="The generated image in base64 format.")
+    image: str = Field(title="Image", description="The generated image in base64 format.")
 
 class FileData(BaseModel):
     data: str = Field(title="File data", description="Base64 representation of the file")
@@ -242,12 +242,10 @@ class ArtistItem(BaseModel):
 
 class InvocationsRequest(BaseModel):
     task: str
-    payload: Union[StableDiffusionTxt2ImgProcessingAPI, StableDiffusionImg2ImgProcessingAPI]
-
-class InvocationsResponse(BaseModel):
-    images: list[str] = Field(default=None, title="Image", description="The generated image in base64 format.")
-    parameters: dict
-    info: str
+    txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
+    img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
+    extras_single_payload: Optional[ExtrasSingleImageRequest]
+    extras_batch_payload: Optional[ExtrasBatchImagesRequest]
 
 class PingResponse(BaseModel):
     status: str

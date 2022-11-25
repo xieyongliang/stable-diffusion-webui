@@ -243,6 +243,9 @@ class Processed:
         self.all_subseeds = all_subseeds or [self.subseed]
         self.infotexts = infotexts or [info]
 
+        self.scripts = p.scripts
+        self.script_args = p.script_args
+
     def js(self):
         obj = {
             "prompt": self.prompt,
@@ -472,10 +475,8 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
     if os.path.exists(cmd_opts.embeddings_dir) and not p.do_not_reload_embeddings:
         model_hijack.embedding_db.load_textual_inversion_embeddings()
-
     if p.scripts is not None:
         p.scripts.process(p)
-
     infotexts = []
     output_images = []
 
@@ -609,6 +610,8 @@ class StableDiffusionProcessingTxt2Img(StableDiffusionProcessing):
         self.firstphase_height = firstphase_height
         self.truncate_x = 0
         self.truncate_y = 0
+        self.scripts = modules.scripts.scripts_txt2img
+        self.scripts.setup_scripts(False)
 
     def init(self, all_prompts, all_seeds, all_subseeds):
         if self.enable_hr:
@@ -740,6 +743,8 @@ class StableDiffusionProcessingImg2Img(StableDiffusionProcessing):
         self.mask = None
         self.nmask = None
         self.image_conditioning = None
+        self.scripts = modules.scripts.scripts_img2img
+        self.scripts.setup_scripts(True)
 
     def init(self, all_prompts, all_seeds, all_subseeds):
         self.sampler = sd_samplers.create_sampler_with_index(sd_samplers.samplers_for_img2img, self.sampler_index, self.sd_model)

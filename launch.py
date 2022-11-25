@@ -241,7 +241,9 @@ def tests(argv):
 def start():
     print(f"Launching {'API server' if '--nowebui' in sys.argv else 'Web UI'} with arguments: {' '.join(sys.argv[1:])}")
     import webui
-    if '--nowebui' in sys.argv:
+    if '--train' in sys.argv:
+        webui.train()
+    elif '--nowebui' in sys.argv:
         webui.api_only()
     else:
         webui.webui()

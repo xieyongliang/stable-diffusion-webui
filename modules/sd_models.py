@@ -12,6 +12,11 @@ from ldm.util import instantiate_from_config
 from modules import shared, modelloader, devices, script_callbacks, sd_vae
 from modules.paths import models_path
 from modules.sd_hijack_inpainting import do_inpainting_hijack, should_hijack_inpainting
+import requests
+import json
+
+api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
+endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
 
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(models_path, model_dir))
@@ -44,44 +49,61 @@ def checkpoint_tiles():
 
 
 def list_models():
+    global checkpoints_list
     checkpoints_list.clear()
-    model_list = modelloader.load_models(model_path=model_path, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt"])
 
-    def modeltitle(path, shorthash):
-        abspath = os.path.abspath(path)
+    if shared.cmd_opts.pureui:
+        response = requests.get(url=f'{api_endpoint}/sd/models')
+        model_list = json.loads(response.text)
 
-        if shared.cmd_opts.ckpt_dir is not None and abspath.startswith(shared.cmd_opts.ckpt_dir):
-            name = abspath.replace(shared.cmd_opts.ckpt_dir, '')
-        elif abspath.startswith(model_path):
-            name = abspath.replace(model_path, '')
-        else:
-            name = os.path.basename(path)
+        for model in model_list:
+            h = model['hash']
+            filename = model['filename']
+            title = model['title']
+            short_model_name = model['model_name']
+            config = model['config']
 
-        if name.startswith("\\") or name.startswith("/"):
-            name = name[1:]
+            checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
 
-        shortname = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
+    else:
+        model_list = modelloader.load_models(model_path=model_path, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt"])
 
-        return f'{name} [{shorthash}]', shortname
+        def modeltitle(path, shorthash):
+            abspath = os.path.abspath(path)
 
-    cmd_ckpt = shared.cmd_opts.ckpt
-    if os.path.exists(cmd_ckpt):
-        h = model_hash(cmd_ckpt)
-        title, short_model_name = modeltitle(cmd_ckpt, h)
-        checkpoints_list[title] = CheckpointInfo(cmd_ckpt, title, h, short_model_name, shared.cmd_opts.config)
-        shared.opts.data['sd_model_checkpoint'] = title
-    elif cmd_ckpt is not None and cmd_ckpt != shared.default_sd_model_file:
-        print(f"Checkpoint in --ckpt argument not found (Possible it was moved to {model_path}: {cmd_ckpt}", file=sys.stderr)
-    for filename in model_list:
-        h = model_hash(filename)
-        title, short_model_name = modeltitle(filename, h)
+            if shared.cmd_opts.ckpt_dir is not None and abspath.startswith(shared.cmd_opts.ckpt_dir):
+                name = abspath.replace(shared.cmd_opts.ckpt_dir, '')
+            elif abspath.startswith(model_path):
+                name = abspath.replace(model_path, '')
+            else:
+                name = os.path.basename(path)
 
-        basename, _ = os.path.splitext(filename)
-        config = basename + ".yaml"
-        if not os.path.exists(config):
-            config = shared.cmd_opts.config
+            if name.startswith("\\") or name.startswith("/"):
+                name = name[1:]
 
-        checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
+            shortname = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
+
+            return f'{name} [{shorthash}]', shortname
+
+        cmd_ckpt = shared.cmd_opts.ckpt
+        if os.path.exists(cmd_ckpt):
+            h = model_hash(cmd_ckpt)
+            title, short_model_name = modeltitle(cmd_ckpt, h)
+            checkpoints_list[title] = CheckpointInfo(cmd_ckpt, title, h, short_model_name, shared.cmd_opts.config)
+            shared.opts.data['sd_model_checkpoint'] = title
+        elif cmd_ckpt is not None and cmd_ckpt != shared.default_sd_model_file:
+            print(f"Checkpoint in --ckpt argument not found (Possible it was moved to {model_path}: {cmd_ckpt}", file=sys.stderr)
+
+        for filename in model_list:
+            h = model_hash(filename)
+            title, short_model_name = modeltitle(filename, h)
+
+            basename, _ = os.path.splitext(filename)
+            config = basename + ".yaml"
+            if not os.path.exists(config):
+                config = shared.cmd_opts.config
+
+            checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
 
 
 def get_closet_checkpoint_match(searchString):

@@ -42,11 +42,17 @@ import modules.textual_inversion.textual_inversion
 
 import uuid
 
+from PIL import Image, ImageOps, ImageChops
+
 queue_lock = threading.Lock()
 server_name = "0.0.0.0" if cmd_opts.listen else cmd_opts.server_name
 
 api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
 endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
+
+import boto3
+import traceback
+from botocore.exceptions import ClientError
 
 def wrap_queued_call(func):
     def f(*args, **kwargs):
@@ -58,51 +64,26 @@ def wrap_queued_call(func):
     return f
 
 def wrap_gradio_gpu_call(func, extra_outputs=None):    
-    def sagemaker_inference(task, *args, **kwargs):
-        script_args = []
-        for i in range(23, len(args)):
-            script_args.append(args[i])
- 
-        payload = {
-              "prompt": args[0],
-              "negative_prompt": args[1],
-              "styles": [args[2], args[3]],
-              "steps": args[4],
-              "sampler_index": sd_samplers.samplers[args[5]].name,
-              "restore_faces": args[6],
-              "tiling": args[7],
-              "batch_count": args[8],
-              "batch_size": args[9],
-              "cfg_scale": args[10],
-              "seed": args[11],
-              "subseed": args[12],
-              "subseed_strength": args[13],
-              "seed_resize_from_h": args[14],
-              "seed_resize_from_w": args[15],
-              "seed_checkbox": args[16],
-              "width": args[17],
-              "height": args[18],
-              "enable_hr": args[19],
-              "denoising_strength": args[20],
-              "firstphase_width": args[21],
-              "firstphase_height": args[22],
-              "script_args": json.dumps(script_args),
-              "eta": opts.eta_ddim if sd_samplers.samplers[args[5]].name == 'DDIM' or sd_samplers.samplers[args[5]].name == 'PLMS' else opts.eta_ancestral,
-              "s_churn": opts.s_churn,
-              "s_tmax": None,
-              "s_tmin": opts.s_tmin,
-              "s_noise": opts.s_noise,
-            }
-        inputs = {
-            'task': task,
-            'payload': payload
-        }
-        params = {
-            'endpoint_name': endpoint_name, 
-            'infer_type': 'async'
-        }
+    def encode_image_to_base64(image):
+        if isinstance(image, bytes):
+            encoded_string = base64.b64encode(image)
+        else:
+            image.tobytes("hex", "rgb")
+            image_bytes = io.BytesIO()
+            image.save(image_bytes, format='PNG')
+            encoded_string = base64.b64encode(image_bytes.getvalue())
 
-        response = requests.post(url=f'{api_endpoint}/inference', params =  params, json = inputs)
+        base64_str = str(encoded_string, "utf-8")
+        mimetype = 'image/png'
+        image_encoded_in_base64 = (
+            "data:"
+            + (mimetype if mimetype is not None else "")
+            + ";base64,"
+            + base64_str
+        )
+        return image_encoded_in_base64
+
+    def handle_sagemaker_inference_async(response):
         s3uri = response.text
         params = {'s3uri': s3uri}
         start = time.time()
@@ -114,24 +95,311 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 break
             else:
                 time.sleep(1)
-        
+
         httpuri = text['payload'][0]['httpuri']
         response = requests.get(url=httpuri)
         processed = json.loads(response.text)
-        images = []
-        for image in processed['images']:
-            images.append(Image.open(io.BytesIO(base64.b64decode(image.split(',')[1]))))
-        parameters = processed['parameters']
-        info = processed['info']
         print(f"Time taken: {time.time() - start}s")
-        
-        return images, json.dumps(payload), modules.ui.plaintext_to_html(info)
+
+        return processed
+
+    def sagemaker_inference(task, infer, *args, **kwargs):
+        infer = 'async'
+        if task == 'text-to-image' or task == 'image-to-image':
+            if task == 'text-to-image':
+                script_args = []
+                for i in range(23, len(args)):
+                    script_args.append(args[i])
+
+                prompt = args[0]
+                negative_prompt = args[1]
+                styles = [args[2], args[3]]
+                steps = args[4]
+                sampler_index = sd_samplers.samplers[args[5]].name
+                restore_faces = args[6]
+                tiling = args[7]
+                n_iter = args[8]
+                batch_size = args[9]
+                cfg_scale = args[10]
+                seed = args[11]
+                subseed = args[12]
+                subseed_strength = args[13]
+                seed_resize_from_h = args[14]
+                seed_resize_from_w = args[15]
+                seed_enable_extras = args[16]
+                height = args[17]
+                width = args[18]
+                enable_hr = args[19]
+                denoising_strength = args[20]
+                firstphase_width = args[21]
+                firstphase_height = args[22]
+
+                payload = {
+                    "enable_hr": enable_hr,
+                    "denoising_strength": denoising_strength,
+                    "firstphase_width": firstphase_width,
+                    "firstphase_height": firstphase_height,
+                    "prompt": prompt,
+                    "styles": styles,
+                    "seed": seed,
+                    "subseed": subseed,
+                    "subseed_strength": subseed_strength,
+                    "seed_resize_from_h": seed_resize_from_h,
+                    "seed_resize_from_w": seed_resize_from_w,
+                    "sampler_index": sampler_index,
+                    "batch_size": batch_size,
+                    "n_iter": n_iter,
+                    "steps": steps,
+                    "cfg_scale": cfg_scale,
+                    "width": width,
+                    "height": height,
+                    "restore_faces": restore_faces,
+                    "tiling": tiling,
+                    "negative_prompt": negative_prompt,
+                    "eta": opts.eta_ddim if sd_samplers.samplers[args[5]].name == 'DDIM' or sd_samplers.samplers[args[5]].name == 'PLMS' else opts.eta_ancestral,
+                    "s_churn": opts.s_churn,
+                    "s_tmax": None,
+                    "s_tmin": opts.s_tmin,
+                    "s_noise": opts.s_noise,
+                    "override_settings": {},
+                    "script_args": json.dumps(script_args),
+                }
+                inputs = {
+                    'task': task,
+                    'txt2img_payload': payload
+                }
+            else:
+                mode = args[0]
+                prompt = args[1]
+                negative_prompt = args[2]
+                styles = [args[3], args[4]]
+                init_img = args[5]
+                init_img_with_mask = args[6]
+                init_img_inpaint = args[7]
+                init_mask_inpaint = args[8]
+                mask_mode = args[9]
+                steps = args[10]
+                sampler_index = sd_samplers.samplers[args[11]].name
+                mask_blur = args[12]
+                inpainting_fill = args[13]
+                restore_faces = args[14]
+                tiling = args[15]
+                n_iter = args[16]
+                batch_size = args[17]
+                cfg_scale = args[18]
+                denoising_strength = args[19]
+                seed = args[20]
+                subseed = args[21]
+                subseed_strength = args[22]
+                seed_resize_from_h = args[23]
+                seed_resize_from_w = args[24]
+                seed_enable_extras = args[25]
+                height = args[26]
+                width = args[27]
+                resize_mode = args[28]
+                inpaint_full_res = args[29]
+                inpaint_full_res_padding = args[30]
+                inpainting_mask_invert = args[31]
+                img2img_batch_input_dir = args[32]
+                img2img_batch_output_dir = args[33]
+
+                script_args = []
+                for i in range(34, len(args)):
+                    script_args.append(args[i])
+
+                if mode == 1:
+                    # Drawn mask
+                    if mask_mode == 0:
+                        image = init_img_with_mask['image']
+                        mask = init_img_with_mask['mask']
+                        alpha_mask = ImageOps.invert(image.split()[-1]).convert('L').point(lambda x: 255 if x > 0 else 0, mode='1')
+                        mask = ImageChops.lighter(alpha_mask, mask.convert('L')).convert('L')
+                        image = image.convert('RGB')
+                    # Uploaded mask
+                    else:
+                        image = init_img_inpaint
+                        mask = init_mask_inpaint
+                # No mask
+                else:
+                    image = init_img
+                    mask = None
+
+                # Use the EXIF orientation of photos taken by smartphones.
+                if image is not None:
+                    image = ImageOps.exif_transpose(image)
+
+                assert 0. <= denoising_strength <= 1., 'can only work with strength in [0.0, 1.0]'
+
+                image_encoded_in_base64 = encode_image_to_base64(image)
+                mask_encoded_in_base64 = encode_image_to_base64(mask) if mask else None
+
+                if init_img_with_mask:
+                    image = init_img_with_mask['image']
+                    image_encoded_in_base64 = encode_image_to_base64(image)
+                    mask_encoded_in_base64 = encode_image_to_base64(mask)
+                    init_img_with_mask['image'] = image_encoded_in_base64
+                    init_img_with_mask['mask'] = mask_encoded_in_base64
+
+                payload = {
+                    "init_images": [image_encoded_in_base64],
+                    "resize_mode": resize_mode,
+                    "denoising_strength": denoising_strength,
+                    "mask": mask_encoded_in_base64,
+                    "mask_blur": mask_blur,
+                    "inpainting_fill": inpainting_fill,
+                    "inpaint_full_res": inpaint_full_res,
+                    "inpaint_full_res_padding": inpaint_full_res_padding,
+                    "inpainting_mask_invert": inpainting_mask_invert,
+                    "prompt": prompt,
+                    "styles": styles,
+                    "seed": seed,
+                    "subseed": subseed,
+                    "subseed_strength": subseed_strength,
+                    "seed_resize_from_h": seed_resize_from_h,
+                    "seed_resize_from_w": seed_resize_from_w,
+                    "sampler_index": sampler_index,
+                    "batch_size": batch_size,
+                    "n_iter": n_iter,
+                    "steps": steps,
+                    "cfg_scale": args[18],
+                    "width": width,
+                    "height": height,
+                    "restore_faces": restore_faces,
+                    "tiling": tiling,
+                    "negative_prompt": negative_prompt,
+                    "sampler_index": sampler_index,
+                    "eta": opts.eta_ddim if sd_samplers.samplers[args[11]].name == 'DDIM' or sd_samplers.samplers[args[11]].name == 'PLMS' else opts.eta_ancestral,
+                    "s_churn": opts.s_churn,
+                    "s_tmax": None,
+                    "s_tmin": opts.s_tmin,
+                    "s_noise": opts.s_noise,
+                    "override_settings": {},
+                    "include_init_images": False,
+                    "script_args": json.dumps(script_args)
+                }
+                inputs = {
+                    'task': task,
+                    'img2img_payload': payload
+                }
+
+            params = {
+                'endpoint_name': endpoint_name
+            }
+
+            response = requests.post(url=f'{api_endpoint}/inference', params=params, json=inputs)
+            if infer == 'async':
+                processed = handle_sagemaker_inference_async(response)
+            else:
+                processed = json.loads(response.text)
+
+            images = []
+            for image in processed['images']:
+                images.append(Image.open(io.BytesIO(base64.b64decode(image))))
+            parameters = processed['parameters']
+            info = processed['info']
+
+            return images, json.dumps(payload), modules.ui.plaintext_to_html(info)
+        else:
+            extras_mode = args[0]
+            resize_mode = args[1]
+            image = args[2]
+            image_folder = args[3]
+            input_dir = args[4]
+            output_dir = args[5]
+            show_extras_results = args[6]
+            gfpgan_visibility = args[7]
+            codeformer_visibility = args[8]
+            codeformer_weight = args[9]
+            upscaling_resize = args[10]
+            upscaling_resize_w = args[11]
+            upscaling_resize_h = args[12]
+            upscaling_crop = args[13]
+            extras_upscaler_1 = shared.sd_upscalers[args[14]].name
+            extras_upscaler_2 = shared.sd_upscalers[args[15]].name
+            extras_upscaler_2_visibility = args[16]
+            upscale_first = args[17]
+
+            if extras_mode == 0:
+                image_encoded_in_base64 = encode_image_to_base64(image)
+
+                payload = {
+                  "resize_mode": resize_mode,
+                  "show_extras_results": show_extras_results if show_extras_results else True,
+                  "gfpgan_visibility": gfpgan_visibility,
+                  "codeformer_visibility": codeformer_visibility,
+                  "codeformer_weight": codeformer_weight,
+                  "upscaling_resize": upscaling_resize,
+                  "upscaling_resize_w": upscaling_resize_w,
+                  "upscaling_resize_h": upscaling_resize_h,
+                  "upscaling_crop": upscaling_crop,
+                  "upscaler_1": extras_upscaler_1,
+                  "upscaler_2": extras_upscaler_2,
+                  "extras_upscaler_2_visibility": extras_upscaler_2_visibility,
+                  "upscale_first": upscale_first,
+                  "image": image_encoded_in_base64
+                }
+                task = 'extras-single-image'
+                inputs = {
+                    'task': task,
+                    'extras_single_payload': payload
+                }
+            else:
+                imageList = []
+                for img in image_folder:
+                    image_encoded_in_base64 = encode_image_to_base64(Image.open(img))
+                    imageList.append(
+                        {
+                            'data': image_encoded_in_base64,
+                            'name': img.name
+                        }
+                    )
+                payload = {
+                  "resize_mode": resize_mode,
+                  "show_extras_results": show_extras_results if show_extras_results else True,
+                  "gfpgan_visibility": gfpgan_visibility,
+                  "codeformer_visibility": codeformer_visibility,
+                  "codeformer_weight": codeformer_weight,
+                  "upscaling_resize": upscaling_resize,
+                  "upscaling_resize_w": upscaling_resize_w,
+                  "upscaling_resize_h": upscaling_resize_h,
+                  "upscaling_crop": upscaling_crop,
+                  "upscaler_1": extras_upscaler_1,
+                  "upscaler_2": extras_upscaler_2,
+                  "extras_upscaler_2_visibility": extras_upscaler_2_visibility,
+                  "upscale_first": upscale_first,
+                  "imageList": imageList
+                }
+                task = 'extras-batch-images'
+                inputs = {
+                    'task': task,
+                    'extras_batch_payload': payload
+                }
+
+            params = {
+                'endpoint_name': endpoint_name
+            }
+            response = requests.post(url=f'{api_endpoint}/inference', params=params, json=inputs)
+            if infer == 'async':
+                processed = handle_sagemaker_inference_async(response)
+            else:
+                processed = json.loads(response.text)
+
+            if task == 'extras-single-image':
+                images = [Image.open(io.BytesIO(base64.b64decode(processed['image'])))]
+            else:
+                images = []
+                for image in processed['images']:
+                    images.append(Image.open(io.BytesIO(base64.b64decode(image))))
+            info = processed['html_info']
+            return images, modules.ui.plaintext_to_html(info), ''
 
     def f(*args, **kwargs):
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
-            res = sagemaker_inference('text-to-image', *args, **kwargs)
-        elif(cmd_opts.pureui and func == modules.img2img.img2img):
-            res = sagemaker_inference('image-to-image', *args, **kwargs)
+            res = sagemaker_inference('text-to-image', 'sync', *args, **kwargs)
+        elif cmd_opts.pureui and func == modules.img2img.img2img:
+            res = sagemaker_inference('image-to-image', 'sync', *args, **kwargs)
+        elif cmd_opts.pureui and func == modules.extras.run_extras:
+            res = sagemaker_inference('extras', 'sync', *args, **kwargs)
         else:
             shared.state.begin()
 
@@ -164,11 +432,13 @@ def initialize():
     modules.scripts.load_scripts()
 
     modules.sd_vae.refresh_vae_list()
-    modules.sd_models.load_model()
-    shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()))
     shared.opts.onchange("sd_vae", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
-    shared.opts.onchange("sd_hypernetwork", wrap_queued_call(lambda: modules.hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)))
-    shared.opts.onchange("sd_hypernetwork_strength", modules.hypernetworks.hypernetwork.apply_strength)
+
+    if not cmd_opts.pureui:
+        modules.sd_models.load_model()
+        shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()))
+        shared.opts.onchange("sd_hypernetwork", wrap_queued_call(lambda: modules.hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)))
+        shared.opts.onchange("sd_hypernetwork_strength", modules.hypernetworks.hypernetwork.apply_strength)
 
     if cmd_opts.tls_keyfile is not None and cmd_opts.tls_keyfile is not None:
 
@@ -279,15 +549,30 @@ def webui():
         modules.sd_models.list_models()
         print('Restarting Gradio')
 
-def train():
-    os.system('mount -t efs -o tls fs-06810c18b16c76fed:/ /mnt/efs')
-    os.system('mkdir -p /mnt/efs/embedding')
-    os.system('mkdir -p /mnt/efs/hypernetwork')
+def upload_s3file(s3uri, file_path, file_name):
+    s3_client = boto3.client('s3', region_name = cmd_opts.region_name)
 
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    binary = io.BytesIO(open(file_path, 'rb').read())
+    key = key + file_name
+    try:
+        s3_client.upload_fileobj(binary, bucket, key)
+    except ClientError as e:
+        print(e)
+        return False
+    return True
+
+def train():
     initialize()
 
     train_task = cmd_opts.train_task
     train_args = json.loads(cmd_opts.train_args)
+
+    embeddings_s3uri = cmd_opts.embeddings_s3uri
+    hypernetworks_s3uri = cmd_opts.hypernetworks_s3uri
 
     if train_task == 'embedding':
         name = train_args['embedding_settings']['name']
@@ -300,6 +585,8 @@ def train():
             overwrite_old, 
             init_text=initialization_text
         )
+        if not cmd_opts.pureui:
+            modules.sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
         process_src = '/opt/ml/input/data/images'
         process_dst = str(uuid.uuid4())
         process_width = train_args['images_preprocessing_settings']['process_width']
@@ -344,7 +631,7 @@ def train():
         steps = train_args['train_embedding_settings']['steps']
         create_image_every = train_args['train_embedding_settings']['create_image_every']
         save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
-        template_file = 'style_filewords.txt'
+        template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
         save_image_with_stored_embedding = train_args['train_embedding_settings']['save_image_with_stored_embedding']
         preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
         txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
@@ -364,6 +651,11 @@ def train():
             preview_from_txt2img,
             *txt2img_preview_params
         )
+        try:
+            upload_s3file(embeddings_s3uri, os.path.join(cmd_opts.embeddings_dir, '{0}.pt'.format(train_embedding_name)), '{0}.pt'.format(train_embedding_name))
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
     elif train_task == 'hypernetwork':
         name = train_args['hypernetwork_settings']['name']
         enable_sizes = train_args['hypernetwork_settings']['enable_sizes']
@@ -428,7 +720,7 @@ def train():
             process_focal_crop_edges_weight,
             process_focal_crop_debug,
         )
-        train_embedding_name = name
+        train_hypernetwork_name = name
         embedding_learn_rate = train_args['train_embedding_settings']['embedding_learn_rate']
         batch_size = train_args['train_embedding_settings']['batch_size']
         dataset_directory = process_dst
@@ -443,7 +735,7 @@ def train():
         preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
         txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
         _, filename = modules.textual_inversion.textual_inversion.train_embedding(
-            train_embedding_name,
+            train_hypernetwork_name,
             embedding_learn_rate,
             batch_size,
             dataset_directory,
@@ -458,8 +750,13 @@ def train():
             preview_from_txt2img,
             *txt2img_preview_params
         )
+        try:
+            upload_s3file(hypernetworks_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)), '{0}.pt'.format(train_hypernetwork_name))
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
     else:
-        print('Incorrect trainingg task')
+        print('Incorrect training task')
         exit(-1)
 
 if __name__ == "__main__":

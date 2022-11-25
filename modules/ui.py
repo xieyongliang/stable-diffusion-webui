@@ -429,20 +429,23 @@ def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: 
 
 
 def update_token_counter(text, steps):
-    try:
-        _, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
-        prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, steps)
+    if not cmd_opts.pureui:
+        try:
+            _, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
+            prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, steps)
 
-    except Exception:
-        # a parsing error can happen here during typing, and we don't want to bother the user with
-        # messages related to it in console
-        prompt_schedules = [[[steps, text]]]
+        except Exception:
+            # a parsing error can happen here during typing, and we don't want to bother the user with
+            # messages related to it in console
+            prompt_schedules = [[[steps, text]]]
 
-    flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
-    prompts = [prompt_text for step, prompt_text in flat_prompts]
-    tokens, token_count, max_length = max([model_hijack.tokenize(prompt) for prompt in prompts], key=lambda args: args[1])
-    style_class = ' class="red"' if (token_count > max_length) else ""
-    return f"<span {style_class}>{token_count}/{max_length}</span>"
+        flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
+        prompts = [prompt_text for step, prompt_text in flat_prompts]
+        tokens, token_count, max_length = max([model_hijack.tokenize(prompt) for prompt in prompts], key=lambda args: args[1])
+        style_class = ' class="red"' if (token_count > max_length) else ""
+        return f"<span {style_class}>{token_count}/{max_length}</span>"
+    else:
+        return f"<span>N/A</span>"
 
 
 def create_toprow(is_img2img):
@@ -486,7 +489,7 @@ def create_toprow(is_img2img):
             with gr.Row():
                 skip = gr.Button('Skip', elem_id=f"{id_part}_skip")
                 interrupt = gr.Button('Interrupt', elem_id=f"{id_part}_interrupt")
-                submit = gr.Button('Generate', elem_id=f"{id_part}_generate", variant='primary')
+                submit = gr.Button('Generate', elem_id=f"{id_part}_generate", variant='primary', visible=(not cmd_opts.pureui))
 
                 skip.click(
                     fn=lambda: shared.state.skip(),
@@ -661,6 +664,10 @@ Requested path was: {f}
                 parameters_copypaste.bind_buttons(buttons, result_gallery, "txt2img" if tabname == "txt2img" else None)
                 return result_gallery, generation_info if tabname != "extras" else html_info_x, html_info
 
+if cmd_opts.pureui:
+    txt2img_submit = None
+    img2img_submit = None
+    extras_submit = None
 
 def create_ui(wrap_gradio_gpu_call):
     import modules.img2img
@@ -674,6 +681,8 @@ def create_ui(wrap_gradio_gpu_call):
         txt2img_prompt, roll, txt2img_prompt_style, txt2img_negative_prompt, txt2img_prompt_style2, submit, _, _, txt2img_prompt_style_apply, txt2img_save_style, txt2img_paste, token_counter, token_button = create_toprow(is_img2img=False)
         dummy_component = gr.Label(visible=False)
         txt_prompt_img = gr.File(label="", elem_id="txt2img_prompt_image", file_count="single", type="bytes", visible=False)
+
+        txt2img_submit=submit
 
         with gr.Row(elem_id='txt2img_progress_row'):
             with gr.Column(scale=1):
@@ -823,6 +832,8 @@ def create_ui(wrap_gradio_gpu_call):
 
     with gr.Blocks(analytics_enabled=False) as img2img_interface:
         img2img_prompt, roll, img2img_prompt_style, img2img_negative_prompt, img2img_prompt_style2, submit, img2img_interrogate, img2img_deepbooru, img2img_prompt_style_apply, img2img_save_style, img2img_paste, token_counter, token_button = create_toprow(is_img2img=True)
+
+        img2img_submit=submit
 
         with gr.Row(elem_id='img2img_progress_row'):
             img2img_prompt_img = gr.File(label="", elem_id="img2img_prompt_image", file_count="single", type="bytes", visible=False)
@@ -1049,13 +1060,15 @@ def create_ui(wrap_gradio_gpu_call):
 
                     with gr.TabItem('Batch Process'):
                         image_batch = gr.File(label="Batch Process", file_count="multiple", interactive=True, type="file")
+                        if not cmd_opts.pureui:
+                            with gr.TabItem('Batch from Directory', visible=False):
+                                extras_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
+                                extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
+                                show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
-                    with gr.TabItem('Batch from Directory'):
-                        extras_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
-                        extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
-                        show_extras_results = gr.Checkbox(label='Show result images', value=True)
-
-                submit = gr.Button('Generate', elem_id="extras_generate", variant='primary')
+                submit = gr.Button('Generate', elem_id="extras_generate", variant='primary', visible=(not cmd_opts.pureui))
+                if cmd_opts.pureui:
+                    extras_submit = submit
 
                 with gr.Tabs(elem_id="extras_resize_mode"):
                     with gr.TabItem('Scale by'):
@@ -1094,9 +1107,9 @@ def create_ui(wrap_gradio_gpu_call):
                 dummy_component,
                 extras_image,
                 image_batch,
-                extras_batch_input_dir,
-                extras_batch_output_dir,
-                show_extras_results,
+                extras_batch_input_dir if not cmd_opts.pureui else dummy_component,
+                extras_batch_output_dir if not cmd_opts.pureui else dummy_component,
+                show_extras_results if not cmd_opts.pureui else dummy_component,
                 gfpgan_visibility,
                 codeformer_visibility,
                 codeformer_weight,
@@ -1115,6 +1128,7 @@ def create_ui(wrap_gradio_gpu_call):
                 html_info,
             ]
         )
+
         parameters_copypaste.add_paste_fields("extras", extras_image, None)
 
         extras_image.change(
@@ -1141,25 +1155,27 @@ def create_ui(wrap_gradio_gpu_call):
             outputs=[html, generation_info, html2],
         )
 
-    with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
-        with gr.Row().style(equal_height=False):
-            with gr.Column(variant='panel'):
-                gr.HTML(value="<p>A merger of the two checkpoints will be generated in your <b>checkpoint</b> directory.</p>")
+    if not cmd_opts.pureui:
+        with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
+            with gr.Row().style(equal_height=False):
+                with gr.Column(variant='panel'):
+                    gr.HTML(value="<p>A merger of the two checkpoints will be generated in your <b>checkpoint</b> directory.</p>")
 
-                with gr.Row():
-                    primary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
-                    secondary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
-                    tertiary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
-                custom_name = gr.Textbox(label="Custom Name (Optional)")
-                interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
-                interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
-                save_as_half = gr.Checkbox(value=False, label="Save as float16")
-                modelmerger_merge = gr.Button(elem_id="modelmerger_merge", label="Merge", variant='primary')
+                    with gr.Row():
+                        primary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
+                        secondary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
+                        tertiary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
+                    custom_name = gr.Textbox(label="Custom Name (Optional)")
+                    interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
+                    interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
+                    save_as_half = gr.Checkbox(value=False, label="Save as float16")
+                    modelmerger_merge = gr.Button(elem_id="modelmerger_merge", label="Merge", variant='primary')
 
-            with gr.Column(variant='panel'):
-                submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
+                with gr.Column(variant='panel'):
+                    submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
 
-    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+    if not cmd_opts.pureui:
+        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
         with gr.Row().style(equal_height=False):
@@ -1455,7 +1471,7 @@ def create_ui(wrap_gradio_gpu_call):
                                 gr.HTML(value="")
 
                             with gr.Column():
-                                create_train_embedding = gr.Button(value="Create & train embedding", variant='primary')
+                                create_train_embedding = gr.Button(value="Create & train embedding", variant='primary', visible=False)
 
                     with gr.Tab(label="Create & Train Hypernetwork"):
                         gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
@@ -1521,7 +1537,7 @@ def create_ui(wrap_gradio_gpu_call):
                                 gr.HTML(value="")
 
                             with gr.Column():
-                                create_train_hypernetwork = gr.Button(value="Create & train hypernetwork", variant='primary')
+                                create_train_hypernetwork = gr.Button(value="Create & train hypernetwork", variant='primary', visible=False)
 
     def create_setting_component(key, is_quicksettings=False):
         def fun():
@@ -1609,6 +1625,98 @@ def create_ui(wrap_gradio_gpu_call):
         return gr.update(value=value), opts.dumpjson()
 
     with gr.Blocks(analytics_enabled=False) as settings_interface:
+        if cmd_opts.pureui:
+            def change_sign_options(choice):
+                return {
+                    signin_column: gr.update(visible=(choice=="Sign In")),
+                    signup_column: gr.update(visible=(choice=="Sign Up"))
+                }
+
+            with gr.Row(visible=(shared.userid!='')) as user_id_row:
+                with gr.Column():
+                    login_userid = gr.Label(label="User ID")
+                    login_username = gr.Textbox(label="User Name")
+
+                with gr.Column():
+                    signout = gr.Button("Sign Out")
+                    edit_user = gr.Button("Edit User")
+                    delete_user = gr.Button("Delete User")
+
+            with gr.Row(visible=(shared.userid=='')) as user_sign_row:
+                with gr.Column():
+                    sign_options = gr.Radio(["Sign In", "Sign Up"], label="Sign Options", value="Sign In", interactive=True)
+
+                with gr.Column(visible=(sign_options.value=="Sign In")) as signin_column:
+                    signin_username = gr.Textbox(label="User Name")
+                    signin_password = gr.Textbox(label="Password")
+                    signin = gr.Button("Sign In")
+
+                with gr.Column(visible=(sign_options.value=="Sign Up")) as signup_column:
+                    signup_username = gr.Textbox(label="User Name")
+                    signup_password = gr.Textbox(label="Password")
+                    signup_email = gr.Textbox(label="Email")
+                    signup = gr.Button("Sign Up")
+
+                sign_options.change(change_sign_options, sign_options, [signin_column, signup_column])
+
+            def user_signin(signin_username, signin_password):
+                shared.userid='1234'
+                return {
+                    user_id_row : gr.update(visible=True),
+                    user_sign_row: gr.update(visible=False),
+                    login_userid: gr.update(value=shared.userid),
+                    login_username: gr.update(value=signin_username),
+                    txt2img_submit: gr.update(visible=True),
+                    img2img_submit: gr.update(visible=True),
+                    extras_submit: gr.update(visible=True),
+                    create_train_embedding: gr.update(visible=True),
+                    create_train_hypernetwork: gr.update(visible=True)
+                }
+
+            def user_signup(signup_username, signup_password, signup_email):
+                shared.userid='5678'
+                return {
+                    user_id_row: gr.update(visible=True),
+                    user_sign_row: gr.update(visible=False),
+                    login_userid: gr.update(value=shared.userid),
+                    login_username: gr.update(value=signup_username),
+                    txt2img_submit: gr.update(visible=True),
+                    img2img_submit: gr.update(visible=True),
+                    extras_submit: gr.update(visible=True),
+                    create_train_embedding: gr.update(visible=True),
+                    create_train_hypernetwork: gr.update(visible=True)
+                }
+
+            def user_signout():
+                shared.userid=''
+                return {
+                    user_id_row : gr.update(visible=False),
+                    user_sign_row: gr.update(visible=True),
+                    txt2img_submit: gr.update(visible=False),
+                    img2img_submit: gr.update(visible=False),
+                    extras_submit: gr.update(visible=True),
+                    create_train_embedding: gr.update(visible=False),
+                    create_train_hypernetwork: gr.update(visible=False)
+                }
+
+            signin.click(
+                fn=user_signin,
+                inputs=[signin_username, signin_password],
+                outputs=[user_id_row, user_sign_row, login_userid, login_username, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork]
+            )
+
+            signup.click(
+                fn=user_signup,
+                inputs=[signup_username, signup_password, signup_email],
+                outputs=[user_id_row, user_sign_row, login_userid, login_username, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork]
+            )
+
+            signout.click(
+                fn=user_signout,
+                inputs=[],
+                outputs=[user_id_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork]
+            )
+
         settings_submit = gr.Button(value="Apply settings", variant='primary')
         result = gr.HTML()
 
@@ -1701,14 +1809,23 @@ def create_ui(wrap_gradio_gpu_call):
         if column is not None:
             column.__exit__()
 
-    interfaces = [
-        (txt2img_interface, "txt2img", "txt2img"),
-        (img2img_interface, "img2img", "img2img"),
-        (extras_interface, "Extras", "extras"),
-        (pnginfo_interface, "PNG Info", "pnginfo"),
-        (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
-        (train_interface, "Train", "ti"),
-    ]
+    if cmd_opts.pureui:
+        interfaces = [
+            (txt2img_interface, "txt2img", "txt2img"),
+            (img2img_interface, "img2img", "img2img"),
+            (extras_interface, "Extras", "extras"),
+            (pnginfo_interface, "PNG Info", "pnginfo"),
+            (train_interface, "Train", "ti"),
+        ]
+    else:
+        interfaces = [
+            (txt2img_interface, "txt2img", "txt2img"),
+            (img2img_interface, "img2img", "img2img"),
+            (extras_interface, "Extras", "extras"),
+            (pnginfo_interface, "PNG Info", "pnginfo"),
+            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
+            (train_interface, "Train", "ti"),
+        ]
 
     css = ""
 
@@ -1776,35 +1893,36 @@ def create_ui(wrap_gradio_gpu_call):
             outputs=[component_dict[k] for k in component_keys],
         )
 
-        def modelmerger(*args):
-            try:
-                results = modules.extras.run_modelmerger(*args)
-            except Exception as e:
-                print("Error loading/saving model file:", file=sys.stderr)
-                print(traceback.format_exc(), file=sys.stderr)
-                modules.sd_models.list_models()  # to remove the potentially missing models from the list
-                return ["Error loading/saving model file. It doesn't exist or the name contains illegal characters"] + [gr.Dropdown.update(choices=modules.sd_models.checkpoint_tiles()) for _ in range(3)]
-            return results
+        if not cmd_opts.pureui:
+            def modelmerger(*args):
+                try:
+                    results = modules.extras.run_modelmerger(*args)
+                except Exception as e:
+                    print("Error loading/saving model file:", file=sys.stderr)
+                    print(traceback.format_exc(), file=sys.stderr)
+                    modules.sd_models.list_models()  # to remove the potentially missing models from the list
+                    return ["Error loading/saving model file. It doesn't exist or the name contains illegal characters"] + [gr.Dropdown.update(choices=modules.sd_models.checkpoint_tiles()) for _ in range(3)]
+                return results
 
-        modelmerger_merge.click(
-            fn=modelmerger,
-            inputs=[
-                primary_model_name,
-                secondary_model_name,
-                tertiary_model_name,
-                interp_method,
-                interp_amount,
-                save_as_half,
-                custom_name,
-            ],
-            outputs=[
-                submit_result,
-                primary_model_name,
-                secondary_model_name,
-                tertiary_model_name,
-                component_dict['sd_model_checkpoint'],
-            ]
-        )
+            modelmerger_merge.click(
+                fn=modelmerger,
+                inputs=[
+                    primary_model_name,
+                    secondary_model_name,
+                    tertiary_model_name,
+                    interp_method,
+                    interp_amount,
+                    save_as_half,
+                    custom_name,
+                ],
+                outputs=[
+                    submit_result,
+                    primary_model_name,
+                    secondary_model_name,
+                    tertiary_model_name,
+                    component_dict['sd_model_checkpoint'],
+                ]
+            )
 
     ui_config_file = cmd_opts.ui_config_file
     ui_settings = {}
@@ -1870,7 +1988,8 @@ def create_ui(wrap_gradio_gpu_call):
     visit(txt2img_interface, loadsave, "txt2img")
     visit(img2img_interface, loadsave, "img2img")
     visit(extras_interface, loadsave, "extras")
-    visit(modelmerger_interface, loadsave, "modelmerger")
+    if not cmd_opts.pureui:
+        visit(modelmerger_interface, loadsave, "modelmerger")
 
     if not error_loading and (not os.path.exists(ui_config_file) or settings_count != len(ui_settings)):
         with open(ui_config_file, "w", encoding="utf8") as file:

@@ -19,6 +19,8 @@ from modules import sd_samplers, sd_models, localization, sd_vae
 from modules.hypernetworks import hypernetwork
 from modules.paths import models_path, script_path, sd_path
 
+import requests
+
 sd_model_file = os.path.join(script_path, 'model.ckpt')
 default_sd_model_file = sd_model_file
 parser = argparse.ArgumentParser()
@@ -94,6 +96,10 @@ parser.add_argument("--pureui", action='store_true', help="Pure UI without local
 parser.add_argument("--train", action='store_true', help="Train only on SageMaker", default=False)
 parser.add_argument("--train-task", type=str, help='Train task - embedding or hypernetwork', default='embedding')
 parser.add_argument("--train-args", type=str, help='Train args', default='')
+parser.add_argument('--embeddings-s3uri', default='', type=str, help='Embedding S3Uri')
+parser.add_argument('--hypernetwork-s3uri', default='', type=str, help='Hypernetwork S3Uri')
+parser.add_argument('--industrial-model', default='', type=str, help='Industrial Model')
+parser.add_argument('--region-name', type=str, help='Region Name')
 
 cmd_opts = parser.parse_args()
 restricted_opts = {
@@ -253,6 +259,25 @@ hide_dirs = {"visible": not cmd_opts.hide_ui_dir_config}
 
 options_templates = {}
 
+options_templates.update(options_section(('sd', "Stable Diffusion"), {
+    "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, refresh=sd_models.list_models),
+    "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
+    "sd_vae": OptionInfo("auto", "SD VAE", gr.Dropdown, lambda: {"choices": list(sd_vae.vae_list)}, refresh=sd_vae.refresh_vae_list),
+    "sd_hypernetwork": OptionInfo("None", "Hypernetwork", gr.Dropdown, lambda: {"choices": ["None"] + [x for x in hypernetworks.keys()]}, refresh=reload_hypernetworks),
+    "sd_hypernetwork_strength": OptionInfo(1.0, "Hypernetwork strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.001}),
+    "inpainting_mask_weight": OptionInfo(1.0, "Inpainting conditioning mask strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
+    "img2img_color_correction": OptionInfo(False, "Apply color correction to img2img results to match original colors."),
+    "img2img_fix_steps": OptionInfo(False, "With img2img, do exactly the amount of steps the slider specifies (normally you'd do less with less denoising)."),
+    "enable_quantization": OptionInfo(False, "Enable quantization in K samplers for sharper and cleaner results. This may change existing seeds. Requires restart to apply."),
+    "enable_emphasis": OptionInfo(True, "Emphasis: use (text) to make model pay more attention to text and [text] to make it pay less attention"),
+    "use_old_emphasis_implementation": OptionInfo(False, "Use old emphasis implementation. Can be useful to reproduce old seeds."),
+    "enable_batch_seeds": OptionInfo(True, "Make K-diffusion samplers produce same images in a batch as when making a single image"),
+    "comma_padding_backtrack": OptionInfo(20, "Increase coherency by padding from the last comma within n tokens when using more than 75 tokens", gr.Slider, {"minimum": 0, "maximum": 74, "step": 1 }),
+    "filter_nsfw": OptionInfo(False, "Filter NSFW content"),
+    'CLIP_stop_at_last_layers': OptionInfo(1, "Stop At last layers of CLIP model", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}),
+    "random_artist_categories": OptionInfo([], "Allowed categories for random artists selection when using the Roll button", gr.CheckboxGroup, {"choices": artist_db.categories()}),
+}))
+
 options_templates.update(options_section(('saving-images', "Saving images/grids"), {
     "samples_save": OptionInfo(True, "Always save all generated images"),
     "samples_format": OptionInfo('png', 'File format for images'),
@@ -329,25 +354,6 @@ options_templates.update(options_section(('training', "Training"), {
     "training_image_repeats_per_epoch": OptionInfo(1, "Number of repeats for a single input image per epoch; used only for displaying epoch number", gr.Number, {"precision": 0}),
     "training_write_csv_every": OptionInfo(500, "Save an csv containing the loss to log directory every N steps, 0 to disable"),
     "training_xattention_optimizations": OptionInfo(False, "Use cross attention optimizations while training"),
-}))
-
-options_templates.update(options_section(('sd', "Stable Diffusion"), {
-    "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, refresh=sd_models.list_models),
-    "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
-    "sd_vae": OptionInfo("auto", "SD VAE", gr.Dropdown, lambda: {"choices": list(sd_vae.vae_list)}, refresh=sd_vae.refresh_vae_list),
-    "sd_hypernetwork": OptionInfo("None", "Hypernetwork", gr.Dropdown, lambda: {"choices": ["None"] + [x for x in hypernetworks.keys()]}, refresh=reload_hypernetworks),
-    "sd_hypernetwork_strength": OptionInfo(1.0, "Hypernetwork strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.001}),
-    "inpainting_mask_weight": OptionInfo(1.0, "Inpainting conditioning mask strength", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
-    "img2img_color_correction": OptionInfo(False, "Apply color correction to img2img results to match original colors."),
-    "img2img_fix_steps": OptionInfo(False, "With img2img, do exactly the amount of steps the slider specifies (normally you'd do less with less denoising)."),
-    "enable_quantization": OptionInfo(False, "Enable quantization in K samplers for sharper and cleaner results. This may change existing seeds. Requires restart to apply."),
-    "enable_emphasis": OptionInfo(True, "Emphasis: use (text) to make model pay more attention to text and [text] to make it pay less attention"),
-    "use_old_emphasis_implementation": OptionInfo(False, "Use old emphasis implementation. Can be useful to reproduce old seeds."),
-    "enable_batch_seeds": OptionInfo(True, "Make K-diffusion samplers produce same images in a batch as when making a single image"),
-    "comma_padding_backtrack": OptionInfo(20, "Increase coherency by padding from the last comma within n tokens when using more than 75 tokens", gr.Slider, {"minimum": 0, "maximum": 74, "step": 1 }),
-    "filter_nsfw": OptionInfo(False, "Filter NSFW content"),
-    'CLIP_stop_at_last_layers': OptionInfo(1, "Stop At last layers of CLIP model", gr.Slider, {"minimum": 1, "maximum": 12, "step": 1}),
-    "random_artist_categories": OptionInfo([], "Allowed categories for random artists selection when using the Roll button", gr.CheckboxGroup, {"choices": artist_db.categories()}),
 }))
 
 options_templates.update(options_section(('interrogate', "Interrogate Options"), {
@@ -465,6 +471,31 @@ class Options:
         if bad_settings > 0:
             print(f"The program is likely to not work with bad settings.\nSettings file: {filename}\nEither fix the file, or delete it and restart.", file=sys.stderr)
 
+        if cmd_opts.pureui:
+            opts.show_progressbar = False
+            api_endpoint = os.environ['api_endpoint']
+
+            if 'industrial_model' not in opts.data:
+                model_name = 'stable-diffusion-webui'
+                model_description = model_name
+                inputs = {
+                    'model_algorithm': 'stable-diffusion-webui',
+                    'model_name': model_name,
+                    'model_description': model_description,
+                    'model_extra': '{"visible": "false"}',
+                    'model_samples': '',
+                    'file_content': {
+                        'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
+                    }
+                }
+
+                response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+                if response.status_code == 200:
+                    body = json.loads(response.text)
+                    industrial_model = body['id']
+                    opts.data['industrial_model'] = industrial_model
+                    opts.save(config_filename)
+
     def onchange(self, key, func, call=True):
         item = self.data_labels.get(key)
         item.onchange = func
@@ -494,8 +525,6 @@ class Options:
 opts = Options()
 if os.path.exists(config_filename):
     opts.load(config_filename)
-if cmd_opts.pureui:
-    opts.show_progressbar = False
 
 sd_upscalers = []
 
@@ -505,6 +534,7 @@ clip_model = None
 
 progress_print_out = sys.stdout
 
+userid = ''
 
 class TotalTQDM:
     def __init__(self):

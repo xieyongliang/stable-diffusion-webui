@@ -14,6 +14,13 @@ from PIL import PngImagePlugin
 from modules.sd_models import checkpoints_list
 from modules.realesrgan_model import get_realesrgan_models
 from typing import List
+from modules.paths import script_path
+import json
+import os
+import boto3
+from modules import sd_hijack
+from typing import Union
+import traceback
 
 def upscaler_to_index(name: str):
     try:
@@ -77,8 +84,11 @@ class Api:
         self.app.add_api_route("/sdapi/v1/prompt-styles", self.get_promp_styles, methods=["GET"], response_model=List[PromptStyleItem])
         self.app.add_api_route("/sdapi/v1/artist-categories", self.get_artists_categories, methods=["GET"], response_model=List[str])
         self.app.add_api_route("/sdapi/v1/artists", self.get_artists, methods=["GET"], response_model=List[ArtistItem])
-        self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=InvocationsResponse)
+        self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[TextToImageResponse, ImageToImageResponse, ExtrasSingleImageResponse, ExtrasBatchImagesResponse, List[SDModelItem]])
         self.app.add_api_route("/ping", self.ping, methods=["GET"], response_model=PingResponse)
+        self.cache = dict()
+        self.s3_client = boto3.client('s3')
+        self.s3_resource= boto3.resource('s3')
 
     def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
         sampler_index = sampler_to_index(txt2imgreq.sampler_index)
@@ -166,10 +176,8 @@ class Api:
         reqDict = setUpscalers(req)
 
         reqDict['image'] = decode_base64_to_image(reqDict['image'])
-
         with self.queue_lock:
             result = run_extras(extras_mode=0, image_folder="", input_dir="", output_dir="", **reqDict)
-
         return ExtrasSingleImageResponse(image=encode_pil_to_base64(result[0][0]), html_info=result[1])
 
     def extras_batch_images_api(self, req: ExtrasBatchImagesRequest):
@@ -183,9 +191,9 @@ class Api:
         reqDict['image_folder'] = list(map(prepareFiles, reqDict['imageList']))
         reqDict.pop('imageList')
 
+
         with self.queue_lock:
             result = run_extras(extras_mode=1, image="", input_dir="", output_dir="", **reqDict)
-
         return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
 
     def pnginfoapi(self, req: PNGInfoRequest):
@@ -306,15 +314,60 @@ class Api:
     def get_artists(self):
         return [{"name":x[0], "score":x[1], "category":x[2]} for x in shared.artist_db.artists]
 
+    def download_s3files(self, s3uri, path):
+        pos = s3uri.find('/', 5)
+        bucket = s3uri[5 : pos]
+        key = s3uri[pos + 1 : ]
+
+        s3_bucket = self.s3_resource.Bucket(bucket)
+        objs = list(s3_bucket.objects.filter(Prefix=key))
+
+        if os.path.isfile('cache'):
+            self.cache = json.load(open('cache', 'r'))
+
+        for obj in objs:
+            response = self.s3_client.head_object(
+                Bucket = bucket,
+                Key =  obj.key
+            )
+            obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
+            if obj_key not in self.cache or self.cache[obj_key] != response['ETag']:
+                filename = obj.key[obj.key.rfind('/') + 1 : ]
+
+                self.s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
+                self.cache[obj_key] = response['ETag']
+
+        json.dump(self.cache, open('cache', 'w'))
+
     def invocations(self, req: InvocationsRequest):
-        if req.task == 'text-to-image':
-            return self.text2imgapi(req.payload)
-        elif req.task == 'image-to-image':
-            return self.img2imgapi(req.payload)
-        else:
-            raise NotImplementedError
+        print('-------invocation------')
+        print(req)
+
+        embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
+        hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
+
+        try:
+            if req.task == 'text-to-image':
+                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                return self.text2imgapi(req.txt2img_payload)
+            elif req.task == 'image-to-image':
+                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                return self.img2imgapi(req.img2img_payload)
+            elif req.task == 'extras-single-image':
+                return self.extras_single_image_api(req.extras_single_payload)
+            elif req.task == 'extras-batch-images':
+                return self.extras_batch_images_api(req.extras_batch_payload)
+            elif req.task == 'sd-models':
+                return self.get_sd_models()
+            else:
+                raise NotImplementedError
+        except Exception as e:
+            traceback.print_exc()
     
     def ping(self):
+        print('-------ping------')
         return {'status': 'Healthy'}
 
     def launch(self, server_name, port):
