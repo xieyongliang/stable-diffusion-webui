@@ -47,9 +47,6 @@ from PIL import Image, ImageOps, ImageChops
 queue_lock = threading.Lock()
 server_name = "0.0.0.0" if cmd_opts.listen else cmd_opts.server_name
 
-api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
-endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
-
 import boto3
 import traceback
 from botocore.exceptions import ClientError
@@ -88,7 +85,11 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         params = {'s3uri': s3uri}
         start = time.time()
         while True:
-            response = requests.get(url=f'{api_endpoint}/s3', params = params)
+            if shared.state.interrupted or shared.state.skipped:
+                shared.job_count = 0
+                return None
+            
+            response = requests.get(url=f'{shared.api_endpoint}/s3', params = params)
             text = json.loads(response.text)
 
             if text['count'] > 0:
@@ -166,7 +167,8 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 }
                 inputs = {
                     'task': task,
-                    'txt2img_payload': payload
+                    'txt2img_payload': payload,
+                    'username': shared.username
                 }
             else:
                 mode = args[0]
@@ -279,19 +281,23 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 }
                 inputs = {
                     'task': task,
-                    'img2img_payload': payload
+                    'img2img_payload': payload,
+                    'username': shared.username
                 }
 
             params = {
-                'endpoint_name': endpoint_name
+                'endpoint_name': shared.endpoint_name
             }
 
-            response = requests.post(url=f'{api_endpoint}/inference', params=params, json=inputs)
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
             if infer == 'async':
                 processed = handle_sagemaker_inference_async(response)
             else:
                 processed = json.loads(response.text)
 
+            if processed == None:
+                return [], "", ""
+                
             images = []
             for image in processed['images']:
                 images.append(Image.open(io.BytesIO(base64.b64decode(image))))
@@ -341,7 +347,8 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 task = 'extras-single-image'
                 inputs = {
                     'task': task,
-                    'extras_single_payload': payload
+                    'extras_single_payload': payload,
+                    'username': shared.username
                 }
             else:
                 imageList = []
@@ -372,13 +379,14 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 task = 'extras-batch-images'
                 inputs = {
                     'task': task,
-                    'extras_batch_payload': payload
+                    'extras_batch_payload': payload,
+                    'username': shared.username
                 }
 
             params = {
-                'endpoint_name': endpoint_name
+                'endpoint_name': shared.endpoint_name
             }
-            response = requests.post(url=f'{api_endpoint}/inference', params=params, json=inputs)
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
             if infer == 'async':
                 processed = handle_sagemaker_inference_async(response)
             else:
@@ -572,7 +580,23 @@ def train():
     train_args = json.loads(cmd_opts.train_args)
 
     embeddings_s3uri = cmd_opts.embeddings_s3uri
-    hypernetworks_s3uri = cmd_opts.hypernetworks_s3uri
+    hypernetwork_s3uri = cmd_opts.hypernetwork_s3uri
+    api_endpoint = cmd_opts.api_endpoint   
+    username = cmd_opts.username
+
+    default_options = opts.data
+    if username != '':
+        inputs = {
+            'action': 'get',
+            'username': username
+        }
+        response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+        if response.status_code == 200 and response.text != '':
+            opts.data = json.loads(response.text)
+            for key in modules.sd_models.checkpoints_list:
+                if modules.sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
+                    shared.sd_model.sd_model_name = modules.sd_models.checkpoints_list[key].model_name
+                    break
 
     if train_task == 'embedding':
         name = train_args['embedding_settings']['name']
@@ -622,9 +646,9 @@ def train():
             process_focal_crop_debug,
         )
         train_embedding_name = name
-        embedding_learn_rate = train_args['train_embedding_settings']['embedding_learn_rate']
+        learn_rate = train_args['train_embedding_settings']['learn_rate']
         batch_size = train_args['train_embedding_settings']['batch_size']
-        dataset_directory = process_dst
+        data_root = process_dst
         log_directory = 'textual_inversion'
         training_width = train_args['train_embedding_settings']['training_width']
         training_height = train_args['train_embedding_settings']['training_height']
@@ -637,9 +661,9 @@ def train():
         txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
         _, filename = modules.textual_inversion.textual_inversion.train_embedding(
             train_embedding_name,
-            embedding_learn_rate,
+            learn_rate,
             batch_size,
-            dataset_directory,
+            data_root,
             log_directory,
             training_width,
             training_height,
@@ -656,6 +680,7 @@ def train():
         except Exception as e:
             traceback.print_exc()
             print(e)
+        opts.data = default_options
     elif train_task == 'hypernetwork':
         name = train_args['hypernetwork_settings']['name']
         enable_sizes = train_args['hypernetwork_settings']['enable_sizes']
@@ -668,7 +693,7 @@ def train():
         
         name = "".join( x for x in name if (x.isalnum() or x in "._- "))
 
-        fn = os.path.join(shared.cmd_opts.hypernetwork_dir, f"{name}.pt")
+        fn = os.path.join(cmd_opts.hypernetwork_dir, f"{name}.pt")
         if not overwrite_old:
             assert not os.path.exists(fn), f"file {fn} already exists"
 
@@ -721,22 +746,22 @@ def train():
             process_focal_crop_debug,
         )
         train_hypernetwork_name = name
-        embedding_learn_rate = train_args['train_embedding_settings']['embedding_learn_rate']
-        batch_size = train_args['train_embedding_settings']['batch_size']
+        learn_rate = train_args['train_hypernetwork_settings']['learn_rate']
+        batch_size = train_args['train_hypernetwork_settings']['batch_size']
         dataset_directory = process_dst
         log_directory = 'textual_inversion'
-        training_width = train_args['train_embedding_settings']['training_width']
-        training_height = train_args['train_embedding_settings']['training_height']
-        steps = train_args['train_embedding_settings']['steps']
-        create_image_every = train_args['train_embedding_settings']['create_image_every']
-        save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
-        template_file = 'style_filewords.txt'
-        save_image_with_stored_embedding = train_args['train_embedding_settings']['save_image_with_stored_embedding']
-        preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
-        txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
-        _, filename = modules.textual_inversion.textual_inversion.train_embedding(
+        training_width = train_args['train_hypernetwork_settings']['training_width']
+        training_height = train_args['train_hypernetwork_settings']['training_height']
+        steps = train_args['train_hypernetwork_settings']['steps']
+        create_image_every = train_args['train_hypernetwork_settings']['create_image_every']
+        save_hypernetwork_every = train_args['train_hypernetwork_settings']['save_embedding_every']
+        template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
+        save_image_with_stored_embedding = train_args['train_hypernetwork_settings']['save_image_with_stored_embedding']
+        preview_from_txt2img = train_args['train_hypernetwork_settings']['preview_from_txt2img']
+        txt2img_preview_params = train_args['train_hypernetwork_settings']['txt2img_preview_params']        
+        _, filename = modules.hypernetworks.hypernetwork.train_hypernetwork(
             train_hypernetwork_name,
-            embedding_learn_rate,
+            learn_rate,
             batch_size,
             dataset_directory,
             log_directory,
@@ -744,17 +769,17 @@ def train():
             training_height,
             steps,
             create_image_every,
-            save_embedding_every,
+            save_hypernetwork_every,
             template_file,
-            save_image_with_stored_embedding,
             preview_from_txt2img,
             *txt2img_preview_params
         )
         try:
-            upload_s3file(hypernetworks_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)), '{0}.pt'.format(train_hypernetwork_name))
+            upload_s3file(hypernetwork_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)), '{0}.pt'.format(train_hypernetwork_name))
         except Exception as e:
             traceback.print_exc()
             print(e)
+        opts.data = default_options
     else:
         print('Incorrect training task')
         exit(-1)

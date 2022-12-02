@@ -15,9 +15,6 @@ from modules.sd_hijack_inpainting import do_inpainting_hijack, should_hijack_inp
 import requests
 import json
 
-api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
-endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
-
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(models_path, model_dir))
 
@@ -53,18 +50,41 @@ def list_models():
     checkpoints_list.clear()
 
     if shared.cmd_opts.pureui:
+        api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
+        endpoint_name = os.environ['endpoint_name'] if 'endpoint_name' in os.environ else ''
+        class SDModel:
+            def __init__(self, sd_model_name, sd_model_hash, sd_model_checkpoint, sd_checkpoint_info):
+                self.sd_model_name = sd_model_name
+                self.sd_model_hash = sd_model_hash
+                self.sd_model_checkpoint = sd_model_checkpoint
+                self.sd_checkpoint_info = sd_checkpoint_info
+
         response = requests.get(url=f'{api_endpoint}/sd/models')
-        model_list = json.loads(response.text)
+        if response.status_code == 200:
+            model_list = json.loads(response.text)
 
-        for model in model_list:
-            h = model['hash']
-            filename = model['filename']
-            title = model['title']
-            short_model_name = model['model_name']
-            config = model['config']
+            for model in model_list:
+                h = model['hash']
+                filename = model['filename']
+                title = model['title']
+                short_model_name = model['model_name']
+                config = model['config']
 
-            checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
-
+                if 'sd_model_checkpoint' not in shared.opts.data:
+                    shared.opts.data['sd_model_checkpoint'] = title
+                
+                checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
+            
+            sd_model_checkpoint = shared.opts.data['sd_model_checkpoint']
+            sd_checkpoint_info = checkpoints_list[sd_model_checkpoint]
+            sd_model_name = checkpoints_list[sd_model_checkpoint].model_name
+            sd_model_hash = checkpoints_list[sd_model_checkpoint].hash
+            shared.sd_model = SDModel(
+                sd_model_name,
+                sd_model_hash,
+                sd_model_checkpoint,
+                sd_checkpoint_info
+            )
     else:
         model_list = modelloader.load_models(model_path=model_path, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt"])
 

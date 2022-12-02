@@ -18,9 +18,10 @@ from modules.paths import script_path
 import json
 import os
 import boto3
-from modules import sd_hijack
+from modules import sd_hijack, hypernetworks
 from typing import Union
 import traceback
+import requests
 
 def upscaler_to_index(name: str):
     try:
@@ -347,18 +348,42 @@ class Api:
         hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
         try:
+            username = req.username
+            default_options = shared.opts.data
+            if username != '':
+                inputs = {
+                    'action': 'get',
+                    'username': username
+                }
+                api_endpoint = os.environ['api_endpoint']
+                response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+                if response.status_code == 200 and response.text != '':
+                    shared.opts.data = json.loads(response.text)
+
+                self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
+                hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)
+                hypernetworks.hypernetwork.apply_strength()
+            
             if req.task == 'text-to-image':
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                return self.text2imgapi(req.txt2img_payload)
+                response = self.text2imgapi(req.txt2img_payload)
+                shared.opts.data = default_options
+                return response
             elif req.task == 'image-to-image':
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                return self.img2imgapi(req.img2img_payload)
+                response = self.img2imgapi(req.img2img_payload)
+                shared.opts.data = default_options
+                return response                
             elif req.task == 'extras-single-image':
-                return self.extras_single_image_api(req.extras_single_payload)
+                response = self.extras_single_image_api(req.extras_single_payload)
+                shared.opts.data = default_options                
+                return response
             elif req.task == 'extras-batch-images':
-                return self.extras_batch_images_api(req.extras_batch_payload)
+                response = self.extras_batch_images_api(req.extras_batch_payload)
+                shared.opts.data = default_options                
+                return response                
             elif req.task == 'sd-models':
                 return self.get_sd_models()
             else:

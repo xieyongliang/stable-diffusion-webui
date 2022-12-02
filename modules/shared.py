@@ -98,8 +98,9 @@ parser.add_argument("--train-task", type=str, help='Train task - embedding or hy
 parser.add_argument("--train-args", type=str, help='Train args', default='')
 parser.add_argument('--embeddings-s3uri', default='', type=str, help='Embedding S3Uri')
 parser.add_argument('--hypernetwork-s3uri', default='', type=str, help='Hypernetwork S3Uri')
-parser.add_argument('--industrial-model', default='', type=str, help='Industrial Model')
 parser.add_argument('--region-name', type=str, help='Region Name')
+parser.add_argument('--username', default='', type=str, help='Username')
+parser.add_argument('--api-endpoint', default='', type=str, help='API Endpoint')
 
 cmd_opts = parser.parse_args()
 restricted_opts = {
@@ -130,6 +131,14 @@ config_filename = cmd_opts.ui_settings_file
 os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = hypernetwork.list_hypernetworks(cmd_opts.hypernetwork_dir)
 loaded_hypernetwork = None
+
+if cmd_opts.pureui:
+    username = ''
+    api_endpoint = os.environ['api_endpoint']
+    industrial_model = ''
+    endpoint_name = ''
+    endpoint_names = []
+    default_options = {}
 
 def reload_hypernetworks():
     global hypernetworks
@@ -472,10 +481,13 @@ class Options:
             print(f"The program is likely to not work with bad settings.\nSettings file: {filename}\nEither fix the file, or delete it and restart.", file=sys.stderr)
 
         if cmd_opts.pureui:
-            opts.show_progressbar = False
-            api_endpoint = os.environ['api_endpoint']
+            global api_endpoint, industrial_model, default_options
 
-            if 'industrial_model' not in opts.data:
+            #opts.show_progressbar = False
+            response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
+            if response.status_code == 200:
+                industrial_model = response.text            
+            else:
                 model_name = 'stable-diffusion-webui'
                 model_description = model_name
                 inputs = {
@@ -493,8 +505,8 @@ class Options:
                 if response.status_code == 200:
                     body = json.loads(response.text)
                     industrial_model = body['id']
-                    opts.data['industrial_model'] = industrial_model
-                    opts.save(config_filename)
+
+            default_options = self.data
 
     def onchange(self, key, func, call=True):
         item = self.data_labels.get(key)
@@ -533,8 +545,6 @@ sd_model = None
 clip_model = None
 
 progress_print_out = sys.stdout
-
-userid = ''
 
 class TotalTQDM:
     def __init__(self):
@@ -577,3 +587,18 @@ mem_mon.start()
 def listfiles(dirname):
     filenames = [os.path.join(dirname, x) for x in sorted(os.listdir(dirname)) if not x.startswith(".")]
     return [file for file in filenames if os.path.isfile(file)]
+
+if cmd_opts.pureui:
+    def init_endpoints():    
+        global endpoint_name, endpoint_names, industrial_model, api_endpoint
+
+        endpoints = []
+        params = {
+            'industrial_model': industrial_model
+        }
+        response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
+        if response.status_code == 200:
+            for endpoint_item in json.loads(response.text):
+                endpoints.append(endpoint_item['EndpointName'])
+            endpoint_name = endpoints[0] if len(endpoints) > 0 else ''
+            endpoint_names = endpoints
