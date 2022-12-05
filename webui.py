@@ -286,7 +286,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 }
 
             params = {
-                'endpoint_name': shared.endpoint_name
+                'endpoint_name': shared.opts.sagemaker_endpoint
             }
 
             response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
@@ -384,7 +384,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 }
 
             params = {
-                'endpoint_name': shared.endpoint_name
+                'endpoint_name': shared.opts.sagemaker_endpoint
             }
             response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
             if infer == 'async':
@@ -440,6 +440,7 @@ def initialize():
     modules.scripts.load_scripts()
 
     modules.sd_vae.refresh_vae_list()
+
     shared.opts.onchange("sd_vae", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
 
     if not cmd_opts.pureui:
@@ -593,10 +594,7 @@ def train():
         response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
         if response.status_code == 200 and response.text != '':
             opts.data = json.loads(response.text)
-            for key in modules.sd_models.checkpoints_list:
-                if modules.sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
-                    shared.sd_model.sd_model_name = modules.sd_models.checkpoints_list[key].model_name
-                    break
+            modules.sd_models.load_model()
 
     if train_task == 'embedding':
         name = train_args['embedding_settings']['name']

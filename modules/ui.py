@@ -2331,36 +2331,6 @@ def create_ui(wrap_gradio_gpu_call):
                 component = create_setting_component(k, is_quicksettings=True)
                 component_dict[k] = component
 
-        if cmd_opts.pureui:
-            shared.init_endpoints()
-            
-            with gr.Row():
-                with gr.Column(scale=9):
-                    endpoint_names = gr.Dropdown(label='SageMaker endpoint', value=shared.endpoint_name, choices=shared.endpoint_names)
-                with gr.Column(scale=1):
-                    endpoint_refresh = gr.Button(refresh_symbol)
-
-            def refresh_endpoint():
-                shared.init_endpoints()
-                return {
-                    endpoint_names: gr.update(value=shared.endpoint_name, choices=shared.endpoint_names)
-                }
-                
-            def change_endpoint(endpoint_names):
-                shared.endpoint_name = endpoint_names
-
-            endpoint_names.change(
-                fn=change_endpoint,
-                inputs=[endpoint_names],
-                outputs=[]
-            )
-            
-            endpoint_refresh.click(
-                fn=refresh_endpoint,
-                inputs=[],
-                outputs=[endpoint_names]
-            )
-
         parameters_copypaste.integrate_settings_paste_fields(component_dict)
         parameters_copypaste.run_bind()
 

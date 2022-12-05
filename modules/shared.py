@@ -136,8 +136,6 @@ if cmd_opts.pureui:
     username = ''
     api_endpoint = os.environ['api_endpoint']
     industrial_model = ''
-    endpoint_name = ''
-    endpoint_names = []
     default_options = {}
 
 def reload_hypernetworks():
@@ -268,7 +266,49 @@ hide_dirs = {"visible": not cmd_opts.hide_ui_dir_config}
 
 options_templates = {}
 
+def refresh_sagemaker_endpoints():
+    global industrial_model, api_endpoint, default_options
+
+    if industrial_model == '':
+        response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
+        if response.status_code == 200:
+            industrial_model = response.text
+        else:
+            model_name = 'stable-diffusion-webui'
+            model_description = model_name
+            inputs = {
+                'model_algorithm': 'stable-diffusion-webui',
+                'model_name': model_name,
+                'model_description': model_description,
+                'model_extra': '{"visible": "false"}',
+                'model_samples': '',
+                'file_content': {
+                        'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
+                }
+            }
+
+            response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+            if response.status_code == 200:
+                body = json.loads(response.text)
+                industrial_model = body['id']
+
+            default_options = self.data
+
+    sagemaker_endpoints = []
+
+    if industrial_model != '':
+        params = {
+            'industrial_model': industrial_model
+        }
+        response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
+        if response.status_code == 200:
+            for endpoint_item in json.loads(response.text):
+                sagemaker_endpoints.append(endpoint_item['EndpointName'])
+
+    return sagemaker_endpoints
+
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
+    "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": refresh_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, refresh=sd_models.list_models),
     "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
     "sd_vae": OptionInfo("auto", "SD VAE", gr.Dropdown, lambda: {"choices": list(sd_vae.vae_list)}, refresh=sd_vae.refresh_vae_list),
@@ -393,7 +433,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "js_modal_lightbox": OptionInfo(True, "Enable full page image viewer"),
     "js_modal_lightbox_initially_zoomed": OptionInfo(True, "Show images zoomed in by default in full page image viewer"),
     "show_progress_in_title": OptionInfo(True, "Show generation progress in window title."),
-    'quicksettings': OptionInfo("sd_model_checkpoint", "Quicksettings list"),
+    'quicksettings': OptionInfo("sagemaker_endpoint", "Quicksettings list"),
     'localization': OptionInfo("None", "Localization (requires restart)", gr.Dropdown, lambda: {"choices": ["None"] + list(localization.localizations.keys())}, refresh=lambda: localization.list_localizations(cmd_opts.localizations_dir)),
 }))
 
@@ -480,34 +520,6 @@ class Options:
         if bad_settings > 0:
             print(f"The program is likely to not work with bad settings.\nSettings file: {filename}\nEither fix the file, or delete it and restart.", file=sys.stderr)
 
-        if cmd_opts.pureui:
-            global api_endpoint, industrial_model, default_options
-
-            #opts.show_progressbar = False
-            response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
-            if response.status_code == 200:
-                industrial_model = response.text            
-            else:
-                model_name = 'stable-diffusion-webui'
-                model_description = model_name
-                inputs = {
-                    'model_algorithm': 'stable-diffusion-webui',
-                    'model_name': model_name,
-                    'model_description': model_description,
-                    'model_extra': '{"visible": "false"}',
-                    'model_samples': '',
-                    'file_content': {
-                        'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
-                    }
-                }
-
-                response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
-                if response.status_code == 200:
-                    body = json.loads(response.text)
-                    industrial_model = body['id']
-
-            default_options = self.data
-
     def onchange(self, key, func, call=True):
         item = self.data_labels.get(key)
         item.onchange = func
@@ -587,18 +599,3 @@ mem_mon.start()
 def listfiles(dirname):
     filenames = [os.path.join(dirname, x) for x in sorted(os.listdir(dirname)) if not x.startswith(".")]
     return [file for file in filenames if os.path.isfile(file)]
-
-if cmd_opts.pureui:
-    def init_endpoints():    
-        global endpoint_name, endpoint_names, industrial_model, api_endpoint
-
-        endpoints = []
-        params = {
-            'industrial_model': industrial_model
-        }
-        response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
-        if response.status_code == 200:
-            for endpoint_item in json.loads(response.text):
-                endpoints.append(endpoint_item['EndpointName'])
-            endpoint_name = endpoints[0] if len(endpoints) > 0 else ''
-            endpoint_names = endpoints

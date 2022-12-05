@@ -311,6 +311,8 @@ def reload_model_weights(sd_model=None, info=None):
     if not sd_model:
         sd_model = shared.sd_model
 
+    print('Origin checkpoint: ', sd_model.sd_model_checkpoint)
+    print('Current checkpoint: ', checkpoint_info.filename)
     if sd_model.sd_model_checkpoint == checkpoint_info.filename:
         return
 

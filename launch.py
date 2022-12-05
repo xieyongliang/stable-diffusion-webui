@@ -149,6 +149,7 @@ def prepare_enviroment():
     sys.argv += shlex.split(commandline_args)
     test_argv = [x for x in sys.argv if x != '--tests']
 
+    sys.argv, skip_torch_cuda = extract_arg(sys.argv, '--skip-torch-cuda')
     sys.argv, skip_torch_cuda_test = extract_arg(sys.argv, '--skip-torch-cuda-test')
     sys.argv, reinstall_xformers = extract_arg(sys.argv, '--reinstall-xformers')
     sys.argv, update_check = extract_arg(sys.argv, '--update-check')
@@ -164,11 +165,11 @@ def prepare_enviroment():
 
     print(f"Python {sys.version}")
     print(f"Commit hash: {commit}")
-    
-    if not is_installed("torch") or not is_installed("torchvision"):
+
+    if not skip_torch_cuda and (not is_installed("torch") or not is_installed("torchvision")):
         run(f'"{python}" -m {torch_command}', "Installing torch and torchvision", "Couldn't install torch")
 
-    if not skip_torch_cuda_test:
+    if not skip_torch_cuda and not skip_torch_cuda_test:
         run_python("import torch; assert torch.cuda.is_available(), 'Torch is not able to use GPU; add --skip-torch-cuda-test to COMMANDLINE_ARGS variable to disable this check'")
 
     if not is_installed("gfpgan"):
@@ -206,7 +207,7 @@ def prepare_enviroment():
     if not is_installed("lpips"):
         run_pip(f"install -r {os.path.join(repo_dir('CodeFormer'), 'requirements.txt')}", "requirements for CodeFormer")
 
-    run_pip(f"install -r {requirements_file}", "requirements for Web UI")
+    #run_pip(f"install -r {requirements_file}", "requirements for Web UI")
 
     run_extensions_installers()
 
