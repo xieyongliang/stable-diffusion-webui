@@ -74,17 +74,20 @@ def list_models():
                     shared.opts.data['sd_model_checkpoint'] = title
                 
                 checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
-            
+
             sd_model_checkpoint = shared.opts.data['sd_model_checkpoint']
-            sd_checkpoint_info = checkpoints_list[sd_model_checkpoint]
-            sd_model_name = checkpoints_list[sd_model_checkpoint].model_name
-            sd_model_hash = checkpoints_list[sd_model_checkpoint].hash
-            shared.sd_model = SDModel(
-                sd_model_name,
-                sd_model_hash,
-                sd_model_checkpoint,
-                sd_checkpoint_info
-            )
+            if sd_model_checkpoint:
+                sd_checkpoint_info = checkpoints_list[sd_model_checkpoint]
+                sd_model_name = checkpoints_list[sd_model_checkpoint].model_name
+                sd_model_hash = checkpoints_list[sd_model_checkpoint].hash
+                shared.sd_model = SDModel(
+                    sd_model_name,
+                    sd_model_hash,
+                    sd_model_checkpoint,
+                    sd_checkpoint_info
+                )
+            else:
+                shared.sd_model = None
     else:
         model_list = modelloader.load_models(model_path=model_path, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt"])
 

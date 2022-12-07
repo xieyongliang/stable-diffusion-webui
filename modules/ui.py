@@ -2172,14 +2172,15 @@ def create_ui(wrap_gradio_gpu_call):
                 return {
                     signup_output: gr.update(value='Signup failed, please check and retry again')
                 }                    
-                
+
         def user_signout():
             shared.username=''
             opts.data = shared.default_options
-            for key in sd_models.checkpoints_list:
-                if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
-                    shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
-                    break            
+            if 'sd_model_checkpoint' in opts.data:
+                for key in sd_models.checkpoints_list:
+                    if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
+                        shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
+                        break            
 
             response = {
                 user_login_row : gr.update(visible=False),
