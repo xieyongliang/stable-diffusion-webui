@@ -3,6 +3,15 @@
 # Please do not make any changes to this file,  #
 # change the variables in webui-user.sh instead #
 #################################################
+
+# If run from macOS, load defaults from webui-macos-env.sh
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    if [[ -f webui-macos-env.sh ]]
+        then
+        source ./webui-macos-env.sh
+    fi
+fi
+
 # Read variables from webui-user.sh
 # shellcheck source=/dev/null
 if [[ -f webui-user.sh ]]
@@ -46,6 +55,18 @@ then
     LAUNCH_SCRIPT="launch.py"
 fi
 
+# this script cannot be run as root by default
+can_run_as_root=0
+
+# read any command line flags to the webui.sh script
+while getopts "f" flag > /dev/null 2>&1
+do
+    case ${flag} in
+        f) can_run_as_root=1;;
+        *) break;;
+    esac
+done
+
 # Disable sentry logging
 export ERROR_REPORTING=FALSE
 
@@ -60,7 +81,7 @@ printf "\e[1m\e[32mInstall script for stable-diffusion + Web UI\n"
 printf "\e[1m\e[34mTested on Debian 11 (Bullseye)\e[0m"
 printf "\n%s\n" "${delimiter}"
 
-if [ -f .git -o -d .git ]
+if [[ -d .git ]]
 then
     printf "\n%s\n" "${delimiter}"
     printf "Repo already cloned, using it as install directory"
@@ -93,7 +114,6 @@ cd "${install_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/, aborting...
 if [[ -d "${clone_dir}" ]]
 then
     cd "${clone_dir}"/ || { printf "\e[1m\e[31mERROR: Can't cd to %s/%s/, aborting...\e[0m" "${install_dir}" "${clone_dir}"; exit 1; }
-    "${GIT}" pull
 else
     printf "\n%s\n" "${delimiter}"
     printf "Clone stable-diffusion-webui"
@@ -123,6 +143,19 @@ else
 fi
 
 printf "\n%s\n" "${delimiter}"
-printf "Launching launch.py..."
+printf "Installing requirements for Web UI..."
 printf "\n%s\n" "${delimiter}"
-"${python_cmd}" "${LAUNCH_SCRIPT}" "$@"
+pip install -r requirements_versions.txt
+
+if [[ ! -z "${ACCELERATE}" ]] && [ ${ACCELERATE}="True" ] && [ -x "$(command -v accelerate)" ]
+then
+    printf "\n%s\n" "${delimiter}"
+    printf "Accelerating launch.py..."
+    printf "\n%s\n" "${delimiter}"
+    accelerate launch --num_cpu_threads_per_process=6 "${LAUNCH_SCRIPT}" "$@"
+else
+    printf "\n%s\n" "${delimiter}"
+    printf "Launching launch.py..."
+    printf "\n%s\n" "${delimiter}"
+    "${python_cmd}" "${LAUNCH_SCRIPT}" "$@"
+fi
