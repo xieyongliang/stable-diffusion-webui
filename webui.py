@@ -229,7 +229,7 @@ def train():
 
     embeddings_s3uri = cmd_opts.embeddings_s3uri
     hypernetwork_s3uri = cmd_opts.hypernetwork_s3uri
-    api_endpoint = cmd_opts.api_endpoint   
+    api_endpoint = cmd_opts.api_endpoint
     username = cmd_opts.username
 
     default_options = opts.data
