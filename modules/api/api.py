@@ -362,6 +362,8 @@ class Api:
             self.cache = json.load(open('cache', 'r'))
 
         for obj in objs:
+            if obj.key == key:
+                continue
             response = self.s3_client.head_object(
                 Bucket = bucket,
                 Key =  obj.key
