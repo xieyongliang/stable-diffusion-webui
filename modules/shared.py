@@ -310,7 +310,7 @@ def refresh_sagemaker_endpoints():
                 body = json.loads(response.text)
                 industrial_model = body['id']
 
-            default_options = self.data
+            default_options = opts.data
 
     sagemaker_endpoints = []
 
