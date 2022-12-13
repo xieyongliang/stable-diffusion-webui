@@ -142,11 +142,6 @@ else
     exit 1
 fi
 
-printf "\n%s\n" "${delimiter}"
-printf "Installing requirements for Web UI..."
-printf "\n%s\n" "${delimiter}"
-pip install -r requirements_versions.txt
-
 if [[ ! -z "${ACCELERATE}" ]] && [ ${ACCELERATE}="True" ] && [ -x "$(command -v accelerate)" ]
 then
     printf "\n%s\n" "${delimiter}"
