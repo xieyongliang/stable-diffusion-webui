@@ -396,6 +396,7 @@ class Api:
                 response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
                 if response.status_code == 200 and response.text != '':
                     shared.opts.data = json.loads(response.text)
+                    sd_models.load_model()
                     sd_models.reload_model_weights()
 
                 self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
