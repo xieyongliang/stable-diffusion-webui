@@ -20,6 +20,8 @@ from torch.nn.init import normal_, xavier_normal_, xavier_uniform_, kaiming_norm
 
 from collections import defaultdict, deque
 from statistics import stdev, mean
+import requests
+import json
 
 
 optimizer_dict = {optim_name : cls_obj for optim_name, cls_obj in inspect.getmembers(torch.optim, inspect.isclass) if optim_name != "Optimizer"}
@@ -255,11 +257,21 @@ class Hypernetwork:
 
 def list_hypernetworks(path):
     res = {}
-    for filename in sorted(glob.iglob(os.path.join(path, '**/*.pt'), recursive=True)):
-        name = os.path.splitext(os.path.basename(filename))[0]
-        # Prevent a hypothetical "None.pt" from being listed.
-        if name != "None":
-            res[name + f"({sd_models.model_hash(filename)})"] = filename
+    if shared.cmd_opts.pureui:
+        response = requests.get(f'{shared.api_endpoint}/sd/hypernetwork')
+        if response.status_code == 200:
+            hypernetwork_names = json.loads(response.text)
+            for hypernetwork_name in sorted(hypernetwork_names):
+                filename = 'f{hypernetwork_name}.pt'
+                # Prevent a hypothetical "None.pt" from being listed.
+                if not hypernetwork_name.startswith("None"):
+                    res[hypernetwork_name] = filename
+    else:
+        for filename in sorted(glob.iglob(os.path.join(path, '**/*.pt'), recursive=True)):
+            name = os.path.splitext(os.path.basename(filename))[0]
+            # Prevent a hypothetical "None.pt" from being listed.
+            if name != "None":
+                res[name + f"({sd_models.model_hash(filename)})"] = filename
     return res
 
 

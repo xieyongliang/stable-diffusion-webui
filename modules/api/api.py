@@ -413,14 +413,14 @@ class Api:
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
                 shared.opts.data = default_options
-                return response                
+                return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                shared.opts.data = default_options                
+                shared.opts.data = default_options
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                shared.opts.data = default_options                
+                shared.opts.data = default_options
                 return response                
             elif req.task == 'sd-models':
                 return self.get_sd_models()
