@@ -45,16 +45,16 @@ if cmd_opts.pureui:
     training_instance_types = [
         'ml.p2.xlarge',
         'ml.p2.8xlarge',
-        'ml.p2.16xlarge', 
+        'ml.p2.16xlarge',
         'ml.p3.2xlarge',
         'ml.p3.8xlarge',
         'ml.p3.16xlarge',
         'ml.g4dn.xlarge',
         'ml.g4dn.2xlarge',
-        'ml.g4dn.4xlarge', 
-        'ml.g4dn.8xlarge', 
-        'ml.g4dn.12xlarge', 
-        'ml.g4dn.16xlarge'  
+        'ml.g4dn.4xlarge',
+        'ml.g4dn.8xlarge',
+        'ml.g4dn.12xlarge',
+        'ml.g4dn.16xlarge'
     ]
 
 # this is a fix for Windows users. Without it, javascript files will be served with text/html content-type and the browser will not show any UI

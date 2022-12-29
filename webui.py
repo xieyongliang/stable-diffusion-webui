@@ -42,6 +42,13 @@ import requests
 import io
 import json
 import uuid
+from extensions.sd_dreambooth_extension.dreambooth.db_config import DreamboothConfig, sanitize_name
+from extensions.sd_dreambooth_extension.dreambooth.sd_to_diff import extract_checkpoint
+from extensions.sd_dreambooth_extension.dreambooth.dreambooth import start_training_from_config
+from extensions.sd_dreambooth_extension.dreambooth.dreambooth import performance_wizard, training_wizard
+from extensions.sd_dreambooth_extension.dreambooth.db_config import from_file
+from modules import paths
+import glob
 
 if cmd_opts.server_name:
     server_name = cmd_opts.server_name
@@ -134,6 +141,31 @@ def api_only():
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     api = create_api(app)
 
+    ckpt_dir = cmd_opts.ckpt_dir
+    sd_models_path = os.path.join(shared.models_path, "Stable-diffusion")
+    if ckpt_dir is not None:
+        sd_models_path = ckpt_dir
+
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in os.listdir(sd_models_path):
+            if os.path.isfile(os.path.join(sd_models_path, file)) and file.endswith('.ckpt'):
+                hash = modules.sd_models.model_hash(os.path.join(sd_models_path, file))
+                item = {}
+                item['model_name'] = file
+                item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
+                item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
+                item['hash'] = hash
+                item['title'] = '{0} [{1}]'.format(file, hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+        inputs = {
+            'items': items
+        }
+        response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs)
+
     modules.script_callbacks.app_started_callback(None, app)
 
     @app.exception_handler(RequestValidationError)
@@ -221,6 +253,41 @@ def upload_s3file(s3uri, file_path, file_name):
         return False
     return True
 
+def upload_s3files(s3uri, file_path_with_pattern):
+    s3_client = boto3.client('s3', region_name = cmd_opts.region_name)
+
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    for file_name in glob.glob(file_path_with_pattern):
+        binary = io.BytesIO(open(file_name, 'rb').read())
+        key = key + file_name
+        try:
+            s3_client.upload_fileobj(binary, bucket, key)
+        except ClientError as e:
+            print(e)
+            return False
+    return True
+
+def upload_s3folder(s3uri, file_path):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+
+    s3_resource = boto3.resource('s3')
+    s3_bucket = s3_resource.Bucket(bucket)
+
+    try:
+        for path, _, files in os.walk(file_path):
+            for file in files:
+                dest_path = path.replace(file_path,"")
+                __s3file = os.path.normpath(s3uri + dest_path + '/' + file)
+                __local_file = os.path.join(path, file)
+                print(__local_file, __s3file)
+                s3_bucket.upload_file(__local_file, __s3file)
+    except Exception as e:
+        print(e)
+
 def train():
     initialize()
 
@@ -229,6 +296,8 @@ def train():
 
     embeddings_s3uri = cmd_opts.embeddings_s3uri
     hypernetwork_s3uri = cmd_opts.hypernetwork_s3uri
+    sd_models_s3uri = cmd_opts.sd_models_s3uri
+    db_models_s3uri = cmd_opts.db_models_s3uri
     api_endpoint = cmd_opts.api_endpoint
     username = cmd_opts.username
 
@@ -437,6 +506,172 @@ def train():
         )
         try:
             upload_s3file(hypernetwork_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)), '{0}.pt'.format(train_hypernetwork_name))
+        except Exception as e:
+            traceback.print_exc()
+            print(e)
+        opts.data = default_options
+    elif train_task == 'dreambooth':
+        db_create_new_db_model = train_args['train_dreambooth_settings']['db_create_new_db_model']
+
+        db_lora_model_name = train_args['train_dreambooth_settings']['db_lora_model_name']
+        db_lora_weight = train_args['train_dreambooth_settings']['db_lora_weight']
+        db_lora_txt_weight = train_args['train_dreambooth_settings']['db_lora_txt_weight']
+        db_train_imagic_only = train_args['train_dreambooth_settings']['db_train_imagic_only']
+        db_use_subdir = train_args['train_dreambooth_settings']['db_use_subdir']
+        db_custom_model_name = train_args['train_dreambooth_settings']['db_custom_model_name']
+        db_train_wizard_person = train_args['train_dreambooth_settings']['db_train_wizard_person']
+        db_train_wizard_object = train_args['train_dreambooth_settings']['db_train_wizard_object']
+        db_performance_wizard = train_args['train_dreambooth_settings']['db_performance_wizard']
+
+        if db_create_new_db_model:
+            db_new_model_name = train_args['train_dreambooth_settings']['db_new_model_name']
+            db_new_model_src = train_args['train_dreambooth_settings']['db_new_model_src']
+            db_new_model_scheduler = train_args['train_dreambooth_settings']['db_new_model_scheduler']
+            db_create_from_hub = train_args['train_dreambooth_settings']['db_create_from_hub']
+            db_new_model_url = train_args['train_dreambooth_settings']['db_new_model_url']
+            db_new_model_token = train_args['train_dreambooth_settings']['db_new_model_token']
+            db_new_model_extract_ema = train_args['train_dreambooth_settings']['db_new_model_extract_ema']
+            db_model_name, _, db_revision, db_scheduler, db_src, db_has_ema, db_v2, db_resolution = extract_checkpoint(
+                    db_new_model_name,
+                    db_new_model_src,
+                    db_new_model_scheduler,
+                    db_create_from_hub,
+                    db_new_model_url,
+                    db_new_model_token,
+                    db_new_model_extract_ema
+                )
+            dreambooth_config_id = cmd_opts.dreambooth_config_id
+            try:
+                with open(f'/opt/ml/input/data/config/{dreambooth_config_id}.json', 'r') as f:
+                    content = f.read()
+            except Exception:
+                params = {'module': 'dreambooth_config', 'dreambooth_config_id': dreambooth_config_id}
+                response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+                if response.status_code == 200:
+                    content = response.text
+                else:
+                    content = None
+
+            if content:
+                config_dict = json.loads(content)
+                print(db_model_name, db_revision, db_scheduler, db_src, db_has_ema, db_v2, db_resolution)
+
+                config_dict[0] = db_model_name
+                config_dict[31] = db_revision
+                config_dict[39] = db_scheduler
+                config_dict[40] = db_src
+                config_dict[14] = db_has_ema
+                config_dict[49] = db_v2
+                config_dict[30] = db_resolution
+
+                db_config = DreamboothConfig(*config_dict)
+
+                if db_train_wizard_person:
+                    _, \
+                    max_train_steps, \
+                    num_train_epochs, \
+                    c1_max_steps, \
+                    c1_num_class_images, \
+                    c2_max_steps, \
+                    c2_num_class_images, \
+                    c3_max_steps, \
+                    c3_num_class_images = training_wizard(db_config, True)
+
+                    config_dict[22] = int(max_train_steps)
+                    config_dict[26] = int(num_train_epochs)
+                    config_dict[59] = c1_max_steps
+                    config_dict[61] = c1_num_class_images
+                    config_dict[77] = c2_max_steps
+                    config_dict[79] = c2_num_class_images
+                    config_dict[95] = c3_max_steps
+                    config_dict[97] = c3_num_class_images
+                if db_train_wizard_object:
+                    _, \
+                    max_train_steps, \
+                    num_train_epochs, \
+                    c1_max_steps, \
+                    c1_num_class_images, \
+                    c2_max_steps, \
+                    c2_num_class_images, \
+                    c3_max_steps, \
+                    c3_num_class_images = training_wizard(db_config, False)
+
+                    config_dict[22] = int(max_train_steps)
+                    config_dict[26] = int(num_train_epochs)
+                    config_dict[59] = c1_max_steps
+                    config_dict[61] = c1_num_class_images
+                    config_dict[77] = c2_max_steps
+                    config_dict[79] = c2_num_class_images
+                    config_dict[95] = c3_max_steps
+                    config_dict[97] = c3_num_class_images
+                if db_performance_wizard:
+                    _, \
+                    attention, \
+                    gradient_checkpointing, \
+                    mixed_precision, \
+                    not_cache_latents, \
+                    sample_batch_size, \
+                    train_batch_size, \
+                    train_text_encoder, \
+                    use_8bit_adam, \
+                    use_cpu, \
+                    use_ema = performance_wizard()
+
+                    config_dict[5] = attention
+                    config_dict[12] = gradient_checkpointing
+                    config_dict[23] = mixed_precision
+                    config_dict[25] = not_cache_latents
+                    config_dict[32] = sample_batch_size
+                    config_dict[42] = train_batch_size
+                    config_dict[43] = train_text_encoder
+                    config_dict[44] = use_8bit_adam
+                    config_dict[46] = use_cpu
+                    config_dict[47] = use_ema
+        else:
+            db_model_name = train_args['train_dreambooth_settings']['db_model_name']
+            db_model_name = sanitize_name(db_model_name)
+            db_models_path = cmd_opts.dreambooth_models_path
+            if db_models_path == "" or db_models_path is None:
+                db_models_path = os.path.join(shared.models_path, "dreambooth")
+            working_dir = os.path.join(db_models_path, db_model_name, "working")
+            config_dict = from_file(os.path.join(db_models_path, db_model_name))
+            config_dict["pretrained_model_name_or_path"] = working_dir
+
+        db_config = DreamboothConfig(*config_dict)
+
+        ckpt_dir = cmd_opts.ckpt_dir
+        sd_models_path = os.path.join(shared.models_path, "Stable-diffusion")
+        if ckpt_dir is not None:
+            sd_models_path = ckpt_dir
+
+        print(vars(db_config))
+        start_training_from_config(
+            db_config,
+            db_lora_model_name if db_lora_model_name != '' else None,
+            db_lora_weight,
+            db_lora_txt_weight,
+            db_train_imagic_only,
+            db_use_subdir,
+            db_custom_model_name
+        )
+
+        try:
+            cmd_dreambooth_models_path = cmd_opts.dreambooth_models_path
+        except:
+            cmd_dreambooth_models_path = None
+
+        db_model_dir = os.path.dirname(cmd_dreambooth_models_path) if cmd_dreambooth_models_path else paths.models_path
+        db_model_dir = os.path.join(db_model_dir, "dreambooth")
+
+        try:
+            upload_s3files(
+                sd_models_s3uri,
+                os.path.join(sd_models_path, f'{sd_models_path}/{db_model_name}_*.pt')
+            )
+            upload_s3folder(
+                db_models_s3uri,
+                db_model_dir
+            )
         except Exception as e:
             traceback.print_exc()
             print(e)

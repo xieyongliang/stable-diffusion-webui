@@ -99,7 +99,10 @@ def list_models():
         checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
 
     if shared.cmd_opts.pureui:
-        response = requests.get(url=f'{api_endpoint}/sd/models')
+        params = {
+            'endpoint_name': shared.opts.sagemaker_endpoint
+        }
+        response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
         if response.status_code == 200:
             model_list = json.loads(response.text)
 
