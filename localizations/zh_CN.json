@@ -655,6 +655,7 @@
     "Scheduler": "调度器",
     "Lora Model": "Lora模型",
     "Custom Model Name": "自定义模型名称",
+    "Enter a model name for saving checkpoints and lora models.": "输入模型名字以保存检查点和Lora模型",
     "Lora Weight": "Lora权重",
     "Lora Text Weight": "Lora文本权重",
     "Half Model": "半精度模型",
