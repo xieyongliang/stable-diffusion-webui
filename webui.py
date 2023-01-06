@@ -249,7 +249,7 @@ def upload_s3files(s3uri, file_path_with_pattern):
     try:
         for file_path in glob.glob(file_path_with_pattern):
             file_name = os.path.basename(file_path)
-            __s3file = f'{key}/{file_name}'
+            __s3file = f'{key}{file_name}'
             print(file_path, __s3file)
             s3_bucket.upload_file(file_path, __s3file)
     except ClientError as e:
@@ -664,7 +664,7 @@ if cmd_opts.train:
                 )
                 print('Uploading DB Models...')
                 upload_s3folder(
-                    f'{db_models_s3uri}/{db_model_name}',
+                    f'{db_models_s3uri}{db_model_name}',
                     os.path.join(db_model_dir, db_model_name)
                 )
             except Exception as e:
