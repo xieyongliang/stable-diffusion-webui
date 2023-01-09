@@ -119,7 +119,7 @@ def list_models():
                 checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
 
             sd_model_checkpoint = shared.opts.data['sd_model_checkpoint']
-            if sd_model_checkpoint:
+            if sd_model_checkpoint and sd_model_checkpoint in checkpoints_list:
                 sd_checkpoint_info = checkpoints_list[sd_model_checkpoint]
                 sd_model_name = checkpoints_list[sd_model_checkpoint].model_name
                 sd_model_hash = checkpoints_list[sd_model_checkpoint].hash

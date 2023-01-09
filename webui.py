@@ -494,7 +494,7 @@ if cmd_opts.train:
                 *txt2img_preview_params
             )
             try:
-                upload_s3file(hypernetwork_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)), '{0}.pt'.format(train_hypernetwork_name))
+                upload_s3files(hypernetwork_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)))
             except Exception as e:
                 traceback.print_exc()
                 print(e)
