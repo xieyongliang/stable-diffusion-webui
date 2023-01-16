@@ -254,7 +254,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "batch_size": batch_size,
                     "n_iter": n_iter,
                     "steps": steps,
-                    "cfg_scale": args[18],
+                    "cfg_scale": cfg_scale,
                     "width": width,
                     "height": height,
                     "restore_faces": restore_faces,
