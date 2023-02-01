@@ -56,7 +56,7 @@ def checkpoint_tiles():
     return sorted([x.title for x in checkpoints_list.values()], key = alphanumeric_key)
 
 
-def list_models():
+def list_models(sagemaker_endpoint=None):
     global checkpoints_list
 
     checkpoints_list.clear()
@@ -100,7 +100,7 @@ def list_models():
 
     if shared.cmd_opts.pureui:
         params = {
-            'endpoint_name': shared.opts.sagemaker_endpoint
+            'endpoint_name': sagemaker_endpoint
         }
         response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
         if response.status_code == 200:

@@ -75,7 +75,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
         return processed
 
-    def sagemaker_inference(task, infer, *args, **kwargs):
+    def sagemaker_inference(task, infer, username, sagemaker_endpoint, *args, **kwargs):
         infer = 'async'
         if task == 'text-to-image' or task == 'image-to-image':
             if task == 'text-to-image':
@@ -139,7 +139,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 inputs = {
                     'task': task,
                     'txt2img_payload': payload,
-                    'username': shared.username
+                    'username': username
                 }
             else:
                 mode = args[0]
@@ -273,14 +273,13 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 inputs = {
                     'task': task,
                     'img2img_payload': payload,
-                    'username': shared.username
+                    'username': username
                 }
                 print(sd_samplers.samplers[sampler_index].name)
 
             params = {
-                'endpoint_name': shared.opts.sagemaker_endpoint
+                'endpoint_name': sagemaker_endpoint
             }
-
             response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
             if infer == 'async':
                 processed = handle_sagemaker_inference_async(response)
@@ -340,7 +339,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 inputs = {
                     'task': task,
                     'extras_single_payload': payload,
-                    'username': shared.username
+                    'username': username
                 }
             else:
                 imageList = []
@@ -372,11 +371,11 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 inputs = {
                     'task': task,
                     'extras_batch_payload': payload,
-                    'username': shared.username
+                    'username': username
                 }
 
             params = {
-                'endpoint_name': shared.opts.sagemaker_endpoint
+                'endpoint_name': sagemaker_endpoint
             }
             response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
             if infer == 'async':
@@ -395,11 +394,26 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
     def f(*args, **kwargs):
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
-            res = sagemaker_inference('text-to-image', 'sync', *args, **kwargs)
+            username = args[len(args) - 2]
+            sagemaker_endpoint = args[len(args) -1]
+            args = args[:-2]
+            print('username:', username)
+            print('sagemaker_endpoint:', sagemaker_endpoint)
+            res = sagemaker_inference('text-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.img2img.img2img:
-            res = sagemaker_inference('image-to-image', 'sync', *args, **kwargs)
+            username = args[len(args) - 2]
+            sagemaker_endpoint = args[len(args) -1]
+            args = args[:-2]
+            print('username:', username)
+            print('sagemaker_endpoint:', sagemaker_endpoint)
+            res = sagemaker_inference('image-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.extras.run_extras:
-            res = sagemaker_inference('extras', 'sync', *args, **kwargs)
+            username = args[len(args) - 2]
+            sagemaker_endpoint = args[len(args) -1]
+            args = args[:-2]
+            print('username:', username)
+            print('sagemaker_endpoint:', sagemaker_endpoint)
+            res = sagemaker_inference('extras', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         else:
             shared.state.begin()
             with queue_lock:
