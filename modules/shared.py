@@ -275,8 +275,6 @@ def list_checkpoint_tiles():
 
 
 def refresh_checkpoints(sagemaker_endpoint=None):
-    print('sagemaker_endpoint2:', sagemaker_endpoint)
-
     import modules.sd_models
     return modules.sd_models.list_models(sagemaker_endpoint)
 
@@ -299,8 +297,6 @@ def list_sagemaker_endpoints():
 
 def refresh_sagemaker_endpoints(username=None):
     global industrial_model, api_endpoint, sagemaker_endpoints
-
-    print('username2:', username)
 
     sagemaker_endpoints = []
 

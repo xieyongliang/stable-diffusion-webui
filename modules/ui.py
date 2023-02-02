@@ -532,7 +532,6 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         return gr.update(**(args or {}))
 
     def refresh_sagemaker_endpoints(username):
-        print('username:', username)
         refresh_method(username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
@@ -542,7 +541,6 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         return gr.update(**(args or {}))
 
     def refresh_checkpoints(sagemaker_endpoint):
-        print('sagemaker_endpoint:', sagemaker_endpoint)
         refresh_method(sagemaker_endpoint)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
@@ -674,6 +672,14 @@ def create_ui():
     modules.scripts.scripts_current = modules.scripts.scripts_txt2img
     modules.scripts.scripts_txt2img.initialize_scripts(is_img2img=False)
 
+    interfaces = []
+    ui_tabs = script_callbacks.ui_tabs_callback()
+    for ui_tab in ui_tabs:
+        if ui_tab[2] != 'dreambooth_interface':
+            interfaces += [ui_tab]
+        else:
+            dreambooth_tab = ui_tab[0]
+
     def create_setting_component(key, is_quicksettings=False):
         def fun():
             return opts.data[key] if key in opts.data else opts.data_labels[key].default
@@ -787,7 +793,7 @@ def create_ui():
             return gr.update(value=value), opts.dumpjson()
 
     with gr.Blocks(analytics_enabled=False) as settings_interface:
-        shared.username_state = gr.Text(value='', visible=True)
+        shared.username_state = gr.Text(value='', visible=False)
         dummy_component = gr.Label(visible=False)
 
         settings_submit = gr.Button(value="Apply settings", variant='primary')
@@ -1676,7 +1682,7 @@ def create_ui():
                         outputs=[],
                     )
                 else:
-                    with gr.Tab(label="Create & Train Embedding"):
+                    with gr.Tab(label="Train Embedding"):
                         gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
 
                         with gr.Box():
@@ -1759,7 +1765,7 @@ def create_ui():
                             with gr.Column():
                                 create_train_embedding = gr.Button(value="Train Embedding", variant='primary', visible=False)
 
-                    with gr.Tab(label="Create & Train Hypernetwork"):
+                    with gr.Tab(label="Train Hypernetwork"):
                         gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
 
                         with gr.Box():
@@ -1844,6 +1850,9 @@ def create_ui():
 
                             with gr.Column():
                                 create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary', visible=False)
+
+                    with gr.Tab(label="Train Dreambooth"):
+                        dreambooth_tab.render()
 
                 def sagemaker_train_embedding(
                         username,
@@ -2314,6 +2323,7 @@ def create_ui():
                         shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
                         break            
 
+            opts.data = shared.default_options
             response = {
                 shared.username_state: gr.update(value=username),
                 user_login_row: gr.update(visible=False),
@@ -2364,6 +2374,8 @@ def create_ui():
             response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
             if response.status_code == 200:
                 username = ''            
+                opts.data = shared.default_options
+
                 for key in sd_models.checkpoints_list:
                     if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
                         shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
@@ -2426,7 +2438,7 @@ def create_ui():
         )
 
     if cmd_opts.pureui:
-        interfaces = [
+        interfaces += [
             (txt2img_interface, "txt2img", "txt2img"),
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
@@ -2435,7 +2447,7 @@ def create_ui():
             (user_interface, "User", "user")
         ]
     else:
-        interfaces = [
+        interfaces += [
             (txt2img_interface, "txt2img", "txt2img"),
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
@@ -2460,7 +2472,7 @@ def create_ui():
     if not cmd_opts.no_progressbar_hiding:
         css += css_hide_progressbar
 
-    interfaces += script_callbacks.ui_tabs_callback()
+#    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
 
     extensions_interface = ui_extensions.create_ui()
@@ -2474,6 +2486,7 @@ def create_ui():
 
         parameters_copypaste.integrate_settings_paste_fields(component_dict)
         parameters_copypaste.run_bind()
+        shared.default_options = shared.opts.data
 
         with gr.Tabs(elem_id="tabs") as tabs:
             for interface, label, ifid in interfaces:
