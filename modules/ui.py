@@ -673,7 +673,29 @@ def create_ui():
     modules.scripts.scripts_txt2img.initialize_scripts(is_img2img=False)
 
     interfaces = []
+
+    with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
+        shared.username_state = gr.Text(value='', visible=False)        
+        with gr.Row().style(equal_height=False):
+            with gr.Column(variant='panel'):
+                image = gr.Image(elem_id="pnginfo_image", label="Source", source="upload", interactive=True, type="pil")
+
+            with gr.Column(variant='panel'):
+                html = gr.HTML()
+                generation_info = gr.Textbox(visible=False)
+                html2 = gr.HTML()
+                with gr.Row():
+                    buttons = parameters_copypaste.create_buttons(["txt2img", "img2img", "inpaint", "extras"])
+                parameters_copypaste.bind_buttons(buttons, image, generation_info)
+
+        image.change(
+            fn=wrap_gradio_call(modules.extras.run_pnginfo),
+            inputs=[image],
+            outputs=[html, generation_info, html2],
+        )
+
     ui_tabs = script_callbacks.ui_tabs_callback()
+
     for ui_tab in ui_tabs:
         if ui_tab[2] != 'dreambooth_interface':
             interfaces += [ui_tab]
@@ -793,7 +815,6 @@ def create_ui():
             return gr.update(value=value), opts.dumpjson()
 
     with gr.Blocks(analytics_enabled=False) as settings_interface:
-        shared.username_state = gr.Text(value='', visible=False)
         dummy_component = gr.Label(visible=False)
 
         settings_submit = gr.Button(value="Apply settings", variant='primary')
@@ -1374,25 +1395,6 @@ def create_ui():
         extras_image.change(
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
-        )
-
-    with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
-        with gr.Row().style(equal_height=False):
-            with gr.Column(variant='panel'):
-                image = gr.Image(elem_id="pnginfo_image", label="Source", source="upload", interactive=True, type="pil")
-
-            with gr.Column(variant='panel'):
-                html = gr.HTML()
-                generation_info = gr.Textbox(visible=False)
-                html2 = gr.HTML()
-                with gr.Row():
-                    buttons = parameters_copypaste.create_buttons(["txt2img", "img2img", "inpaint", "extras"])
-                parameters_copypaste.bind_buttons(buttons, image, generation_info)
-
-        image.change(
-            fn=wrap_gradio_call(modules.extras.run_pnginfo),
-            inputs=[image],
-            outputs=[html, generation_info, html2],
         )
 
     if not cmd_opts.pureui:
