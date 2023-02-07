@@ -2248,6 +2248,7 @@ def create_ui():
                     extras_submit: gr.update(visible=True),
                     create_train_embedding: gr.update(visible=True),
                     create_train_hypernetwork: gr.update(visible=True),
+                    shared.create_train_dreambooth_component: gr.update(visible=True),
                     signin_output: gr.update(value='')
                 }
 
@@ -2310,6 +2311,7 @@ def create_ui():
                     extras_submit: gr.update(visible=True),
                     create_train_embedding: gr.update(visible=True),
                     create_train_hypernetwork: gr.update(visible=True),
+                    shared.create_train_dreambooth_component: gr.update(visible=True),
                     signup_output: gr.update(value='')
                 }
             else:
@@ -2334,7 +2336,8 @@ def create_ui():
                 img2img_submit: gr.update(visible=False),
                 extras_submit: gr.update(visible=True),
                 create_train_embedding: gr.update(visible=False),
-                create_train_hypernetwork: gr.update(visible=False)
+                create_train_hypernetwork: gr.update(visible=False),
+                shared.create_train_dreambooth_component: gr.update(visible=False),
             }
 
             for key in opts.data:
@@ -2390,8 +2393,6 @@ def create_ui():
                     txt2img_submit: gr.update(visible=False),
                     img2img_submit: gr.update(visible=False),
                     extras_submit: gr.update(visible=True),
-                    create_train_embedding: gr.update(visible=False),
-                    create_train_hypernetwork: gr.update(visible=False),
                     login_output: gr.update(value='')
                 }
 
@@ -2412,31 +2413,31 @@ def create_ui():
         signin.click(
             fn=user_signin,
             inputs=[signin_username, signin_password],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email,txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, signin_output] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email,txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, signin_output] + components
         )
 
         signup.click(
             fn=user_signup,
             inputs=[signup_username, signup_password, signup_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, signup_output]
+            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, signup_output]
         )
 
         signout.click(
             fn=user_signout,
             inputs=[],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component] + components
         )
 
         userupdate.click(
             fn=user_update,
             inputs=[login_username, login_password, login_email],
-            outputs=[user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, login_output]
+            outputs=[user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, login_output]
         )
 
         userdelete.click(
             fn=user_delete,
             inputs=[login_username, login_password, login_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, login_output] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, login_output] + components
         )
 
     if cmd_opts.pureui:

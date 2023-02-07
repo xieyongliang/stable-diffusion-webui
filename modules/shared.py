@@ -143,6 +143,7 @@ if cmd_opts.pureui:
     default_options = {}
     username_state = None
     sagemaker_endpoint_component = None
+    create_train_dreambooth_component = None
 
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork
