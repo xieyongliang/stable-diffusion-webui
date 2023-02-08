@@ -2254,6 +2254,7 @@ def create_ui():
 
                 if options != None:
                     opts.data = json.loads(options)
+                    sagemaker_endpoint = None
                     for key in opts.data:
                         if key in component_dict:
                             if key == 'sagemaker_endpoint':
