@@ -39,24 +39,33 @@ from modules.sd_samplers import samplers, samplers_for_img2img
 import modules.textual_inversion.ui
 import modules.hypernetworks.ui
 from modules.generation_parameters_copypaste import image_from_url_text
-if cmd_opts.pureui:
-    from modules.sd_models import SDModel
-    import requests
-    training_instance_types = [
-        'ml.p2.xlarge',
-        'ml.p2.8xlarge',
-        'ml.p2.16xlarge',
-        'ml.p3.2xlarge',
-        'ml.p3.8xlarge',
-        'ml.p3.16xlarge',
-        'ml.g4dn.xlarge',
-        'ml.g4dn.2xlarge',
-        'ml.g4dn.4xlarge',
-        'ml.g4dn.8xlarge',
-        'ml.g4dn.12xlarge',
-        'ml.g4dn.16xlarge'
-    ]
-    component_dict = {}
+from modules.sd_models import get_sd_model_checkpoint_from_title
+import requests
+training_instance_types = [
+    'ml.p2.xlarge',
+    'ml.p2.8xlarge',
+    'ml.p2.16xlarge',
+    'ml.p3.2xlarge',
+    'ml.p3.8xlarge',
+    'ml.p3.16xlarge',
+    'ml.g4dn.xlarge',
+    'ml.g4dn.2xlarge',
+    'ml.g4dn.4xlarge',
+    'ml.g4dn.8xlarge',
+    'ml.g4dn.12xlarge',
+    'ml.g4dn.16xlarge',
+    'ml.g5.xlarge',
+    'ml.g5.xlarge',
+    'ml.g5.2xlarge',
+    'ml.g5.4xlarge',
+    'ml.g5.8xlarge',
+    'ml.g5.12xlarge',
+    'ml.g5.16xlarge',
+    'ml.g5.24xlarge',
+    'ml.g5.48xlarge',
+    'ml.p4d.24xlarge'
+]
+component_dict = {}
 
 # this is a fix for Windows users. Without it, javascript files will be served with text/html content-type and the browser will not show any UI
 mimetypes.init()
@@ -100,7 +109,6 @@ folder_symbol = '\U0001f4c2'  # 📂
 refresh_symbol = '\U0001f504'  # 🔄
 save_style_symbol = '\U0001f4be'  # 💾
 apply_style_symbol = '\U0001f4cb'  # 📋
-
 
 def plaintext_to_html(text):
     text = "<p>" + "<br>\n".join([f"{html.escape(x)}" for x in text.split('\n')]) + "</p>"
@@ -485,12 +493,7 @@ def apply_setting(key, value):
         return gr.update()
 
     if key == "sd_model_checkpoint":
-        ckpt_info = sd_models.get_closet_checkpoint_match(value)
-
-        if ckpt_info is not None:
-            value = ckpt_info.title
-        else:
-            return gr.update()
+        return gr.update()
 
     comp_args = opts.data_labels[key].component_args
     if comp_args and isinstance(comp_args, dict) and comp_args.get('visible') is False:
@@ -737,6 +740,9 @@ def create_ui():
 
         if key == 'sagemaker_endpoint':
             shared.sagemaker_endpoint_component = res
+
+        if key == 'sd_model_checkpoint':
+            shared.sd_model_checkpoint_component = res
 
         return res
 
@@ -1323,10 +1329,11 @@ def create_ui():
                                 extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
                                 show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
-                    with gr.TabItem('Batch from Directory'):
-                        extras_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
-                        extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
-                        show_extras_results = gr.Checkbox(label='Show result images', value=True)
+                    if not cmd_opts.pureui:
+                        with gr.TabItem('Batch from Directory'):
+                            extras_batch_input_dir = gr.Textbox(label="Input directory", **shared.hide_dirs, placeholder="A directory on the same machine where the server is running.")
+                            extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
+                            show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
                 submit = gr.Button('Generate', elem_id="extras_generate", variant='primary', visible=(not cmd_opts.pureui))
                 if cmd_opts.pureui:
@@ -1858,6 +1865,7 @@ def create_ui():
 
                 def sagemaker_train_embedding(
                         username,
+                        sd_model_checkpoint,
                         new_embedding_name,
                         initialization_text,
                         nvpt,
@@ -1937,10 +1945,11 @@ def create_ui():
                         }
                     }
 
+                    sd_model_checkpoint = get_sd_model_checkpoint_from_title(sd_model_checkpoint)
                     hyperparameters = {
                         'train-args': json.dumps(json.dumps(train_args)),
                         'train-task': 'embedding',
-                        'ckpt': '/opt/ml/input/data/models/{0}'.format(shared.sd_model.sd_model_name),
+                        'ckpt': '/opt/ml/input/data/models/{0}'.format(sd_model_checkpoint),
                         'username': username,
                         'api-endpoint': shared.api_endpoint
                     }
@@ -2059,10 +2068,11 @@ def create_ui():
                         }
                     }
                     
+                    sd_model_checkpoint = get_sd_model_checkpoint_from_title(sd_model_checkpoint)
                     hyperparameters = {
                         'train-args': json.dumps(json.dumps(train_args)),
                         'train-task': 'hypernetwork',
-                        'ckpt': '/opt/ml/input/data/models/{0}'.format(shared.sd_model.sd_model_name),
+                        'ckpt': '/opt/ml/input/data/models/{0}'.format(sd_model_checkpoint),
                         'username': username,
                         'api-endpoint': shared.api_endpoint
                     }
@@ -2096,6 +2106,7 @@ def create_ui():
                     fn=sagemaker_train_embedding,
                     inputs=[
                         shared.username_state,
+                        shared.sd_model_checkpoint_component,
                         new_embedding_name,
                         initialization_text,
                         nvpt,
@@ -2140,6 +2151,7 @@ def create_ui():
                     fn=sagemaker_train_hypernetwork,
                     inputs=[
                         shared.username_state,
+                        shared.sd_model_checkpoint_component,
                         new_hypernetwork_name,
                         new_hypernetwork_sizes,
                         new_hypernetwork_layer_structure,
@@ -2265,23 +2277,6 @@ def create_ui():
                                 response[component_dict[key]] = gr.update(value=opts.data[key], choices=shared.list_checkpoint_tiles())
                             else:
                                 response[component_dict[key]] = gr.update(value=opts.data[key])
-                    for key in sd_models.checkpoints_list:
-                        if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
-                            if shared.sd_model:
-                                shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
-                            else:
-                                sd_checkpoint_info = sd_models.checkpoints_list[key]
-                                sd_model_name = sd_checkpoint_info.model_name
-                                sd_model_hash = sd_checkpoint_info.hash
-                                sd_model_checkpoint = sd_checkpoint_info.title
-                                shared.sd_model = SDModel(
-                                    sd_model_name,
-                                    sd_model_hash,
-                                    sd_model_checkpoint,
-                                    sd_checkpoint_info
-                                )
-
-                            break
                 return response
             else:
                 return {
@@ -2322,11 +2317,6 @@ def create_ui():
 
         def user_signout():
             username = ''         
-            if 'sd_model_checkpoint' in opts.data:
-                for key in sd_models.checkpoints_list:
-                    if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
-                        shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
-                        break            
 
             opts.data = shared.default_options
             response = {
@@ -2381,11 +2371,6 @@ def create_ui():
             if response.status_code == 200:
                 username = ''            
                 opts.data = shared.default_options
-
-                for key in sd_models.checkpoints_list:
-                    if sd_models.checkpoints_list[key].title == opts.data['sd_model_checkpoint']:
-                        shared.sd_model.sd_model_name = sd_models.checkpoints_list[key].model_name
-                        break                   
 
                 response = {
                     shared.username_state: gr.update(value=username),

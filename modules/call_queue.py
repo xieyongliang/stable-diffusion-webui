@@ -128,7 +128,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "restore_faces": restore_faces,
                     "tiling": tiling,
                     "negative_prompt": negative_prompt,
-                    "eta": opts.eta_ddim if sd_samplers.samplers[args[5]].name == 'DDIM' or sd_samplers.samplers[args[5]].name == 'PLMS' else opts.eta_ancestral,
+                    "eta": opts.eta_ddim if sampler_index == 'DDIM' or sampler_index == 'PLMS' else opts.eta_ancestral,
                     "s_churn": opts.s_churn,
                     "s_tmax": None,
                     "s_tmin": opts.s_tmin,
@@ -153,7 +153,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 init_mask_inpaint = args[9]
                 mask_mode = args[10]
                 steps = args[11]
-                sampler_index = args[12]
+                sampler_index = sd_samplers.samplers_for_img2img[args[12]].name
                 mask_blur = args[13]
                 mask_alpha = args[14]
                 inpainting_fill = args[15]
@@ -250,7 +250,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "subseed_strength": subseed_strength,
                     "seed_resize_from_h": seed_resize_from_h,
                     "seed_resize_from_w": seed_resize_from_w,
-                    "sampler_index": sd_samplers.samplers[sampler_index].name,
+                    "sampler_index": sampler_index,
                     "batch_size": batch_size,
                     "n_iter": n_iter,
                     "steps": steps,
@@ -260,8 +260,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "restore_faces": restore_faces,
                     "tiling": tiling,
                     "negative_prompt": negative_prompt,
-                    "sampler_index": sd_samplers.samplers[sampler_index].name,
-                    "eta": opts.eta_ddim if sd_samplers.samplers[sampler_index].name == 'DDIM' or sd_samplers.samplers[sampler_index].name == 'PLMS' else opts.eta_ancestral,
+                    "eta": opts.eta_ddim if sampler_index == 'DDIM' or sampler_index == 'PLMS' else opts.eta_ancestral,
                     "s_churn": opts.s_churn,
                     "s_tmax": None,
                     "s_tmin": opts.s_tmin,
@@ -275,7 +274,6 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     'img2img_payload': payload,
                     'username': username
                 }
-                print(sd_samplers.samplers[sampler_index].name)
 
             params = {
                 'endpoint_name': sagemaker_endpoint
