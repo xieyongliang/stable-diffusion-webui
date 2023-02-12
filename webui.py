@@ -165,7 +165,8 @@ def api_only():
         inputs = {
             'items': items
         }
-        response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs)
+        if api_endpoint.startswith('http://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs)
 
     modules.script_callbacks.app_started_callback(None, app)
 

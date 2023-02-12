@@ -140,12 +140,6 @@ def get_closet_checkpoint_match(searchString):
         return applicable[0]
     return None
 
-def get_closet_checkpoint_match_from_model_name(searchString):
-    applicable = sorted([info for info in checkpoints_list.values() if searchString in info.model_name], key = lambda x:len(x.model_name))
-    if len(applicable) > 0:
-        return applicable[0]
-    return None
-
 def get_sd_model_checkpoint_from_title(sd_model_checkpoint_title):
      pos = sd_model_checkpoint_title.rfind('[')
      return sd_model_checkpoint_title[0 : pos - 1]
