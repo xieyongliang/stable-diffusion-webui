@@ -55,7 +55,6 @@ training_instance_types = [
     'ml.g4dn.12xlarge',
     'ml.g4dn.16xlarge',
     'ml.g5.xlarge',
-    'ml.g5.xlarge',
     'ml.g5.2xlarge',
     'ml.g5.4xlarge',
     'ml.g5.8xlarge',
