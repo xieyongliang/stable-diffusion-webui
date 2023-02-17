@@ -1980,6 +1980,7 @@ def create_ui():
                     
                 def sagemaker_train_hypernetwork(
                         username,
+                        sd_model_checkpoint,
                         new_hypernetwork_name,
                         new_hypernetwork_sizes,
                         new_hypernetwork_layer_structure,
