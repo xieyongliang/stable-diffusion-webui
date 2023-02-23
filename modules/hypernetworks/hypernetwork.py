@@ -271,9 +271,8 @@ def list_hypernetworks(path):
             name = os.path.splitext(os.path.basename(filename))[0]
             # Prevent a hypothetical "None.pt" from being listed.
             if name != "None":
-                res[name + f"({sd_models.model_hash(filename)})"] = filename
+                res[name] = filename
     return res
-
 
 def load_hypernetwork(filename):
     path = shared.hypernetworks.get(filename, None)
