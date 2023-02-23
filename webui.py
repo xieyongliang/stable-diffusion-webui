@@ -423,6 +423,8 @@ if cmd_opts.train:
             )
             hypernet.save(fn)
 
+            shared.hypernetworks = modules.hypernetworks.hypernetwork.list_hypernetworks(cmd_opts.hypernetwork_dir)
+            
             process_src = '/opt/ml/input/data/images'
             process_dst = str(uuid.uuid4())
             process_width = train_args['images_preprocessing_settings']['process_width']
