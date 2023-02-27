@@ -147,6 +147,12 @@ def api_only():
     if ckpt_dir is not None:
         sd_models_path = ckpt_dir
 
+    controlnet_dir = cmd_opts.controlnet_dir
+    cn_models_path = os.path.join(shared.models_path, "ControlNet")
+    os.makedirs(controlnet_dir, exist_ok=True)
+    if controlnet_dir is not None:
+        cn_models_path = controlnet_dir
+
     if 'endpoint_name' in os.environ:
         items = []
         api_endpoint = os.environ['api_endpoint']
@@ -165,8 +171,33 @@ def api_only():
         inputs = {
             'items': items
         }
+        params = {
+            'module': 'Stable-diffusion'
+        }
         if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs)
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+        items = []
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'ControlNet'
+        }
+        for file in os.listdir(cn_models_path):
+            if os.path.isfile(os.path.join(cn_models_path, file)) and \
+               (file.endswith('pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
+                hash = modules.sd_models.model_hash(os.path.join(cn_models_path, file))
+                item = {}
+                item['model_name'] = file
+                item['title'] = '{0} [{1}]'.format(file, hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
 
     modules.script_callbacks.app_started_callback(None, app)
 
