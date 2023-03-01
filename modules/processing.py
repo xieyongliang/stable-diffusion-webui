@@ -117,12 +117,6 @@ class StableDiffusionProcessing():
 
         self.script_args = json.loads(script_args) if script_args != None else None
 
-        if self.script_args:
-            for key in self.script_args:
-                if key == 'image' or key == 'mask':
-                    self.script_arg[key] = Image.open(io.BytesIO(base64.b64decode(self.script_args[key])))
-
-
         if not seed_enable_extras:
             self.subseed = -1
             self.subseed_strength = 0
@@ -130,6 +124,7 @@ class StableDiffusionProcessing():
             self.seed_resize_from_w = 0
 
         self.scripts = None
+        self.script_args = None
         self.all_prompts = None
         self.all_negative_prompts = None
         self.all_seeds = None

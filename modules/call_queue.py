@@ -81,16 +81,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
             if task == 'text-to-image':
                 script_args = []
                 for i in range(23, len(args)):
-                    if(isinstance(args[i], dict)):
-                        script_arg = {}
-                        for key in args[i]:
-                            if key == 'image' or key == 'mask':
-                                script_arg[key] = encode_image_to_base64(Image.fromarray(args[i][key]))
-                            else:
-                                script_arg[key] = args[i][key]
-                        script_args.append(script_arg)
-                    else:
-                        script_args.append(args[i])
+                    script_args.append(args[i])
 
                 prompt = args[0]
                 negative_prompt = args[1]
@@ -189,16 +180,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
                 script_args = []
                 for i in range(36, len(args)):
-                    if(isinstance(args[i], dict)):
-                        script_arg = {}
-                        for key in args[i]:
-                            if key == 'image' or key == 'mask':
-                                script_arg[key] = encode_image_to_base64(Image.fromarray(args[i][key]))
-                            else:
-                                script_arg[key] = args[i][key]
-                        script_args.append(script_arg)
-                    else:
-                        script_args.append(args[i])
+                    script_args.append(args[i])
 
                 if mode == 1:
                     # Drawn mask
