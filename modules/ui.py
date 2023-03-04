@@ -658,10 +658,9 @@ Requested path was: {f}
                 parameters_copypaste.bind_buttons(buttons, result_gallery, "txt2img" if tabname == "txt2img" else None)
                 return result_gallery, generation_info if tabname != "extras" else html_info_x, html_info
 
-if cmd_opts.pureui:
-    txt2img_submit = None
-    img2img_submit = None
-    extras_submit = None
+txt2img_submit = None
+img2img_submit = None
+extras_submit = None
 
 def create_ui():
     import modules.img2img
@@ -697,6 +696,7 @@ def create_ui():
         )
 
     ui_tabs = script_callbacks.ui_tabs_callback()
+    dreambooth_tab = None
 
     for ui_tab in ui_tabs:
         if ui_tab[2] != 'dreambooth_interface':
@@ -752,13 +752,10 @@ def create_ui():
     opts.reorder()
 
     def run_settings(*args):
-        assert cmd_opts.pureui
-
         changed = []
 
         username = args[len(args) - 1]
         args = args[:-1]
-        print('username:', username)
 
         if not username or username == '':
             return opts.dumpjson(), f'{len(changed)} settings changed: {", ".join(changed)}.'
@@ -1335,8 +1332,7 @@ def create_ui():
                             show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
                 submit = gr.Button('Generate', elem_id="extras_generate", variant='primary', visible=(not cmd_opts.pureui))
-                if cmd_opts.pureui:
-                    extras_submit = submit
+                extras_submit = submit
 
                 with gr.Tabs(elem_id="extras_resize_mode"):
                     with gr.TabItem('Scale by'):
@@ -1434,24 +1430,97 @@ def create_ui():
 
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
+                with gr.Tab(label="Train Embedding"):
+                    gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
 
-                if not cmd_opts.pureui:
-                    with gr.Tab(label="Create embedding"):
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Embedding settings</b></p>")
+
                         new_embedding_name = gr.Textbox(label="Name")
                         initialization_text = gr.Textbox(label="Initialization text", value="*")
                         nvpt = gr.Slider(label="Number of vectors per token", minimum=1, maximum=75, step=1, value=1)
                         overwrite_old_embedding = gr.Checkbox(value=False, label="Overwrite Old Embedding")
 
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
+
+                        embedding_images_s3uri = gr.Textbox(label='Images S3 URI')
+                        embedding_models_s3uri = gr.Textbox(label='Models S3 URI')
+                        embedding_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        embedding_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        embedding_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
+
                         with gr.Row():
-                            with gr.Column(scale=3):
-                                gr.HTML(value="")
+                            embedding_process_flip = gr.Checkbox(label='Create flipped copies')
+                            embedding_process_split = gr.Checkbox(label='Split oversized images')
+                            embedding_process_focal_crop = gr.Checkbox(label='Auto focal point crop')
+                            embedding_process_caption = gr.Checkbox(label='Use BLIP for caption')
+                            embedding_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True)
 
+                        with gr.Row(visible=False) as embedding_process_split_extra_row:
+                            embedding_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
+                            embedding_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05)
+
+                        with gr.Row(visible=False) as embedding_process_focal_crop_row:
+                            embedding_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05)
+                            embedding_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05)
+                            embedding_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
+                            embedding_process_focal_crop_debug = gr.Checkbox(label='Create debug image')
+
+                        embedding_process_split.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[embedding_process_split],
+                            outputs=[embedding_process_split_extra_row],
+                        )
+
+                        embedding_process_focal_crop.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[embedding_process_focal_crop],
+                            outputs=[embedding_process_focal_crop_row],
+                        )
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
+
+                        with gr.Row():
                             with gr.Column():
-                                create_embedding = gr.Button(value="Create embedding", variant='primary')
+                                embedding_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
+                            with gr.Column():
+                                embedding_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
 
-                    with gr.Tab(label="Create hypernetwork"):
+                        with gr.Row():
+                            embedding_learn_rate = gr.Textbox(label='Embedding Learning rate', placeholder="Embedding Learning rate", value="0.005")
+
+                        embedding_batch_size = gr.Number(label='Batch size', value=1, precision=0)
+                        embedding_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0)
+                        embedding_training_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        embedding_training_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        embedding_steps = gr.Number(label='Max steps', value=100000, precision=0)
+                        embedding_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0)
+                        embedding_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0)
+                        embedding_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True)
+                        embedding_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False)
+                        with gr.Row():
+                            embedding_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False)
+                            embedding_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0)
+                        with gr.Row():
+                            embedding_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'])
+
+                    with gr.Row():
+                        with gr.Column(scale=3):
+                            embedding_output = gr.Label(label='Output')
+
+                        with gr.Column():
+                            create_train_embedding = gr.Button(value="Train Embedding", variant='primary', visible=False)
+
+                with gr.Tab(label="Train Hypernetwork"):
+                    gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Hypernetwork settings</b></p>")
+
                         new_hypernetwork_name = gr.Textbox(label="Name")
-                        new_hypernetwork_sizes = gr.CheckboxGroup(label="Modules", value=["768", "320", "640", "1280"], choices=["768", "1024", "320", "640", "1280"])
+                        new_hypernetwork_sizes = gr.CheckboxGroup(label="Modules", value=["768", "320", "640", "1280"], choices=["768", "320", "640", "1280"])
                         new_hypernetwork_layer_structure = gr.Textbox("1, 2, 1", label="Enter hypernetwork layer structure", placeholder="1st and last digit must be 1. ex:'1, 2, 1'")
                         new_hypernetwork_activation_func = gr.Dropdown(value="linear", label="Select activation function of hypernetwork. Recommended : Swish / Linear(none)", choices=modules.hypernetworks.ui.keys)
                         new_hypernetwork_initialization_option = gr.Dropdown(value = "Normal", label="Select Layer weights initialization. Recommended: Kaiming for relu-like, Xavier for sigmoid-like, Normal otherwise", choices=["Normal", "KaimingUniform", "KaimingNormal", "XavierUniform", "XavierNormal"])
@@ -1459,406 +1528,78 @@ def create_ui():
                         new_hypernetwork_use_dropout = gr.Checkbox(label="Use dropout")
                         overwrite_old_hypernetwork = gr.Checkbox(value=False, label="Overwrite Old Hypernetwork")
 
-                        with gr.Row():
-                            with gr.Column(scale=3):
-                                gr.HTML(value="")
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
 
-                            with gr.Column():
-                                create_hypernetwork = gr.Button(value="Create hypernetwork", variant='primary')
-
-                    with gr.Tab(label="Preprocess images"):
-                        process_src = gr.Textbox(label='Source directory')
-                        process_dst = gr.Textbox(label='Destination directory')
-                        process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                        process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                        preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
+                        hypernetwork_images_s3uir = gr.Textbox(label='Images S3 URI')
+                        hypernetwork_models_s3uri = gr.Textbox(label='Models S3 URI')
+                        hypernetwork_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        hypernetwork_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        hypernetwork_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
 
                         with gr.Row():
-                            process_flip = gr.Checkbox(label='Create flipped copies')
-                            process_split = gr.Checkbox(label='Split oversized images')
-                            process_focal_crop = gr.Checkbox(label='Auto focal point crop')
-                            process_caption = gr.Checkbox(label='Use BLIP for caption')
-                            process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True)
+                            hypernetwork_process_flip = gr.Checkbox(label='Create flipped copies')
+                            hypernetwork_process_split = gr.Checkbox(label='Split oversized images')
+                            hypernetwork_process_focal_crop = gr.Checkbox(label='Auto focal point crop')
+                            hypernetwork_process_caption = gr.Checkbox(label='Use BLIP for caption')
+                            hypernetwork_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True)
 
-                        with gr.Row(visible=False) as process_split_extra_row:
-                            process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                            process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05)
+                        with gr.Row(visible=False) as hypernetwork_process_split_extra_row:
+                            hypernetwork_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
+                            hypernetwork_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05)
 
-                        with gr.Row(visible=False) as process_focal_crop_row:
-                            process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05)
-                            process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05)
-                            process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                            process_focal_crop_debug = gr.Checkbox(label='Create debug image')
+                        with gr.Row(visible=False) as hypernetwork_process_focal_crop_row:
+                            hypernetwork_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05)
+                            hypernetwork_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05)
+                            hypernetwork_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
+                            hypernetwork_process_focal_crop_debug = gr.Checkbox(label='Create debug image')
 
-                        with gr.Row():
-                            with gr.Column(scale=3):
-                                gr.HTML(value="")
-
-                            with gr.Column():
-                                with gr.Row():
-                                    interrupt_preprocessing = gr.Button("Interrupt")
-                                run_preprocess = gr.Button(value="Preprocess", variant='primary')
-
-                        process_split.change(
+                        hypernetwork_process_split.change(
                             fn=lambda show: gr_show(show),
-                            inputs=[process_split],
-                            outputs=[process_split_extra_row],
+                            inputs=[hypernetwork_process_split],
+                            outputs=[hypernetwork_process_split_extra_row],
                         )
 
-                        process_focal_crop.change(
+                        hypernetwork_process_focal_crop.change(
                             fn=lambda show: gr_show(show),
-                            inputs=[process_focal_crop],
-                            outputs=[process_focal_crop_row],
+                            inputs=[hypernetwork_process_focal_crop],
+                            outputs=[hypernetwork_process_focal_crop_row],
                         )
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
 
-                    with gr.Tab(label="Train"):
-                        gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding or Hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
                         with gr.Row():
-                            train_embedding_name = gr.Dropdown(label='Embedding', elem_id="train_embedding", choices=sorted(sd_hijack.model_hijack.embedding_db.word_embeddings.keys()))
-                            create_refresh_button(train_embedding_name, sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings, lambda: {"choices": sorted(sd_hijack.model_hijack.embedding_db.word_embeddings.keys())}, "refresh_train_embedding_name")
+                            with gr.Column():
+                                hypernetwork_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
+                            with gr.Column():
+                                hypernetwork_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
+
                         with gr.Row():
-                            train_hypernetwork_name = gr.Dropdown(label='Hypernetwork', elem_id="train_hypernetwork", choices=[x for x in shared.hypernetworks.keys()])
-                            create_refresh_button(train_hypernetwork_name, shared.reload_hypernetworks, lambda: {"choices": sorted([x for x in shared.hypernetworks.keys()])}, "refresh_train_hypernetwork_name")
-                        with gr.Row():
-                            embedding_learn_rate = gr.Textbox(label='Embedding Learning rate', placeholder="Embedding Learning rate", value="0.005")
                             hypernetwork_learn_rate = gr.Textbox(label='Hypernetwork Learning rate', placeholder="Hypernetwork Learning rate", value="0.00001")
 
-                        batch_size = gr.Number(label='Batch size', value=1, precision=0)
-                        gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0)
-                        dataset_directory = gr.Textbox(label='Dataset directory', placeholder="Path to directory with input images")
-                        log_directory = gr.Textbox(label='Log directory', placeholder="Path to directory where to write outputs", value="textual_inversion")
-                        template_file = gr.Textbox(label='Prompt template file', value=os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt"))
-                        training_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                        training_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                        steps = gr.Number(label='Max steps', value=100000, precision=0)
-                        create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0)
-                        save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0)
-                        save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True)
-                        preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False)
+                        hypernetwork_batch_size = gr.Number(label='Batch size', value=1, precision=0)
+                        hypernetwork_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0)
+                        hypernetwork_training_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        hypernetwork_training_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        hypernetwork_steps = gr.Number(label='Max steps', value=100000, precision=0)
+                        hypernetwork_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0)
+                        hypernetwork_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0)
+                        hypernetwork_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True)
+                        hypernetwork_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False)
                         with gr.Row():
-                            shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False)
-                            tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0)
+                            hypernetwork_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False)
+                            hypernetwork_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0)
                         with gr.Row():
-                            latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'])
+                            hypernetwork_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'])
 
-                        with gr.Row():
-                            interrupt_training = gr.Button(value="Interrupt")
-                            train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
-                            train_embedding = gr.Button(value="Train Embedding", variant='primary')
+                    with gr.Row():
+                        with gr.Column(scale=3):
+                            hypernetwork_output = gr.Label(label='Output')
 
-                    params = script_callbacks.UiTrainTabParams(txt2img_preview_params)
+                        with gr.Column():
+                            create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary', visible=False)
 
-                    script_callbacks.ui_train_tabs_callback(params)
-
-                    with gr.Column():
-                        progressbar = gr.HTML(elem_id="ti_progressbar")
-                        ti_output = gr.Text(elem_id="ti_output", value="", show_label=False)
-
-                        ti_gallery = gr.Gallery(label='Output', show_label=False, elem_id='ti_gallery').style(grid=4)
-                        ti_preview = gr.Image(elem_id='ti_preview', visible=False)
-                        ti_progress = gr.HTML(elem_id="ti_progress", value="")
-                        ti_outcome = gr.HTML(elem_id="ti_error", value="")
-                        setup_progressbar(progressbar, ti_preview, 'ti', textinfo=ti_progress)
-
-                        create_embedding.click(
-                            fn=modules.textual_inversion.ui.create_embedding,
-                            inputs=[
-                                new_embedding_name,
-                                initialization_text,
-                                nvpt,
-                                overwrite_old_embedding,
-                            ],
-                            outputs=[
-                                train_embedding_name,
-                                ti_output,
-                                ti_outcome,
-                            ]
-                        )
-
-                    create_hypernetwork.click(
-                        fn=modules.hypernetworks.ui.create_hypernetwork,
-                        inputs=[
-                            new_hypernetwork_name,
-                            new_hypernetwork_sizes,
-                            overwrite_old_hypernetwork,
-                            new_hypernetwork_layer_structure,
-                            new_hypernetwork_activation_func,
-                            new_hypernetwork_initialization_option,
-                            new_hypernetwork_add_layer_norm,
-                            new_hypernetwork_use_dropout
-                        ],
-                        outputs=[
-                            train_hypernetwork_name,
-                            ti_output,
-                            ti_outcome,
-                        ]
-                    )
-
-                    run_preprocess.click(
-                        fn=wrap_gradio_gpu_call(modules.textual_inversion.ui.preprocess, extra_outputs=[gr.update()]),
-                        _js="start_training_textual_inversion",
-                        inputs=[
-                            process_src,
-                            process_dst,
-                            process_width,
-                            process_height,
-                            preprocess_txt_action,
-                            process_flip,
-                            process_split,
-                            process_caption,
-                            process_caption_deepbooru,
-                            process_split_threshold,
-                            process_overlap_ratio,
-                            process_focal_crop,
-                            process_focal_crop_face_weight,
-                            process_focal_crop_entropy_weight,
-                            process_focal_crop_edges_weight,
-                            process_focal_crop_debug,
-                        ],
-                        outputs=[
-                            ti_output,
-                            ti_outcome,
-                        ],
-                    )
-
-                    train_embedding.click(
-                        fn=wrap_gradio_gpu_call(modules.textual_inversion.ui.train_embedding, extra_outputs=[gr.update()]),
-                        _js="start_training_textual_inversion",
-                        inputs=[
-                            train_embedding_name,
-                            embedding_learn_rate,
-                            batch_size,
-                            gradient_step,
-                            dataset_directory,
-                            log_directory,
-                            training_width,
-                            training_height,
-                            steps,
-                            shuffle_tags,
-                            tag_drop_out,
-                            latent_sampling_method,
-                            create_image_every,
-                            save_embedding_every,
-                            template_file,
-                            save_image_with_stored_embedding,
-                            preview_from_txt2img,
-                            *txt2img_preview_params,
-                        ],
-                        outputs=[
-                            ti_output,
-                            ti_outcome,
-                        ]
-                    )
-
-                    train_hypernetwork.click(
-                        fn=wrap_gradio_gpu_call(modules.hypernetworks.ui.train_hypernetwork, extra_outputs=[gr.update()]),
-                        _js="start_training_textual_inversion",
-                        inputs=[
-                            train_hypernetwork_name,
-                            hypernetwork_learn_rate,
-                            batch_size,
-                            gradient_step,
-                            dataset_directory,
-                            log_directory,
-                            training_width,
-                            training_height,
-                            steps,
-                            shuffle_tags,
-                            tag_drop_out,
-                            latent_sampling_method,
-                            create_image_every,
-                            save_embedding_every,
-                            template_file,
-                            preview_from_txt2img,
-                            *txt2img_preview_params,
-                        ],
-                        outputs=[
-                            ti_output,
-                            ti_outcome,
-                        ]
-                    )
-
-                    interrupt_training.click(
-                        fn=lambda: shared.state.interrupt(),
-                        inputs=[],
-                        outputs=[],
-                    )
-
-                    interrupt_preprocessing.click(
-                        fn=lambda: shared.state.interrupt(),
-                        inputs=[],
-                        outputs=[],
-                    )
-                else:
-                    with gr.Tab(label="Train Embedding"):
-                        gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
-
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Embedding settings</b></p>")
-                                
-                            new_embedding_name = gr.Textbox(label="Name")
-                            initialization_text = gr.Textbox(label="Initialization text", value="*")
-                            nvpt = gr.Slider(label="Number of vectors per token", minimum=1, maximum=75, step=1, value=1)
-                            overwrite_old_embedding = gr.Checkbox(value=False, label="Overwrite Old Embedding")
-
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
-
-                            embedding_images_s3uri = gr.Textbox(label='Images S3 URI')
-                            embedding_models_s3uri = gr.Textbox(label='Models S3 URI')
-                            embedding_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                            embedding_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                            embedding_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
-
-                            with gr.Row():
-                                embedding_process_flip = gr.Checkbox(label='Create flipped copies')
-                                embedding_process_split = gr.Checkbox(label='Split oversized images')
-                                embedding_process_focal_crop = gr.Checkbox(label='Auto focal point crop')
-                                embedding_process_caption = gr.Checkbox(label='Use BLIP for caption')
-                                embedding_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True)
-
-                            with gr.Row(visible=False) as embedding_process_split_extra_row:
-                                embedding_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                                embedding_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05)
-
-                            with gr.Row(visible=False) as embedding_process_focal_crop_row:
-                                embedding_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05)
-                                embedding_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05)
-                                embedding_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                                embedding_process_focal_crop_debug = gr.Checkbox(label='Create debug image')
-
-                            embedding_process_split.change(
-                                fn=lambda show: gr_show(show),
-                                inputs=[embedding_process_split],
-                                outputs=[embedding_process_split_extra_row],
-                            )
-
-                            embedding_process_focal_crop.change(
-                                fn=lambda show: gr_show(show),
-                                inputs=[embedding_process_focal_crop],
-                                outputs=[embedding_process_focal_crop_row],
-                            )
-
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
-
-                            with gr.Row():
-                                with gr.Column():
-                                    embedding_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
-                                with gr.Column():
-                                    embedding_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
-                            
-                            with gr.Row():
-                                embedding_learn_rate = gr.Textbox(label='Embedding Learning rate', placeholder="Embedding Learning rate", value="0.005")
-
-                            embedding_batch_size = gr.Number(label='Batch size', value=1, precision=0)
-                            embedding_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0)
-                            embedding_training_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                            embedding_training_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                            embedding_steps = gr.Number(label='Max steps', value=100000, precision=0)
-                            embedding_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0)
-                            embedding_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0)
-                            embedding_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True)
-                            embedding_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False)
-                            with gr.Row():
-                                embedding_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False)
-                                embedding_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0)
-                            with gr.Row():
-                                embedding_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'])
-
-                        with gr.Row():
-                            with gr.Column(scale=3):
-                                embedding_output = gr.Label(label='Output')
-
-                            with gr.Column():
-                                create_train_embedding = gr.Button(value="Train Embedding", variant='primary', visible=False)
-
-                    with gr.Tab(label="Train Hypernetwork"):
-                        gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
-
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Hypernetwork settings</b></p>")
-
-                            new_hypernetwork_name = gr.Textbox(label="Name")
-                            new_hypernetwork_sizes = gr.CheckboxGroup(label="Modules", value=["768", "320", "640", "1280"], choices=["768", "320", "640", "1280"])
-                            new_hypernetwork_layer_structure = gr.Textbox("1, 2, 1", label="Enter hypernetwork layer structure", placeholder="1st and last digit must be 1. ex:'1, 2, 1'")
-                            new_hypernetwork_activation_func = gr.Dropdown(value="linear", label="Select activation function of hypernetwork. Recommended : Swish / Linear(none)", choices=modules.hypernetworks.ui.keys)
-                            new_hypernetwork_initialization_option = gr.Dropdown(value = "Normal", label="Select Layer weights initialization. Recommended: Kaiming for relu-like, Xavier for sigmoid-like, Normal otherwise", choices=["Normal", "KaimingUniform", "KaimingNormal", "XavierUniform", "XavierNormal"])
-                            new_hypernetwork_add_layer_norm = gr.Checkbox(label="Add layer normalization")
-                            new_hypernetwork_use_dropout = gr.Checkbox(label="Use dropout")
-                            overwrite_old_hypernetwork = gr.Checkbox(value=False, label="Overwrite Old Hypernetwork")
-
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
-
-                            hypernetwork_images_s3uir = gr.Textbox(label='Images S3 URI')
-                            hypernetwork_models_s3uri = gr.Textbox(label='Models S3 URI')
-                            hypernetwork_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                            hypernetwork_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                            hypernetwork_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
-
-                            with gr.Row():
-                                hypernetwork_process_flip = gr.Checkbox(label='Create flipped copies')
-                                hypernetwork_process_split = gr.Checkbox(label='Split oversized images')
-                                hypernetwork_process_focal_crop = gr.Checkbox(label='Auto focal point crop')
-                                hypernetwork_process_caption = gr.Checkbox(label='Use BLIP for caption')
-                                hypernetwork_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True)
-
-                            with gr.Row(visible=False) as hypernetwork_process_split_extra_row:
-                                hypernetwork_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                                hypernetwork_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05)
-
-                            with gr.Row(visible=False) as hypernetwork_process_focal_crop_row:
-                                hypernetwork_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05)
-                                hypernetwork_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05)
-                                hypernetwork_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05)
-                                hypernetwork_process_focal_crop_debug = gr.Checkbox(label='Create debug image')
-
-                            hypernetwork_process_split.change(
-                                fn=lambda show: gr_show(show),
-                                inputs=[hypernetwork_process_split],
-                                outputs=[hypernetwork_process_split_extra_row],
-                            )
-
-                            hypernetwork_process_focal_crop.change(
-                                fn=lambda show: gr_show(show),
-                                inputs=[hypernetwork_process_focal_crop],
-                                outputs=[hypernetwork_process_focal_crop_row],
-                            )
-                        with gr.Box():
-                            gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
-
-                            with gr.Row():
-                                with gr.Column():
-                                    hypernetwork_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
-                                with gr.Column():
-                                    hypernetwork_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
-                            
-                            with gr.Row():
-                                hypernetwork_learn_rate = gr.Textbox(label='Hypernetwork Learning rate', placeholder="Hypernetwork Learning rate", value="0.00001")
-
-                            hypernetwork_batch_size = gr.Number(label='Batch size', value=1, precision=0)
-                            hypernetwork_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0)
-                            hypernetwork_training_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
-                            hypernetwork_training_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
-                            hypernetwork_steps = gr.Number(label='Max steps', value=100000, precision=0)
-                            hypernetwork_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0)
-                            hypernetwork_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0)
-                            hypernetwork_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True)
-                            hypernetwork_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False)
-                            with gr.Row():
-                                hypernetwork_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False)
-                                hypernetwork_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0)
-                            with gr.Row():
-                                hypernetwork_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'])
-
-                        with gr.Row():
-                            with gr.Column(scale=3):
-                                hypernetwork_output = gr.Label(label='Output')
-
-                            with gr.Column():
-                                create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary', visible=False)
-
+                if dreambooth_tab:
                     with gr.Tab(label="Train Dreambooth"):
                         dreambooth_tab.render()
 
@@ -1967,7 +1708,7 @@ def create_ui():
                         'instance_count': embedding_training_instance_count,
                         'inputs': inputs
                     }
-                                            
+
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
                         return {
@@ -2091,7 +1832,7 @@ def create_ui():
                         'instance_count': hypernetwork_training_instance_count,
                         'inputs': inputs
                     }
-                                            
+
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
                         return {
@@ -2399,19 +2140,19 @@ def create_ui():
         signin.click(
             fn=user_signin,
             inputs=[signin_username, signin_password],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email,txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, signin_output] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email,txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, signin_output] + components
         )
 
         signup.click(
             fn=user_signup,
             inputs=[signup_username, signup_password, signup_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, signup_output]
+            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, signup_output]
         )
 
         signout.click(
             fn=user_signout,
             inputs=[],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component] + components
         )
 
         userupdate.click(
@@ -2423,7 +2164,7 @@ def create_ui():
         userdelete.click(
             fn=user_delete,
             inputs=[login_username, login_password, login_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component, login_output] + components
+            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, login_output] + components
         )
 
     if cmd_opts.pureui:

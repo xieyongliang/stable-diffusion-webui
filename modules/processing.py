@@ -22,7 +22,8 @@ import modules.images as images
 import modules.styles
 import logging
 import base64
-import io
+from io import BytesIO
+from numpy import asarray
 
 # some of those options should not be changed at all because they would break the model, so I removed them from options.
 opt_C = 4
@@ -68,6 +69,10 @@ def apply_overlay(image, paste_loc, index, overlays):
 
     return image
 
+def decode_base64_to_image(encoding):
+    if encoding.startswith("data:image/"):
+        encoding = encoding.split(";")[1].split(",")[1]
+    return Image.open(BytesIO(base64.b64decode(encoding)))
 
 class StableDiffusionProcessing():
     """
@@ -119,9 +124,11 @@ class StableDiffusionProcessing():
         self.script_args = json.loads(script_args) if script_args != None else None
 
         if self.script_args:
-            for key in self.script_args:
-                if key == 'image' or key == 'mask':
-                    self.script_arg[key] = Image.open(io.BytesIO(base64.b64decode(self.script_args[key])))
+            for idx in range(len(self.script_args)):
+                if(isinstance(self.script_args[idx], dict)):
+                    for key in self.script_args[idx]:
+                        if key == 'image' or key == 'mask':
+                            self.script_args[idx][key] = asarray(decode_base64_to_image(self.script_args[idx][key]))
 
         if not seed_enable_extras:
             self.subseed = -1
