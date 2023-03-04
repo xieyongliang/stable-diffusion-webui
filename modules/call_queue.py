@@ -413,22 +413,16 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
             username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            print('username:', username)
-            print('sagemaker_endpoint:', sagemaker_endpoint)
             res = sagemaker_inference('text-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.img2img.img2img:
             username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            print('username:', username)
-            print('sagemaker_endpoint:', sagemaker_endpoint)
             res = sagemaker_inference('image-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.extras.run_extras:
             username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            print('username:', username)
-            print('sagemaker_endpoint:', sagemaker_endpoint)
             res = sagemaker_inference('extras', 'sync', username, sagemaker_endpoint, *args, **kwargs)
         else:
             shared.state.begin()

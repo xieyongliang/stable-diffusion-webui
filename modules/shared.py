@@ -137,14 +137,13 @@ os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetwork = None
 
-if cmd_opts.pureui:
-    api_endpoint = os.environ['api_endpoint']
-    industrial_model = ''
-    default_options = {}
-    username_state = None
-    sagemaker_endpoint_component = None
-    sd_model_checkpoint_component = None
-    create_train_dreambooth_component = None
+api_endpoint = os.environ['api_endpoint']
+industrial_model = ''
+default_options = {}
+username_state = None
+sagemaker_endpoint_component = None
+sd_model_checkpoint_component = None
+create_train_dreambooth_component = None
 
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork

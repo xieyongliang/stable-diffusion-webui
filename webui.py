@@ -142,63 +142,6 @@ def api_only():
     app.add_middleware(GZipMiddleware, minimum_size=1000)
     api = create_api(app)
 
-    ckpt_dir = cmd_opts.ckpt_dir
-    sd_models_path = os.path.join(shared.models_path, "Stable-diffusion")
-    if ckpt_dir is not None:
-        sd_models_path = ckpt_dir
-
-    controlnet_dir = cmd_opts.controlnet_dir
-    cn_models_path = os.path.join(shared.models_path, "ControlNet")
-    os.makedirs(controlnet_dir, exist_ok=True)
-    if controlnet_dir is not None:
-        cn_models_path = controlnet_dir
-
-    if 'endpoint_name' in os.environ:
-        items = []
-        api_endpoint = os.environ['api_endpoint']
-        endpoint_name = os.environ['endpoint_name']
-        for file in os.listdir(sd_models_path):
-            if os.path.isfile(os.path.join(sd_models_path, file)) and file.endswith('.ckpt'):
-                hash = modules.sd_models.model_hash(os.path.join(sd_models_path, file))
-                item = {}
-                item['model_name'] = file
-                item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-                item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
-                item['hash'] = hash
-                item['title'] = '{0} [{1}]'.format(file, hash)
-                item['endpoint_name'] = endpoint_name
-                items.append(item)
-        inputs = {
-            'items': items
-        }
-        params = {
-            'module': 'Stable-diffusion'
-        }
-        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-            print(response)
-
-        items = []
-        inputs = {
-            'items': items
-        }
-        params = {
-            'module': 'ControlNet'
-        }
-        for file in os.listdir(cn_models_path):
-            if os.path.isfile(os.path.join(cn_models_path, file)) and \
-               (file.endswith('pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
-                hash = modules.sd_models.model_hash(os.path.join(cn_models_path, file))
-                item = {}
-                item['model_name'] = file
-                item['title'] = '{0} [{1}]'.format(file, hash)
-                item['endpoint_name'] = endpoint_name
-                items.append(item)
-
-        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-            print(response)
-
     modules.script_callbacks.app_started_callback(None, app)
 
     @app.exception_handler(RequestValidationError)
@@ -210,6 +153,17 @@ def api_only():
 
     api.launch(server_name="0.0.0.0" if cmd_opts.listen else "127.0.0.1", port=cmd_opts.port if cmd_opts.port else 7861)
 
+def user_auth(username, password):
+    inputs = {
+        'username': username,
+        'password': password
+    }
+    api_endpoint = os.environ['api_endpoint']
+
+    response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
+    print(response)
+
+    return response.status_code == 200
 
 def webui():
     launch_api = cmd_opts.api
@@ -228,7 +182,8 @@ def webui():
             ssl_keyfile=cmd_opts.tls_keyfile,
             ssl_certfile=cmd_opts.tls_certfile,
             debug=cmd_opts.gradio_debug,
-            auth=[tuple(cred.split(':')) for cred in cmd_opts.gradio_auth.strip('"').split(',')] if cmd_opts.gradio_auth else None,
+            auth=user_auth,
+            auth_message="This login process is being used to verify your eligibility to use this stable-diffusion-webui. It's up to your organization's implementation",
             inbrowser=cmd_opts.autolaunch,
             prevent_thread_lock=True
         )
@@ -248,7 +203,63 @@ def webui():
         if launch_api:
             create_api(app)
 
-        modules.script_callbacks.app_started_callback(shared.demo, app)
+            ckpt_dir = cmd_opts.ckpt_dir
+            sd_models_path = os.path.join(shared.models_path, "Stable-diffusion")
+            if ckpt_dir is not None:
+                sd_models_path = ckpt_dir
+
+            controlnet_dir = cmd_opts.controlnet_dir
+            cn_models_path = os.path.join(shared.models_path, "ControlNet")
+            os.makedirs(controlnet_dir, exist_ok=True)
+            if controlnet_dir is not None:
+                cn_models_path = controlnet_dir
+
+            if 'endpoint_name' in os.environ:
+                items = []
+                api_endpoint = os.environ['api_endpoint']
+                endpoint_name = os.environ['endpoint_name']
+                for file in os.listdir(sd_models_path):
+                    if os.path.isfile(os.path.join(sd_models_path, file)) and file.endswith('.ckpt'):
+                        hash = modules.sd_models.model_hash(os.path.join(sd_models_path, file))
+                        item = {}
+                        item['model_name'] = file
+                        item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
+                        item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
+                        item['hash'] = hash
+                        item['title'] = '{0} [{1}]'.format(file, hash)
+                        item['endpoint_name'] = endpoint_name
+                        items.append(item)
+                inputs = {
+                    'items': items
+                }
+                params = {
+                    'module': 'Stable-diffusion'
+                }
+                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+                    print(response)
+
+                items = []
+                inputs = {
+                    'items': items
+                }
+                params = {
+                    'module': 'ControlNet'
+                }
+                for file in os.listdir(cn_models_path):
+                    if os.path.isfile(os.path.join(cn_models_path, file)) and \
+                    (file.endswith('pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
+                        hash = modules.sd_models.model_hash(os.path.join(cn_models_path, file))
+                        item = {}
+                        item['model_name'] = file
+                        item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
+                        item['endpoint_name'] = endpoint_name
+                        items.append(item)
+
+                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+                    print(response)
+
         modules.script_callbacks.app_started_callback(shared.demo, app)
 
         wait_on_server(shared.demo)

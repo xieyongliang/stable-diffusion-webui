@@ -26,6 +26,9 @@ from modules import sd_hijack, hypernetworks, sd_models
 from typing import Union
 import traceback
 import requests
+import piexif
+import piexif.helper
+import numpy as np
 
 def upscaler_to_index(name: str):
     try:
@@ -54,23 +57,48 @@ def decode_base64_to_image(encoding):
         encoding = encoding.split(";")[1].split(",")[1]
     return Image.open(BytesIO(base64.b64decode(encoding)))
 
+def encode_to_base64(image):
+    if type(image) is str:
+        return image
+    elif type(image) is Image.Image:
+        return encode_pil_to_base64(image)
+    elif type(image) is np.ndarray:
+        return encode_np_to_base64(image)
+    else:
+        return ""
+
 def encode_pil_to_base64(image):
     with io.BytesIO() as output_bytes:
 
-        # Copy any text-only metadata
-        use_metadata = False
-        metadata = PngImagePlugin.PngInfo()
-        for key, value in image.info.items():
-            if isinstance(key, str) and isinstance(value, str):
-                metadata.add_text(key, value)
-                use_metadata = True
+        if opts.samples_format.lower() == 'png':
+            use_metadata = False
+            metadata = PngImagePlugin.PngInfo()
+            for key, value in image.info.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    metadata.add_text(key, value)
+                    use_metadata = True
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=opts.jpeg_quality)
 
-        image.save(
-            output_bytes, "PNG", pnginfo=(metadata if use_metadata else None)
-        )
+        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
+            parameters = image.info.get('parameters', None)
+            exif_bytes = piexif.dump({
+                "Exif": { piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode") }
+            })
+            if opts.samples_format.lower() in ("jpg", "jpeg"):
+                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=opts.jpeg_quality)
+            else:
+                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=opts.jpeg_quality)
+
+        else:
+            raise HTTPException(status_code=500, detail="Invalid image format")
+
         bytes_data = output_bytes.getvalue()
+
     return base64.b64encode(bytes_data)
 
+def encode_np_to_base64(image):
+    pil = Image.fromarray(image)
+    return encode_pil_to_base64(pil)
 
 class Api:
     def __init__(self, app: FastAPI, queue_lock: Lock):
@@ -138,16 +166,13 @@ class Api:
         shared.state.begin()
 
         with self.queue_lock:
-            processed = process_images(p)
-
-            if p.script_args is not None:
-                processed = p.scripts.run(p, *p.script_args)
+            processed = p.scripts.run(p, *p.script_args)
             if processed is None:
                 processed = process_images(p)
 
         shared.state.end()
 
-        b64images = list(map(encode_pil_to_base64, processed.images))
+        b64images = list(map(encode_to_base64, processed.images))
 
         return TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
 
@@ -185,16 +210,13 @@ class Api:
         shared.state.begin()
 
         with self.queue_lock:
-            processed = process_images(p)
-
-            if p.script_args is not None:
-                processed = p.scripts.run(p, *p.script_args)
+            processed = p.scripts.run(p, *p.script_args)
             if processed is None:
                 processed = process_images(p)
 
         shared.state.end()
 
-        b64images = list(map(encode_pil_to_base64, processed.images))
+        b64images = list(map(encode_to_base64, processed.images))
 
         if not img2imgreq.include_init_images:
             img2imgreq.init_images = None
@@ -210,7 +232,7 @@ class Api:
         with self.queue_lock:
             result = run_extras(extras_mode=0, image_folder="", input_dir="", output_dir="", **reqDict)
 
-        return ExtrasSingleImageResponse(image=encode_pil_to_base64(result[0][0]), html_info=result[1])
+        return ExtrasSingleImageResponse(image=encode_to_base64(result[0][0]), html_info=result[1])
 
     def extras_batch_images_api(self, req: ExtrasBatchImagesRequest):
         reqDict = setUpscalers(req)
@@ -226,7 +248,7 @@ class Api:
         with self.queue_lock:
             result = run_extras(extras_mode=1, image="", input_dir="", output_dir="", **reqDict)
 
-        return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
+        return ExtrasBatchImagesResponse(images=list(map(encode_to_base64, result[0])), html_info=result[1])
 
     def pnginfoapi(self, req: PNGInfoRequest):
         if(not req.image.strip()):
@@ -260,7 +282,7 @@ class Api:
 
         current_image = None
         if shared.state.current_image and not req.skip_current_image:
-            current_image = encode_pil_to_base64(shared.state.current_image)
+            current_image = encode_to_base64(shared.state.current_image)
 
         return ProgressResponse(progress=progress, eta_relative=eta_relative, state=shared.state.dict(), current_image=current_image)
 
