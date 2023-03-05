@@ -252,7 +252,7 @@ def webui():
                         hash = modules.sd_models.model_hash(os.path.join(cn_models_path, file))
                         item = {}
                         item['model_name'] = file
-                        item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
+                        item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
                         item['endpoint_name'] = endpoint_name
                         items.append(item)
 
