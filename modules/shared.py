@@ -145,6 +145,30 @@ sagemaker_endpoint_component = None
 sd_model_checkpoint_component = None
 create_train_dreambooth_component = None
 
+response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
+if response.status_code == 200:
+    industrial_model = response.text
+else:
+    model_name = 'stable-diffusion-webui'
+    model_description = model_name
+    inputs = {
+        'model_algorithm': 'stable-diffusion-webui',
+        'model_name': model_name,
+        'model_description': model_description,
+        'model_extra': '{"visible": "false"}',
+        'model_samples': '',
+        'file_content': {
+                'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
+        }
+    }
+
+    response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+    if response.status_code == 200:
+        body = json.loads(response.text)
+        industrial_model = body['id']
+    else:
+        print(response.text)
+
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork
     global hypernetworks
@@ -303,29 +327,6 @@ def refresh_sagemaker_endpoints(username=None):
 
     if not username:
         return sagemaker_endpoints
-
-    if industrial_model == '':
-        response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
-        if response.status_code == 200:
-            industrial_model = response.text
-        else:
-            model_name = 'stable-diffusion-webui'
-            model_description = model_name
-            inputs = {
-                'model_algorithm': 'stable-diffusion-webui',
-                'model_name': model_name,
-                'model_description': model_description,
-                'model_extra': '{"visible": "false"}',
-                'model_samples': '',
-                'file_content': {
-                        'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
-                }
-            }
-
-            response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
-            if response.status_code == 200:
-                body = json.loads(response.text)
-                industrial_model = body['id']
 
     if industrial_model != '':
         params = {
