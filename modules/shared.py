@@ -137,37 +137,37 @@ os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetwork = None
 
-api_endpoint = os.environ['api_endpoint']
-industrial_model = ''
-default_options = {}
-username_state = None
-sagemaker_endpoint_component = None
-sd_model_checkpoint_component = None
-create_train_dreambooth_component = None
+if not cmd_opts.train:
+    api_endpoint = os.environ['api_endpoint']
+    industrial_model = ''
+    default_options = {}
+    sagemaker_endpoint_component = None
+    sd_model_checkpoint_component = None
+    create_train_dreambooth_component = None
 
-response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
-if response.status_code == 200:
-    industrial_model = response.text
-else:
-    model_name = 'stable-diffusion-webui'
-    model_description = model_name
-    inputs = {
-        'model_algorithm': 'stable-diffusion-webui',
-        'model_name': model_name,
-        'model_description': model_description,
-        'model_extra': '{"visible": "false"}',
-        'model_samples': '',
-        'file_content': {
-                'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
-        }
-    }
-
-    response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+    response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
     if response.status_code == 200:
-        body = json.loads(response.text)
-        industrial_model = body['id']
+        industrial_model = response.text
     else:
-        print(response.text)
+        model_name = 'stable-diffusion-webui'
+        model_description = model_name
+        inputs = {
+            'model_algorithm': 'stable-diffusion-webui',
+            'model_name': model_name,
+            'model_description': model_description,
+            'model_extra': '{"visible": "false"}',
+            'model_samples': '',
+            'file_content': {
+                    'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
+            }
+        }
+
+        response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+        if response.status_code == 200:
+            body = json.loads(response.text)
+            industrial_model = body['id']
+        else:
+            print(response.text)
 
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork
