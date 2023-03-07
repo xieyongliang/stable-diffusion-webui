@@ -140,7 +140,6 @@ loaded_hypernetwork = None
 api_endpoint = os.environ['api_endpoint']
 industrial_model = ''
 default_options = {}
-username_state = None
 sagemaker_endpoint_component = None
 sd_model_checkpoint_component = None
 create_train_dreambooth_component = None

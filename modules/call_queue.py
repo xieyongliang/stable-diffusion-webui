@@ -18,6 +18,7 @@ import numpy as np
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageChops
 
 from modules import shared
+import gradio as gr
 
 queue_lock = threading.Lock()
 
@@ -31,7 +32,16 @@ def wrap_queued_call(func):
 
     return f
 
-def wrap_gradio_gpu_call(func, extra_outputs=None):    
+def wrap_gradio_gpu_call(func, request:gr.Request, extra_outputs=None):
+    tokens = shared.demo.server_app.tokens
+    cookies = request.headers['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    username = tokens[access_token] if access_token else None
+
     def encode_image_to_base64(image):
         if isinstance(image, bytes):
             encoded_string = base64.b64encode(image)
@@ -75,7 +85,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
         return processed
 
-    def sagemaker_inference(task, infer, username, sagemaker_endpoint, *args, **kwargs):
+    def sagemaker_inference(task, infer, sagemaker_endpoint, *args, **kwargs):
         infer = 'async'
         if task == 'text-to-image' or task == 'image-to-image':
             if task == 'text-to-image':
@@ -410,20 +420,17 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
     def f(*args, **kwargs):
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
-            username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            res = sagemaker_inference('text-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
+            res = sagemaker_inference('text-to-image', 'sync', sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.img2img.img2img:
-            username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            res = sagemaker_inference('image-to-image', 'sync', username, sagemaker_endpoint, *args, **kwargs)
+            res = sagemaker_inference('image-to-image', 'sync', sagemaker_endpoint, *args, **kwargs)
         elif cmd_opts.pureui and func == modules.extras.run_extras:
-            username = args[len(args) - 2]
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-2]
-            res = sagemaker_inference('extras', 'sync', username, sagemaker_endpoint, *args, **kwargs)
+            res = sagemaker_inference('extras', 'sync', sagemaker_endpoint, *args, **kwargs)
         else:
             shared.state.begin()
             with queue_lock:
@@ -435,7 +442,16 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
     return wrap_gradio_call(f, extra_outputs=extra_outputs, add_stats=True)
 
 
-def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
+def wrap_gradio_call(func, request : gr.Request, extra_outputs=None, add_stats=False):
+    tokens = shared.demo.server_app.tokens
+    cookies = request.headers['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    username = tokens[access_token] if access_token else None
+
     def f(*args, extra_outputs_array=extra_outputs, **kwargs):
         run_memmon = shared.opts.memmon_poll_rate > 0 and not shared.mem_mon.disabled and add_stats
         if run_memmon:
@@ -443,6 +459,7 @@ def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
         t = time.perf_counter()
 
         try:
+            args.append(username)
             res = list(func(*args, **kwargs))
         except Exception as e:
             # When printing out our debug argument list, do not print out more than a MB of text

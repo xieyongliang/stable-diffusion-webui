@@ -433,7 +433,7 @@ def create_toprow(is_img2img):
             with gr.Row():
                 skip = gr.Button('Skip', elem_id=f"{id_part}_skip")
                 interrupt = gr.Button('Interrupt', elem_id=f"{id_part}_interrupt")
-                submit = gr.Button('Generate', elem_id=f"{id_part}_generate", variant='primary', visible=(not cmd_opts.pureui))
+                submit = gr.Button('Generate', elem_id=f"{id_part}_generate", variant='primary')
 
                 skip.click(
                     fn=lambda: shared.state.skip(),
@@ -533,7 +533,16 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
-    def refresh_sagemaker_endpoints(username):
+    def refresh_sagemaker_endpoints(request : gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = request.headers['cookie'].split('; ')
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
         refresh_method(username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
@@ -555,7 +564,7 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
     if elem_id == 'refresh_sagemaker_endpoint':
         refresh_button.click(
             fn=refresh_sagemaker_endpoints,
-            inputs=[shared.username_state],
+            inputs=[],
             outputs=[refresh_component]
         )
     elif elem_id == 'refresh_sd_model_checkpoint':
@@ -676,7 +685,6 @@ def create_ui():
     interfaces = []
 
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
-        shared.username_state = gr.Text(value='', visible=False)        
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
                 image = gr.Image(elem_id="pnginfo_image", label="Source", source="upload", interactive=True, type="pil")
@@ -784,7 +792,16 @@ def create_ui():
             return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
         return opts.dumpjson(), f'{len(changed)} settings changed: {", ".join(changed)}.'
 
-    def run_settings_single(value, key, username):
+    def run_settings_single(value, key, request : gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = request.headers['cookie'].split('; ')
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
         if username and username != '':
             if not opts.same_type(value, opts.data_labels[key].default):
                 return gr.update(visible=True), opts.dumpjson()
@@ -984,7 +1001,7 @@ def create_ui():
                     denoising_strength,
                     firstphase_width,
                     firstphase_height,
-                ] + custom_inputs + [shared.username_state, shared.sagemaker_endpoint_component],
+                ] + custom_inputs + [shared.sagemaker_endpoint_component],
 
                 outputs=[
                     txt2img_gallery,
@@ -1226,7 +1243,7 @@ def create_ui():
                     inpainting_mask_invert,
                     img2img_batch_input_dir if not cmd_opts.pureui else dummy_component,
                     img2img_batch_output_dir if not cmd_opts.pureui else dummy_component,
-                ] + custom_inputs + [shared.username_state, shared.sagemaker_endpoint_component],
+                ] + custom_inputs + [shared.sagemaker_endpoint_component],
                 outputs=[
                     img2img_gallery,
                     generation_info,
@@ -1331,7 +1348,7 @@ def create_ui():
                             extras_batch_output_dir = gr.Textbox(label="Output directory", **shared.hide_dirs, placeholder="Leave blank to save images to the default path.")
                             show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
-                submit = gr.Button('Generate', elem_id="extras_generate", variant='primary', visible=(not cmd_opts.pureui))
+                submit = gr.Button('Generate', elem_id="extras_generate", variant='primary')
                 extras_submit = submit
 
                 with gr.Tabs(elem_id="extras_resize_mode"):
@@ -1385,7 +1402,7 @@ def create_ui():
                 extras_upscaler_2,
                 extras_upscaler_2_visibility,
                 upscale_before_face_fix,
-            ] + [shared.username_state, shared.sagemaker_endpoint_component],
+            ] + [shared.sagemaker_endpoint_component],
             outputs=[
                 result_images,
                 html_info_x,
@@ -1511,7 +1528,7 @@ def create_ui():
                             embedding_output = gr.Label(label='Output')
 
                         with gr.Column():
-                            create_train_embedding = gr.Button(value="Train Embedding", variant='primary', visible=False)
+                            create_train_embedding = gr.Button(value="Train Embedding", variant='primary')
 
                 with gr.Tab(label="Train Hypernetwork"):
                     gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
@@ -1597,14 +1614,13 @@ def create_ui():
                             hypernetwork_output = gr.Label(label='Output')
 
                         with gr.Column():
-                            create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary', visible=False)
+                            create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
 
                 if dreambooth_tab:
                     with gr.Tab(label="Train Dreambooth"):
                         dreambooth_tab.render()
 
                 def sagemaker_train_embedding(
-                        username,
                         sd_model_checkpoint,
                         new_embedding_name,
                         initialization_text,
@@ -1641,8 +1657,18 @@ def create_ui():
                         embedding_preview_from_txt2img,
                         embedding_training_instance_type,
                         embedding_training_instance_count,
-                        *txt2img_preview_params
+                        *txt2img_preview_params,
+                        request: gr.Request
                     ):
+
+                    tokens = shared.demo.server_app.tokens
+                    cookies = request.headers['cookie'].split('; ')
+                    access_token = None
+                    for cookie in cookies:
+                        if cookie.startswith('access-token'):
+                            access_token = cookie[len('access-token=') : ]
+                            break
+                    username = tokens[access_token] if access_token else None
 
                     train_args = {
                         'embedding_settings': {
@@ -1720,7 +1746,6 @@ def create_ui():
                         }
                     
                 def sagemaker_train_hypernetwork(
-                        username,
                         sd_model_checkpoint,
                         new_hypernetwork_name,
                         new_hypernetwork_sizes,
@@ -1761,8 +1786,18 @@ def create_ui():
                         hypernetwork_preview_from_txt2img,
                         hypernetwork_training_instance_type,
                         hypernetwork_training_instance_count,
-                        *txt2img_preview_params
+                        *txt2img_preview_params,
+                        request: gr.Request
                     ):
+
+                    tokens = shared.demo.server_app.tokens
+                    cookies = request.headers['cookie'].split('; ')
+                    access_token = None
+                    for cookie in cookies:
+                        if cookie.startswith('access-token'):
+                            access_token = cookie[len('access-token=') : ]
+                            break
+                    username = tokens[access_token] if access_token else None
 
                     train_args = {
                         'hypernetwork_settings': {
@@ -1846,7 +1881,6 @@ def create_ui():
                 create_train_embedding.click(
                     fn=sagemaker_train_embedding,
                     inputs=[
-                        shared.username_state,
                         shared.sd_model_checkpoint_component,
                         new_embedding_name,
                         initialization_text,
@@ -1891,7 +1925,6 @@ def create_ui():
                 create_train_hypernetwork.click(
                     fn=sagemaker_train_hypernetwork,
                     inputs=[
-                        shared.username_state,
                         shared.sd_model_checkpoint_component,
                         new_hypernetwork_name,
                         new_hypernetwork_sizes,
@@ -1938,233 +1971,85 @@ def create_ui():
                 )
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
-        def change_sign_options(choice):
-            return {
-                signin_column: gr.update(visible=(choice=="Sign In")),
-                signup_column: gr.update(visible=(choice=="Sign Up"))
-            }
-
-        with gr.Row(visible=False) as user_login_row:
-            with gr.Column():
-                login_username = gr.Text(label="Username")
-                login_password = gr.Text(label="Password", type="password")
-                login_email = gr.Text(label="Email", type="email")
-
-            with gr.Column():
-                signout = gr.Button("Sign Out")
-                userupdate = gr.Button("Update")
-                userdelete = gr.Button("Delete")
-                login_output = gr.Label(label="Output")
-
-        with gr.Row(visible=True) as user_sign_row:
-            with gr.Column():
-                sign_options = gr.Radio(["Sign In", "Sign Up"], label="Sign Options", value="Sign In", interactive=True)
-
-            with gr.Column(visible=(sign_options.value=="Sign In")) as signin_column:
-                signin_username = gr.Textbox(label="Username")
-                signin_password = gr.Textbox(label="Password", type="password")
-                signin_output = gr.Label(label="Output")
-                signin = gr.Button("Sign In")
-
-            with gr.Column(visible=(sign_options.value=="Sign Up")) as signup_column:
-                signup_username = gr.Textbox(label="Username")
-                signup_password = gr.Textbox(label="Password", type="password")
-                signup_email = gr.Textbox(label="Email", type="email")
-                signup_output = gr.Label(label="Output")
-                signup = gr.Button("Sign Up")
-
-            sign_options.change(change_sign_options, sign_options, [signin_column, signup_column])
-
-        def user_signin(signin_username, signin_password):
-            inputs = {
-                'action': 'signin',
-                'username': signin_username,
-                'password': signin_password
-            }
-
-            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            if response.status_code == 200:
-                username = json.loads(response.text)['username']
-                password = json.loads(response.text)['password']
-                email = json.loads(response.text)['email']
-                options = json.loads(response.text)['options'] if 'options' in json.loads(response.text) else None
-
-                response = {
-                    shared.username_state: gr.update(value=username),
-                    user_login_row: gr.update(visible=True),
-                    user_sign_row: gr.update(visible=False),
-                    login_username: gr.update(value=signin_username),
-                    login_password: gr.update(value=password),
-                    login_email: gr.update(value=email),
-                    txt2img_submit: gr.update(visible=True),
-                    img2img_submit: gr.update(visible=True),
-                    extras_submit: gr.update(visible=True),
-                    create_train_embedding: gr.update(visible=True),
-                    create_train_hypernetwork: gr.update(visible=True),
-                    shared.create_train_dreambooth_component: gr.update(visible=True),
-                    signin_output: gr.update(value='')
-                }
-
-                if options != None:
-                    opts.data = json.loads(options)
-                    sagemaker_endpoint = None
-                    for key in opts.data:
-                        if key in component_dict:
-                            if key == 'sagemaker_endpoint':
-                                sagemaker_endpoint = opts.data[key]
-                                response[component_dict[key]] = gr.update(value=opts.data[key], choices=shared.refresh_sagemaker_endpoints(username))
-                            elif key == 'sd_model_checkpoint':
-                                shared.refresh_checkpoints(sagemaker_endpoint)
-                                response[component_dict[key]] = gr.update(value=opts.data[key], choices=shared.list_checkpoint_tiles())
-                            else:
-                                response[component_dict[key]] = gr.update(value=opts.data[key])
-                return response
-            else:
-                return {
-                    signin_output: gr.update(value='Mismatched username/password or not existed username')
-                }                    
-
-        def user_signup(signup_username, signup_password, signup_email):
-            inputs = {
-                'action': 'signup',
-                'username': signup_username,
-                'password': signup_password,
-                'email': signup_email
-            }
-
-            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            if response.status_code == 200:            
-                username = json.loads(response.text)['username']
-
-                return {
-                    shared.username_state: gr.update(value=username),
-                    user_login_row: gr.update(visible=True),
-                    user_sign_row: gr.update(visible=False),
-                    login_username: gr.update(value=signup_username),
-                    login_password: gr.update(value=signup_password),
-                    login_email: gr.update(value=signup_email),
-                    txt2img_submit: gr.update(visible=True),
-                    img2img_submit: gr.update(visible=True),
-                    extras_submit: gr.update(visible=True),
-                    create_train_embedding: gr.update(visible=True),
-                    create_train_hypernetwork: gr.update(visible=True),
-                    shared.create_train_dreambooth_component: gr.update(visible=True),
-                    signup_output: gr.update(value='')
-                }
-            else:
-                return {
-                    signup_output: gr.update(value='Signup failed, please check and retry again')
-                }                    
-
-        def user_signout():
-            username = ''         
-
-            opts.data = shared.default_options
-            response = {
-                shared.username_state: gr.update(value=username),
-                user_login_row: gr.update(visible=False),
-                user_sign_row: gr.update(visible=True),
-                txt2img_submit: gr.update(visible=False),
-                img2img_submit: gr.update(visible=False),
-                extras_submit: gr.update(visible=True),
-                create_train_embedding: gr.update(visible=False),
-                create_train_hypernetwork: gr.update(visible=False),
-                shared.create_train_dreambooth_component: gr.update(visible=False),
-            }
-
-            for key in opts.data:
-                if key in component_dict:
-                    if key == 'sagemaker_endpoint':
-                        response[component_dict[key]] = gr.update(value=opts.data[key], choices=[])
-                    elif key == 'sd_model_checkpoint':
-                        response[component_dict[key]] = gr.update(value=opts.data[key], choices=[])
-                    else:
-                        response[component_dict[key]] = gr.update(value=opts.data[key])
-
-            return response
-
-        def user_update(login_username, login_password, login_email):
-            inputs = {
-                'action': 'edit',
-                'username': login_username,
-                'password': login_password,
-                'email': login_email
-            }
-
-            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            if response.status_code == 200:
-                return {
-                    login_output: gr.update(value='Update succeed')
-                }
-            else:
-                return {
-                    login_output: gr.update(value='Update failed, please check and retry again')
-                }                                    
-
-        def user_delete(login_username, login_password, login_email):
-            inputs = {
-                'action': 'delete',
-                'username': login_username,
-                'password': login_password
-            }
-
-            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            if response.status_code == 200:
-                username = ''            
-                opts.data = shared.default_options
-
-                response = {
-                    shared.username_state: gr.update(value=username),
-                    user_login_row: gr.update(visible=False),
-                    user_sign_row: gr.update(visible=True),
-                    txt2img_submit: gr.update(visible=False),
-                    img2img_submit: gr.update(visible=False),
-                    extras_submit: gr.update(visible=True),
-                    login_output: gr.update(value='')
-                }
-
-                for key in opts.data:
-                    if key in component_dict:
-                        if key == 'sagemaker_endpoint':
-                            response[component_dict[key]] = gr.update(value=opts.data[key], choices=[])
-                        elif key == 'sd_model_checkpoint':
-                            response[component_dict[key]] = gr.update(value=opts.data[key], choices=[])
-                        else:
-                            response[component_dict[key]] = gr.update(value=opts.data[key])
-                return response
-            else:
-                return {
-                    login_output: gr.update(value='Delete failed, please check and retry again')
-                }                 
-
-        signin.click(
-            fn=user_signin,
-            inputs=[signin_username, signin_password],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email,txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, signin_output] + components
+        user_dataframe = gr.Dataframe(
+            headers=["username", "password", "options"],
+            row_count=2,
+            col_count=(3,"fixed"),
+            label="Input Data",
+            interactive=True,
+            visible=True,
+            datatype=["str","str","str"],
+            type="array"
         )
 
-        signup.click(
-            fn=user_signup,
-            inputs=[signup_username, signup_password, signup_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, login_username, login_password, login_email, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, signup_output]
-        )
+        with gr.Row():
+            load_userdata_btn = gr.Button(value="Load")
+            save_userdata_btn = gr.Button(value="Save")
 
-        signout.click(
-            fn=user_signout,
+        def load_userdata(request: gr.Request):
+            tokens = shared.demo.server_app.tokens
+            cookies = request.headers['cookie'].split('; ')
+            access_token = None
+            for cookie in cookies:
+                if cookie.startswith('access-token'):
+                    access_token = cookie[len('access-token=') : ]
+                    break
+            if not access_token or tokens[access_token] != 'admin':
+                return gr.update()
+            inputs = {
+                'action': 'load'
+            }
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            print(response.text)
+            if response.status_code == 200:
+                items = []
+                for item in json.loads(response.text):
+                    items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
+                print(items)
+                return gr.update(value=items)
+            else:
+                return gr.update()
+
+        def save_userdata(user_dataframe, request: gr.Request):
+            tokens = shared.demo.server_app.tokens
+            cookies = request.headers['cookie'].split('; ')
+            access_token = None
+            for cookie in cookies:
+                if cookie.startswith('access-token'):
+                    access_token = cookie[len('access-token=') : ]
+                    break
+            if not access_token or tokens[access_token] != 'admin':
+                return gr.update()
+            items = []
+            for item in user_dataframe:
+                items.append(
+                    {
+                        'username': item[0],
+                        'password': item[1],
+                        'options': item[2]
+                    }
+                )
+            inputs = {
+                'action': 'save',
+                'items': items
+            }
+            print(inputs)
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            print(response.text)
+            if response.status_code == 200:
+                print(response.text)
+                return user_dataframe
+
+        load_userdata_btn.click(
+            load_userdata,
             inputs=[],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component] + components
+            outputs=[user_dataframe]
         )
 
-        userupdate.click(
-            fn=user_update,
-            inputs=[login_username, login_password, login_email],
-            outputs=[user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, login_output]
-        )
-
-        userdelete.click(
-            fn=user_delete,
-            inputs=[login_username, login_password, login_email],
-            outputs=[shared.username_state, user_login_row, user_sign_row, txt2img_submit, img2img_submit, extras_submit, create_train_embedding, create_train_hypernetwork, shared.create_train_dreambooth_component if shared.create_train_dreambooth_component else dummy_component, login_output] + components
+        save_userdata_btn.click(
+            save_userdata,
+            inputs=[user_dataframe],
+            outputs=[user_dataframe]
         )
 
     if cmd_opts.pureui:
@@ -2229,7 +2114,7 @@ def create_ui():
         text_settings = gr.Textbox(elem_id="settings_json", value=lambda: opts.dumpjson(), visible=False)
         settings_submit.click(
             fn=wrap_gradio_call(run_settings, extra_outputs=[gr.update()]),
-            inputs=components + [shared.username_state],
+            inputs=components,
             outputs=[text_settings, result],
         )
 
@@ -2237,8 +2122,8 @@ def create_ui():
             component = component_dict[k]
 
             component.change(
-                fn=lambda value, k=k: run_settings_single(value, key=k, username=shared.username_state),
-                inputs=[component] + [shared.username_state],
+                fn=lambda value, k=k: run_settings_single(value, key=k),
+                inputs=[component],
                 outputs=[component, text_settings],
             )
 

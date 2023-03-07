@@ -163,6 +163,18 @@ def user_auth(username, password):
     response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
     print(response)
 
+    if response.status_code == 200:
+        try:
+            options = json.loads(response.text)['options']
+        except:
+            options = None
+
+        if options != None:
+            shared.opts.data = json.loads(options)
+
+        shared.refresh_sagemaker_endpoints(username)
+        shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
+
     return response.status_code == 200
 
 def webui():
