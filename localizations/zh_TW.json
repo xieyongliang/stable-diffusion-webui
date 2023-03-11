@@ -636,6 +636,8 @@
     "Instance count": "實例數量",
     "Submit training job sucessful": "訓練任務提交成功",
     "Settings saved failed": "設置保存錯誤",
+    "Settings changed without save": "設置變更但未保存",
+    "Settings changed and saved": "設置變更並保存",
     "SageMaker endpoint": "SageMaker 端點",
     "User": "使用者",
     "Model": "模型",

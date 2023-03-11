@@ -211,3 +211,21 @@ function restart_reload(){
 
     return []
 }
+
+function login(username) {
+    var txt2img=gradioApp().querySelector('#tabs').querySelectorAll('button')[0];
+    var img2img=gradioApp().querySelector('#tabs').querySelectorAll('button')[1];
+    var extras=gradioApp().querySelector('#tabs').querySelectorAll('button')[2];
+    var pnginfo=gradioApp().querySelector('#tabs').querySelectorAll('button')[3];
+    var train=gradioApp().querySelector('#tabs').querySelectorAll('button')[4];
+    var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];
+    var extension=gradioApp().querySelector('#tabs').querySelectorAll('button')[6];
+
+    txt2img.style.display=(username=='admin'?'none':'block')
+    img2img.style.display=(username=='admin'?'none':'block')
+    extras.style.display=(username=='admin'?'none':'block')
+    pnginfo.style.display=(username=='admin'?'none':'block')
+    train.style.display=(username=='admin'?'none':'block')
+    user.style.display=(username=='admin'?'block':'none')
+    extension.style.display=(username=='admin'?'none':'block')
+}

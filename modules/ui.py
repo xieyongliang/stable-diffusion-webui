@@ -795,8 +795,8 @@ def create_ui():
             if response.status_code != 200:
                 raise RuntimeError("Settings saved failed")
         except RuntimeError:
-            return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
-        return opts.dumpjson(), f'{len(changed)} settings changed: {", ".join(changed)}.'
+            return opts.dumpjson(), 'Settings changed without save'
+        return opts.dumpjson(), 'Settings changed and saved'
 
     def run_settings_single(value, key, request : gr.Request):
         tokens = shared.demo.server_app.tokens
@@ -1978,7 +1978,12 @@ def create_ui():
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
         username_state = gr.Textbox(value="", elem_id="username", visible=False)
-        username_state.change(fn=None, inputs=[username_state], outputs=None, _js="function(username){var x=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];x.style.display=(username=='admin'?'block':'none')}")
+        username_state.change(
+            fn=None,
+            inputs=[username_state],
+            outputs=None,
+            _js="login"
+        )
 
         user_dataframe = gr.Dataframe(
             headers=["Username", "Password", "Options"],
@@ -2042,7 +2047,6 @@ def create_ui():
                 'action': 'save',
                 'items': items
             }
-            print(inputs)
             response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
             print(response.text)
             if response.status_code == 200:
