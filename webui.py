@@ -165,13 +165,13 @@ def user_auth(username, password):
     if response.status_code == 200:
         try:
             body = json.loads(response.text)
-            options = json.loads(body)['options']
+            options = json.loads(json.loads(body)['options'])
         except Exception as e:
             print(e)
             options = None
 
         if options != None:
-            shared.opts.data = json.loads(options)
+            shared.opts.data = options
 
         shared.refresh_sagemaker_endpoints(username)
         shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
