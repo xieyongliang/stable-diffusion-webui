@@ -768,11 +768,8 @@ def create_ui():
     script_callbacks.ui_settings_callback()
     opts.reorder()
 
-    def run_settings(*args):
+    def run_settings(username, *args):
         changed = []
-
-        username = args[len(args) - 1]
-        args = args[:-1]
 
         if not username or username == '':
             return opts.dumpjson(), f'{len(changed)} settings changed: {", ".join(changed)}.'
@@ -789,7 +786,7 @@ def create_ui():
 
         try:
             inputs = {
-                'action': 'edit',
+                'action': 'put',
                 'username': username,
                 'options': opts.dumpjson()
             }

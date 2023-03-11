@@ -450,7 +450,7 @@ def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
         t = time.perf_counter()
 
         try:
-            if func.__name__ == 'f':
+            if func.__name__ == 'f' or func.__name__ == 'run_settings':
                 res = list(func(username, *args, **kwargs))
             else:
                 res = list(func(*args, **kwargs))
