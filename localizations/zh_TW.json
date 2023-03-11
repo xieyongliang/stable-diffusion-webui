@@ -744,6 +744,24 @@
     "Sample CFG Scale": "採樣擴散度",
     "Sample Steps": "採樣步數",
     "Cancel": "取消",
-    
+"Invert colors if your image has white background. Change your brush width to make it thinner if you want to draw something.": "如果您的圖像有白色背景，請反轉顏色。 如果你想畫東西，改變你的畫筆寬度讓它更細",
+    "Enable": "啟用",
+    "Invert Input Color": "反轉輸入顏色",
+    "RGB to BGR": "RGB 轉為 BGR",
+    "Low VRAM": "低 VRAM",
+    "Guess Mode": "猜測模式",
+    "Preprocessor": "預處理器",
+    "Weight": "權重",
+    "Guidance strength (T)": "引導強度 (T)",
+    "Resize Mode": "調整模式",
+    "Envelope (Outer Fit)": "信封（外部適配）",
+    "Scale to Fit (Inner Fit)": "縮放以適合 (內部適配)",
+    "Just Resize": "調整大小",
+    "Canvas Width": "畫布寬度",
+    "Canvas Height": "畫布高度",
+    "Create blank canvas": "創建空白畫布",
+    "Preview annotator result": "預覽標註結果",
+    "Hide annotator result": "隱藏標註結果",
+
     "--------": "--------"    
 }

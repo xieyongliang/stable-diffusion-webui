@@ -79,24 +79,27 @@ def list_models(sagemaker_endpoint=None):
         return f'{name} [{shorthash}]', shortname
 
     if shared.cmd_opts.pureui:
-        params = {
-            'module': 'Stable-diffusion', 'endpoint_name': sagemaker_endpoint
-        }
-        response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
-        if response.status_code == 200:
-            model_list = json.loads(response.text)
+        if sagemaker_endpoint:
+            params = {
+                'module': 'Stable-diffusion', 'endpoint_name': sagemaker_endpoint
+            }
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+            if response.status_code == 200:
+                model_list = json.loads(response.text)
 
-            for model in model_list:
-                h = model['hash']
-                filename = model['filename']
-                title = model['title']
-                short_model_name = model['model_name']
-                config = model['config']
+                for model in model_list:
+                    h = model['hash']
+                    filename = model['filename']
+                    title = model['title']
+                    short_model_name = model['model_name']
+                    config = model['config']
 
-                if 'sd_model_checkpoint' not in shared.opts.data:
-                    shared.opts.data['sd_model_checkpoint'] = title
+                    if 'sd_model_checkpoint' not in shared.opts.data:
+                        shared.opts.data['sd_model_checkpoint'] = title
 
-                checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
+                    checkpoints_list[title] = CheckpointInfo(filename, title, h, short_model_name, config)
+            else:
+                print(response.text)
 
             sd_model_checkpoint = shared.opts.data['sd_model_checkpoint']
             if sd_model_checkpoint and sd_model_checkpoint in checkpoints_list:

@@ -144,30 +144,31 @@ if not cmd_opts.train:
     sagemaker_endpoint_component = None
     sd_model_checkpoint_component = None
     create_train_dreambooth_component = None
+    username = ''
 
-    response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
-    if response.status_code == 200:
-        industrial_model = response.text
-    else:
-        model_name = 'stable-diffusion-webui'
-        model_description = model_name
-        inputs = {
-            'model_algorithm': 'stable-diffusion-webui',
-            'model_name': model_name,
-            'model_description': model_description,
-            'model_extra': '{"visible": "false"}',
-            'model_samples': '',
-            'file_content': {
-                    'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
-            }
+response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
+if response.status_code == 200:
+    industrial_model = response.text
+else:
+    model_name = 'stable-diffusion-webui'
+    model_description = model_name
+    inputs = {
+        'model_algorithm': 'stable-diffusion-webui',
+        'model_name': model_name,
+        'model_description': model_description,
+        'model_extra': '{"visible": "false"}',
+        'model_samples': '',
+        'file_content': {
+                'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
         }
+    }
 
-        response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
-        if response.status_code == 200:
-            body = json.loads(response.text)
-            industrial_model = body['id']
-        else:
-            print(response.text)
+    response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+    if response.status_code == 200:
+        body = json.loads(response.text)
+        industrial_model = body['id']
+    else:
+        print(response.text)
 
 def reload_hypernetworks():
     from modules.hypernetworks import hypernetwork
@@ -301,7 +302,9 @@ def list_checkpoint_tiles():
 
 def refresh_checkpoints(sagemaker_endpoint=None):
     import modules.sd_models
-    return modules.sd_models.list_models(sagemaker_endpoint)
+    modules.sd_models.list_models(sagemaker_endpoint)
+    checkpoints = modules.sd_models.checkpoints_list
+    return checkpoints
 
 
 def list_samplers():
@@ -320,7 +323,7 @@ def list_sagemaker_endpoints():
 
     return sagemaker_endpoints
 
-def refresh_sagemaker_endpoints(username=None):
+def refresh_sagemaker_endpoints(username):
     global industrial_model, api_endpoint, sagemaker_endpoints
 
     sagemaker_endpoints = []

@@ -416,8 +416,8 @@ def create_toprow(is_img2img):
         with gr.Column(scale=1, elem_id="roll_col"):
             roll = gr.Button(value=art_symbol, elem_id="roll", visible=len(shared.artist_db.artists) > 0)
             paste = gr.Button(value=paste_symbol, elem_id="paste")
-            save_style = gr.Button(value=save_style_symbol, elem_id="style_create")
-            prompt_style_apply = gr.Button(value=apply_style_symbol, elem_id="style_apply")
+            save_style = gr.Button(value=save_style_symbol, elem_id="style_create", visible=False)
+            prompt_style_apply = gr.Button(value=apply_style_symbol, elem_id="style_apply", visible=False)
 
             token_counter = gr.HTML(value="<span></span>", elem_id=f"{id_part}_token_counter")
             token_button = gr.Button(visible=False, elem_id=f"{id_part}_token_button")
@@ -670,6 +670,15 @@ Requested path was: {f}
 txt2img_submit = None
 img2img_submit = None
 extras_submit = None
+
+def update_sagemaker_endpoint():
+    return gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints)
+
+def update_sd_model_checkpoint():
+    return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
+
+def update_username():
+    return gr.update(value=shared.username)
 
 def create_ui():
     import modules.img2img
@@ -1971,11 +1980,14 @@ def create_ui():
                 )
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
+        username_state = gr.Textbox(value="", elem_id="username", visible=False)
+        username_state.change(fn=None, inputs=[username_state], outputs=None, _js="function(username){var x=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];x.style.display=(username=='admin'?'block':'none')}")
+
         user_dataframe = gr.Dataframe(
-            headers=["username", "password", "options"],
+            headers=["Username", "Password", "Options"],
             row_count=2,
             col_count=(3,"fixed"),
-            label="Input Data",
+            label="User management (Only available for admin user)",
             interactive=True,
             visible=True,
             datatype=["str","str","str"],
@@ -2049,8 +2061,13 @@ def create_ui():
         save_userdata_btn.click(
             save_userdata,
             inputs=[user_dataframe],
-            outputs=[user_dataframe]
+            outputs=[user_dataframe],
+            _js="var if alert('Only admin user can save user data')"
         )
+
+        user_interface.load(update_sagemaker_endpoint, inputs=None, outputs=[shared.sagemaker_endpoint_component])
+        user_interface.load(update_sd_model_checkpoint, inputs=None, outputs=[shared.sd_model_checkpoint_component])
+        user_interface.load(update_username, inputs=None, outputs=[username_state])
 
     if cmd_opts.pureui:
         interfaces += [
