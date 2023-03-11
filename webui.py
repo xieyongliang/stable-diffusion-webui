@@ -161,7 +161,26 @@ def user_auth(username, password):
     api_endpoint = os.environ['api_endpoint']
 
     response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
-    print(response)
+
+    if response.status_code == 200:
+        try:
+            body = json.loads(response.text)
+            options = json.loads(body)['options']
+        except Exception as e:
+            print(e)
+            options = None
+
+        if options != None:
+            shared.opts.data = json.loads(options)
+
+        shared.refresh_sagemaker_endpoints(username)
+        shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
+        shared.username = username
+        modules.ui.update_sagemaker_endpoint()
+        modules.ui.update_sd_model_checkpoint()
+        modules.ui.update_username()
+    else:
+        print(response.text)
 
     return response.status_code == 200
 
@@ -183,7 +202,6 @@ def webui():
             ssl_certfile=cmd_opts.tls_certfile,
             debug=cmd_opts.gradio_debug,
             auth=user_auth,
-            auth_message="This login process is being used to verify your eligibility to use this stable-diffusion-webui. It's up to your organization's implementation",
             inbrowser=cmd_opts.autolaunch,
             prevent_thread_lock=True
         )

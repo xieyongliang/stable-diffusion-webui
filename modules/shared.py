@@ -144,6 +144,7 @@ if not cmd_opts.train:
     sagemaker_endpoint_component = None
     sd_model_checkpoint_component = None
     create_train_dreambooth_component = None
+    username = ''
 
     response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
     if response.status_code == 200:
@@ -301,7 +302,9 @@ def list_checkpoint_tiles():
 
 def refresh_checkpoints(sagemaker_endpoint=None):
     import modules.sd_models
-    return modules.sd_models.list_models(sagemaker_endpoint)
+    modules.sd_models.list_models(sagemaker_endpoint)
+    checkpoints = modules.sd_models.checkpoints_list
+    return checkpoints
 
 
 def list_samplers():
@@ -320,7 +323,7 @@ def list_sagemaker_endpoints():
 
     return sagemaker_endpoints
 
-def refresh_sagemaker_endpoints(username=None):
+def refresh_sagemaker_endpoints(username):
     global industrial_model, api_endpoint, sagemaker_endpoints
 
     sagemaker_endpoints = []

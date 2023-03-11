@@ -91,7 +91,7 @@ def extension_table():
 
         code += f"""
             <tr>
-                <td><label><input class="gr-check-radio gr-checkbox" name="enable_{html.escape(ext.name)}" type="checkbox" {'checked="checked"' if ext.enabled else ''}>{html.escape(ext.name)}</label></td>
+                <td><label><input class="gr-check-radio gr-checkbox" name="enable_{html.escape(ext.name)}" type="checkbox" disabled="true" {'checked="checked"' if ext.enabled else ''}>{html.escape(ext.name)}</label></td>
                 <td>{remote}</td>
                 <td{' class="extension_status"' if ext.remote is not None else ''}>{ext_status}</td>
             </tr>
@@ -243,8 +243,8 @@ def create_ui():
             with gr.TabItem("Installed"):
 
                 with gr.Row():
-                    apply = gr.Button(value="Apply and restart UI", variant="primary")
-                    check = gr.Button(value="Check for updates")
+                    apply = gr.Button(value="Apply and restart UI", variant="primary", visible=False)
+                    check = gr.Button(value="Check for updates", visible=False)
                     extensions_disabled_list = gr.Text(elem_id="extensions_disabled_list", visible=False).style(container=False)
                     extensions_update_list = gr.Text(elem_id="extensions_update_list", visible=False).style(container=False)
 
@@ -263,48 +263,48 @@ def create_ui():
                     inputs=[],
                     outputs=[extensions_table],
                 )
+            if not shared.cmd_opts.pureui:
+                with gr.TabItem("Available"):
+                    with gr.Row():
+                        refresh_available_extensions_button = gr.Button(value="Load from:", variant="primary")
+                        available_extensions_index = gr.Text(value="https://raw.githubusercontent.com/wiki/AUTOMATIC1111/stable-diffusion-webui/Extensions-index.md", label="Extension index URL").style(container=False)
+                        extension_to_install = gr.Text(elem_id="extension_to_install", visible=False)
+                        install_extension_button = gr.Button(elem_id="install_extension_button", visible=False)
 
-            with gr.TabItem("Available"):
-                with gr.Row():
-                    refresh_available_extensions_button = gr.Button(value="Load from:", variant="primary")
-                    available_extensions_index = gr.Text(value="https://raw.githubusercontent.com/wiki/AUTOMATIC1111/stable-diffusion-webui/Extensions-index.md", label="Extension index URL").style(container=False)
-                    extension_to_install = gr.Text(elem_id="extension_to_install", visible=False)
-                    install_extension_button = gr.Button(elem_id="install_extension_button", visible=False)
+                    with gr.Row():
+                        hide_tags = gr.CheckboxGroup(value=["ads", "localization"], label="Hide extensions with tags", choices=["script", "ads", "localization"])
 
-                with gr.Row():
-                    hide_tags = gr.CheckboxGroup(value=["ads", "localization"], label="Hide extensions with tags", choices=["script", "ads", "localization"])
+                    install_result = gr.HTML()
+                    available_extensions_table = gr.HTML()
 
-                install_result = gr.HTML()
-                available_extensions_table = gr.HTML()
+                    refresh_available_extensions_button.click(
+                        fn=modules.ui.wrap_gradio_call(refresh_available_extensions, extra_outputs=[gr.update(), gr.update(), gr.update()]),
+                        inputs=[available_extensions_index, hide_tags],
+                        outputs=[available_extensions_index, available_extensions_table, hide_tags, install_result],
+                    )
 
-                refresh_available_extensions_button.click(
-                    fn=modules.ui.wrap_gradio_call(refresh_available_extensions, extra_outputs=[gr.update(), gr.update(), gr.update()]),
-                    inputs=[available_extensions_index, hide_tags],
-                    outputs=[available_extensions_index, available_extensions_table, hide_tags, install_result],
-                )
+                    install_extension_button.click(
+                        fn=modules.ui.wrap_gradio_call(install_extension_from_index, extra_outputs=[gr.update(), gr.update()]),
+                        inputs=[extension_to_install, hide_tags],
+                        outputs=[available_extensions_table, extensions_table, install_result],
+                    )
 
-                install_extension_button.click(
-                    fn=modules.ui.wrap_gradio_call(install_extension_from_index, extra_outputs=[gr.update(), gr.update()]),
-                    inputs=[extension_to_install, hide_tags],
-                    outputs=[available_extensions_table, extensions_table, install_result],
-                )
+                    hide_tags.change(
+                        fn=modules.ui.wrap_gradio_call(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
+                        inputs=[hide_tags],
+                        outputs=[available_extensions_table, install_result]
+                    )
 
-                hide_tags.change(
-                    fn=modules.ui.wrap_gradio_call(refresh_available_extensions_for_tags, extra_outputs=[gr.update()]),
-                    inputs=[hide_tags],
-                    outputs=[available_extensions_table, install_result]
-                )
+                with gr.TabItem("Install from URL"):
+                    install_url = gr.Text(label="URL for extension's git repository")
+                    install_dirname = gr.Text(label="Local directory name", placeholder="Leave empty for auto")
+                    install_button = gr.Button(value="Install", variant="primary")
+                    install_result = gr.HTML(elem_id="extension_install_result")
 
-            with gr.TabItem("Install from URL"):
-                install_url = gr.Text(label="URL for extension's git repository")
-                install_dirname = gr.Text(label="Local directory name", placeholder="Leave empty for auto")
-                install_button = gr.Button(value="Install", variant="primary")
-                install_result = gr.HTML(elem_id="extension_install_result")
-
-                install_button.click(
-                    fn=modules.ui.wrap_gradio_call(install_extension_from_url, extra_outputs=[gr.update()]),
-                    inputs=[install_dirname, install_url],
-                    outputs=[extensions_table, install_result],
-                )
+                    install_button.click(
+                        fn=modules.ui.wrap_gradio_call(install_extension_from_url, extra_outputs=[gr.update()]),
+                        inputs=[install_dirname, install_url],
+                        outputs=[extensions_table, install_result],
+                    )
 
     return ui
