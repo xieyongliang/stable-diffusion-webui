@@ -417,9 +417,12 @@ class Api:
                 api_endpoint = os.environ['api_endpoint']
                 response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
                 if response.status_code == 200 and response.text != '':
-                    shared.opts.data = json.loads(response.text)
-                    with self.queue_lock:
-                        sd_models.reload_model_weights()
+                    try:
+                        shared.opts.data = json.loads(json.loads(response.text))
+                        with self.queue_lock:
+                            sd_models.reload_model_weights()
+                    except Exception as e:
+                        print(e)
 
                 self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
                 hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)
