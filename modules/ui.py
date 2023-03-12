@@ -864,7 +864,7 @@ def create_ui():
             fn=user_logout,
             inputs=[],
             outputs=[settings_submit, settings_logout, logout_prompt],
-            _fs="logout"
+            _js="logout"
         )
 
         result = gr.HTML()
