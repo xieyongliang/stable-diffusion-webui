@@ -777,6 +777,8 @@
     "Create blank canvas": "创建空白画布",
     "Preview annotator result": "预览标注结果",
     "Hide annotator result": "隐藏标注结果",
+    "Current user :": "当前用户 : ",
+    "Reloading...": "重新载入...",
 
     "--------": "--------"
 }

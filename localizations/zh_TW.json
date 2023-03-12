@@ -770,6 +770,8 @@
     "Create blank canvas": "創建空白畫布",
     "Preview annotator result": "預覽標註結果",
     "Hide annotator result": "隱藏標註結果",
+    "Current user": "當前用戶 : ",
+    "Reloading...": "重新載入...",
 
     "--------": "--------"    
 }

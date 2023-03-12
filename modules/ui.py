@@ -842,30 +842,7 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as settings_interface:
         dummy_component = gr.Label(visible=False)
 
-        with gr.Row():
-            settings_submit = gr.Button(value="Apply settings", variant='primary')
-            settings_logout = gr.Button(value="Logout")
-            logout_prompt = gr.HTML(value="<strong>You have been logout, please refresh page manaully...</strong>", visible=False)
-
-        def user_logout(request: gr.Request):
-            tokens = shared.demo.server_app.tokens
-            cookies = request.headers['cookie'].split('; ')
-            access_token = None
-            for cookie in cookies:
-                if cookie.startswith('access-token'):
-                    access_token = cookie[len('access-token=') : ]
-                    print(access_token)
-                    tokens.pop(access_token)
-                    print(tokens)
-                    break
-            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
-
-        settings_logout.click(
-            fn=user_logout,
-            inputs=[],
-            outputs=[settings_submit, settings_logout, logout_prompt],
-            _js="logout"
-        )
+        settings_submit = gr.Button(value="Apply settings", variant='primary')
 
         result = gr.HTML()
 
@@ -2001,14 +1978,6 @@ def create_ui():
                 )
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
-        username_state = gr.Textbox(value="", elem_id="username", visible=False)
-        username_state.change(
-            fn=None,
-            inputs=[username_state],
-            outputs=None,
-            _js="login"
-        )
-
         user_dataframe = gr.Dataframe(
             headers=["Username", "Password", "Options"],
             row_count=2,
@@ -2092,7 +2061,6 @@ def create_ui():
 
         user_interface.load(update_sagemaker_endpoint, inputs=None, outputs=[shared.sagemaker_endpoint_component])
         user_interface.load(update_sd_model_checkpoint, inputs=None, outputs=[shared.sd_model_checkpoint_component])
-        user_interface.load(update_username, inputs=None, outputs=[username_state])
 
     if cmd_opts.pureui:
         interfaces += [
@@ -2140,6 +2108,38 @@ def create_ui():
             for i, k, item in quicksettings_list:
                 component = create_setting_component(k, is_quicksettings=True)
                 component_dict[k] = component
+
+        with gr.Row():
+            with gr.Column(scale=4):
+                gr.HTML(value='<h1 align="right">Current user : </h1>')
+            with gr.Column(scale=1):
+                username_state = gr.HTML()
+                username_state.change(
+                    fn=None,
+                    inputs=[username_state],
+                    outputs=[],
+                    _js="login"
+                )
+                user_interface.load(update_username, inputs=None, outputs=[username_state])
+            with gr.Column(scale=1):
+                logout_button = gr.Button(value="Logout")
+
+            def user_logout(request: gr.Request):
+                tokens = shared.demo.server_app.tokens
+                cookies = request.headers['cookie'].split('; ')
+                access_token = None
+                for cookie in cookies:
+                    if cookie.startswith('access-token'):
+                        access_token = cookie[len('access-token=') : ]
+                        tokens.pop(access_token)
+                        break
+
+            logout_button.click(
+                fn=user_logout,
+                inputs=[],
+                outputs=[],
+                _js="restart_reload"
+            )
 
         parameters_copypaste.integrate_settings_paste_fields(component_dict)
         parameters_copypaste.run_bind()
