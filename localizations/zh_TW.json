@@ -638,6 +638,8 @@
     "Settings saved failed": "設置保存錯誤",
     "Settings changed without save": "設置變更但未保存",
     "Settings changed and saved": "設置變更並保存",
+    "Logout": "登出",
+    "You have been logout, please refresh page manaully...": "您已登出，请手动刷新页面...",
     "SageMaker endpoint": "SageMaker 端點",
     "User": "使用者",
     "Model": "模型",

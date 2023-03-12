@@ -842,7 +842,31 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as settings_interface:
         dummy_component = gr.Label(visible=False)
 
-        settings_submit = gr.Button(value="Apply settings", variant='primary')
+        with gr.Row():
+            settings_submit = gr.Button(value="Apply settings", variant='primary')
+            settings_logout = gr.Button(value="Logout")
+            logout_prompt = gr.HTML(value="<strong>You have been logout, please refresh page manaully...</strong>", visible=False)
+
+        def user_logout(request: gr.Request):
+            tokens = shared.demo.server_app.tokens
+            cookies = request.headers['cookie'].split('; ')
+            access_token = None
+            for cookie in cookies:
+                if cookie.startswith('access-token'):
+                    access_token = cookie[len('access-token=') : ]
+                    print(access_token)
+                    tokens.pop(access_token)
+                    print(tokens)
+                    break
+            return gr.update(visible=False), gr.update(visible=False), gr.update(visible=True)
+
+        settings_logout.click(
+            fn=user_logout,
+            inputs=[],
+            outputs=[settings_submit, settings_logout, logout_prompt],
+            _fs="logout"
+        )
+
         result = gr.HTML()
 
         settings_cols = 3

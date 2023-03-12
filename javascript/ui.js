@@ -229,3 +229,21 @@ function login(username) {
     user.style.display=(username=='admin'?'block':'none')
     extension.style.display=(username=='admin'?'none':'block')
 }
+
+function logout() {
+    var txt2img=gradioApp().querySelector('#tabs').querySelectorAll('button')[0];
+    var img2img=gradioApp().querySelector('#tabs').querySelectorAll('button')[1];
+    var extras=gradioApp().querySelector('#tabs').querySelectorAll('button')[2];
+    var pnginfo=gradioApp().querySelector('#tabs').querySelectorAll('button')[3];
+    var train=gradioApp().querySelector('#tabs').querySelectorAll('button')[4];
+    var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];
+    var extension=gradioApp().querySelector('#tabs').querySelectorAll('button')[6];
+
+    txt2img.style.display='none'
+    img2img.style.display='none'
+    extras.style.display='none'
+    pnginfo.style.display='none'
+    train.style.display='none'
+    user.style.display='block'
+    extension.style.display='none'
+}
