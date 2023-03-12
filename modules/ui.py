@@ -678,7 +678,20 @@ def update_sd_model_checkpoint():
     return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
 
 def update_username():
-    return gr.update(value=shared.username)
+    if shared.username == 'admin':
+        inputs = {
+            'action': 'load'
+        }
+        response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+        print(response.text)
+        if response.status_code == 200:
+            items = []
+            for item in json.loads(response.text):
+                items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
+            print(items)
+            return gr.update(value=shared.username), gr.update(value=items)
+        else:
+            return gr.update(value=shared.username), gr.update()
 
 def create_ui():
     import modules.img2img
@@ -1990,32 +2003,7 @@ def create_ui():
         )
 
         with gr.Row():
-            load_userdata_btn = gr.Button(value="Load")
             save_userdata_btn = gr.Button(value="Save")
-
-        def load_userdata(request: gr.Request):
-            tokens = shared.demo.server_app.tokens
-            cookies = request.headers['cookie'].split('; ')
-            access_token = None
-            for cookie in cookies:
-                if cookie.startswith('access-token'):
-                    access_token = cookie[len('access-token=') : ]
-                    break
-            if not access_token or tokens[access_token] != 'admin':
-                return gr.update()
-            inputs = {
-                'action': 'load'
-            }
-            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            print(response.text)
-            if response.status_code == 200:
-                items = []
-                for item in json.loads(response.text):
-                    items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
-                print(items)
-                return gr.update(value=items)
-            else:
-                return gr.update()
 
         def save_userdata(user_dataframe, request: gr.Request):
             tokens = shared.demo.server_app.tokens
@@ -2045,12 +2033,6 @@ def create_ui():
             if response.status_code == 200:
                 print(response.text)
                 return user_dataframe
-
-        load_userdata_btn.click(
-            load_userdata,
-            inputs=[],
-            outputs=[user_dataframe]
-        )
 
         save_userdata_btn.click(
             save_userdata,
@@ -2116,11 +2098,11 @@ def create_ui():
                 username_state = gr.HTML()
                 username_state.change(
                     fn=None,
-                    inputs=[username_state],
-                    outputs=[],
+                    inputs=[],
+                    outputs=[username_state, user_dataframe],
                     _js="login"
                 )
-                user_interface.load(update_username, inputs=None, outputs=[username_state])
+                user_interface.load(update_username, inputs=None, outputs=[username_state, user_dataframe])
             with gr.Column(scale=1):
                 logout_button = gr.Button(value="Logout")
 
