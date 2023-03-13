@@ -215,6 +215,10 @@ function restart_reload(){
 function login(username) {
     var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];
 
-    if(username=='admin')
+    if(username=='admin'){
+        user.style.display='block'
         user.click()
+    }
+    else
+        user.style.display='none'
 }

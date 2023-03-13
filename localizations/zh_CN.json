@@ -596,7 +596,6 @@
     "A value that determines the output of random number generator - if you create an image with same parameters and seed as another image, you'll get the same result": "一个固定随机数生成器输出的值 - 以相同参数和随机种子生成的图像会得到相同的结果\n\ud83c\udfb2    将随机种子设置为-1，则每次都会使用一个新的随机数\n\u267b\ufe0f    重用上一次使用的随机种子，如果想要固定输出结果就会很有用",
 
 
-    "----deprecated----": "----以下内容在webui新版本已移除----",
     "▼": "▼",
     "History": "历史记录",
     "Show Textbox": "显示文本框",
@@ -779,6 +778,28 @@
     "Hide annotator result": "隐藏标注结果",
     "Current user :": "当前用户 : ",
     "Reloading...": "重新载入...",
+    "SaegMaker endpoint": "SageMaker 终端节点",
+    "Ignore selected VAE for stable diffusion checkpoints that have their own .vae.pt next to them": "对那些已经有.vae.pt的 stable diffusion 模型忽略已选择的 VAE",
+    "Directory for temporary images; leave empty for default": "临时图片的目录，留空使用默认",
+    "Cleanup non-default temporary directory when starting webui": "启动webui时清空非默认的临时目录",
+    "Turn on pin_memory for DataLoader. Makes training slightly faster but can increase memory usage.": "为数据加载器打开 pin_memory， 这将使得训练速度更快一些但会使用更多内存",
+    "Saves Optimizer state as separate *.optim file. Training can be resumed with HN itself and matching optim file.": "保存优化器状态为单独的 *.optim，训练可以通过 HN 恢复并匹配 optim 文件",
+    "Show image creation progress every N sampling steps. Set to 0 to disable. Set to -1 to show after completion of batch.": "每N个采样步数后显示图片创建进程，设置为0禁用，设置为1在batch完成后显示 ",
+    "Config file for Control Net models": "ControlNet 模型配置文件",
+    "Config file for Adapter models": "Adapter 模型配置文件",
+    "Directory for detected maps auto saving": "已检测的detectmap自动保存的目录",
+    "Extra path to scan for ControlNet models (e.g. training output directory)": "扫描 ControlNet 模型的额外路径，例如训练输出路径",
+    "Multi ControlNet: Max models amount (requires restart)": "多个 ControlNet: 最大模型数据（需要重启）",
+    "Model cache size (requires restart)": "模型缓存大小（需要重启）",
+    "Apply transfer control when loading models": "加载模型时应用转移控制",
+    "Do not append detectmap to output": "不追加 detectmap 到输出",
+    "Allow detectmap auto saving": "允许 detectmap 自动保存",
+    "Use mid-control on highres pass (second pass)": "在 highres pass（second pass）时使用mid-control",
+    "Allow other script to control this extension": "允许其他脚本控制这个插件",
+    "Skip img2img processing when using img2img initial image": "在使用图生图初始图片时忽略图生图处理",
+    "Enable optimized monocular depth estimation": "允许优化单目深度估计",
+    "Only use mid-control when inference": "推理时仅使用 mid-control",
+    "Enable CFG-Based guidance": "使用基于扩散度指引",
 
     "--------": "--------"
 }

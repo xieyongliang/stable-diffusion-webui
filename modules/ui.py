@@ -613,11 +613,11 @@ Requested path was: {f}
             with gr.Column():
                 with gr.Row():
                     if tabname != "extras":
-                        save = gr.Button('Save', elem_id=f'save_{tabname}')
+                        save = gr.Button('Save', elem_id=f'save_{tabname}', visible=False)
 
                     buttons = parameters_copypaste.create_buttons(["img2img", "inpaint", "extras"])
                     button_id = "hidden_element" if shared.cmd_opts.hide_ui_dir_config else 'open_folder'
-                    open_folder_button = gr.Button(folder_symbol, elem_id=button_id)
+                    open_folder_button = gr.Button(folder_symbol, elem_id=button_id, visible=False)
 
                 open_folder_button.click(
                     fn=lambda: open_folder(opts.outdir_samples or outdir),
@@ -627,7 +627,7 @@ Requested path was: {f}
 
                 if tabname != "extras":
                     with gr.Row():
-                        do_make_zip = gr.Checkbox(label="Make Zip when Save?", value=False)
+                        do_make_zip = gr.Checkbox(label="Make Zip when Save?", value=False, visible=False)
 
                     with gr.Row():
                         download_files = gr.File(None, file_count="multiple", interactive=False, show_label=False, visible=False)
@@ -672,9 +672,11 @@ img2img_submit = None
 extras_submit = None
 
 def update_sagemaker_endpoint():
+    print(shared.opts.sagemaker_endpoint)
     return gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints)
 
 def update_sd_model_checkpoint():
+    print(shared.opts.sd_model_checkpoint)
     return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
 
 def update_username():
@@ -688,10 +690,11 @@ def update_username():
             items = []
             for item in json.loads(response.text):
                 items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
-            print(items)
             return gr.update(value=shared.username), gr.update(value=items)
         else:
             return gr.update(value=shared.username), gr.update()
+    else:
+        return gr.update(value=shared.username), gr.update()
 
 def create_ui():
     import modules.img2img
@@ -2092,7 +2095,7 @@ def create_ui():
                 component_dict[k] = component
 
         with gr.Row():
-            with gr.Column(scale=4):
+            with gr.Column(scale=5):
                 gr.HTML(value='<h1 align="right">Current user : </h1>')
             with gr.Column(scale=1):
                 username_state = gr.HTML()
