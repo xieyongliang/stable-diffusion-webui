@@ -672,11 +672,11 @@ img2img_submit = None
 extras_submit = None
 
 def update_sagemaker_endpoint():
-    print(shared.opts.sagemaker_endpoint)
+    print('---sagemaker_endpoint---', shared.opts.sagemaker_endpoint)
     return gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints)
 
 def update_sd_model_checkpoint():
-    print(shared.opts.sd_model_checkpoint)
+    print('---sd_model_checkpoint---', shared.opts.sd_model_checkpoint)
     return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
 
 def update_username():
@@ -685,12 +685,11 @@ def update_username():
             'action': 'load'
         }
         response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-        print(response.text)
         if response.status_code == 200:
             items = []
             for item in json.loads(response.text):
                 items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
-            return gr.update(value=shared.username), gr.update(value=items)
+            return gr.update(value=shared.username), gr.update(value=items if items != [] else None)
         else:
             return gr.update(value=shared.username), gr.update()
     else:
