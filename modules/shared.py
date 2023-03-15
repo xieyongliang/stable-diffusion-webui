@@ -145,6 +145,8 @@ if not cmd_opts.train:
     sd_model_checkpoint_component = None
     create_train_dreambooth_component = None
     username = ''
+else:
+    api_endpoint = cmd_opts.api_endpoint
 
 response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
 if response.status_code == 200:
