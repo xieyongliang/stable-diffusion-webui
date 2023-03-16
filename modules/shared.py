@@ -335,7 +335,8 @@ def refresh_sagemaker_endpoints(username):
 
     if industrial_model != '':
         params = {
-            'industrial_model': industrial_model
+            'industrial_model': industrial_model,
+            'username': username
         }
         response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
         if response.status_code == 200:
