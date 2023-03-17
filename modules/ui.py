@@ -688,7 +688,8 @@ def update_username():
         if response.status_code == 200:
             items = []
             for item in json.loads(response.text):
-                items.append([item['username'], item['password'], item['options'] if 'options' in item else ''])
+                items.append([item['username'], item['password'], 
+                item['options'] if 'options' in item else '', shared.get_sagemaker_endpoints(item)])
             return gr.update(value=shared.username), gr.update(value=items if items != [] else None)
         else:
             return gr.update(value=shared.username), gr.update()
@@ -1994,13 +1995,13 @@ def create_ui():
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
         user_dataframe = gr.Dataframe(
-            headers=["Username", "Password", "Options"],
+            headers=["Username", "Password", "Options", "Sagemaker Endpoints"],
             row_count=2,
-            col_count=(3,"fixed"),
+            col_count=(4,"fixed"),
             label="User management (Only available for admin user)",
             interactive=True,
             visible=True,
-            datatype=["str","str","str"],
+            datatype=["str","str","str", "str"],
             type="array"
         )
 
@@ -2018,14 +2019,18 @@ def create_ui():
             if not access_token or tokens[access_token] != 'admin':
                 return gr.update()
             items = []
-            for item in user_dataframe:
-                items.append(
-                    {
-                        'username': item[0],
-                        'password': item[1],
-                        'options': item[2]
+            for user_df in user_dataframe:
+                item = {
+                    'username': user_df[0],
+                    'password': user_df[1],
+                    'options': user_df[2],
+                    'attributes': {},
+                }
+                if user_df[3] != '':
+                    item['attributes'] = {
+                        'sagemaker_endpoints': user_df[3]
                     }
-                )
+                items.append(item)
             inputs = {
                 'action': 'save',
                 'items': items

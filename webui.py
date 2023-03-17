@@ -360,7 +360,8 @@ if cmd_opts.train:
             }
             response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
             if response.status_code == 200 and response.text != '':
-                opts.data = json.loads(response.text)
+                user = json.loads(response.text)
+                opts.data = user['options']
                 modules.sd_models.load_model()
 
         if train_task == 'embedding':
