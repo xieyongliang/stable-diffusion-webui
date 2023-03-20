@@ -677,7 +677,7 @@
     "Save Preview/Ckpt Every Epoch": "經過若干個 Epoch 保存預覽/檢查點",
     "Save Checkpoint Frequency": "保存檢查點頻率",
     "Save Preview(s) Frequency": "保存預覽頻率",
-    "Batch": "批處理",
+    "Batching": "批處理",
     "Batch Size": "批量大小",
     "Class Batch Size": "類批量大小",
     "Learning Rate": "學習率",
