@@ -820,7 +820,7 @@
     "Generate Classification Images Using txt2img": "使用文生图来生成类图",
     "Concept 4": "概念4",
     "Sanity Sample Prompt": "完整性采样提示词",
-    "Sanity Sample Seed ": "完整性采样种子",
+    "Sanity Sample Seed": "完整性采样种子",
     "Sample Negative Prompt": "采样负向提示词",
     "Class Images Per Instance Image": "为实例图片生成分类图片数",
     "Saving":"保存",
@@ -834,6 +834,10 @@
     "Save separate diffusers snapshots when training completes.": "在训练完成时保存为单独的 diffusers 快照",
     "Save separate diffusers snapshots when training is canceled.": "在训练取消时保存为单独的 diffusers 快照",
     "Basic": "基本",
+    "Graph Smoothing Steps ": "图形平滑步数",
+    "Amount of time to pause between Epochs (s) ": "Epochs 间隔等待时间",
+    "Save Preview(s) Frequency (Epochs)": "保存预览频率 (Epochs)",
+    "A generic prompt used to generate a sample image to verify model fidelity.": "用于生成样本图像以验证模型保真度的通用提示。",
 
     "--------": "--------"
 }
