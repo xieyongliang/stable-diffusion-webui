@@ -235,7 +235,7 @@ def webui():
                 api_endpoint = os.environ['api_endpoint']
                 endpoint_name = os.environ['endpoint_name']
                 for file in os.listdir(sd_models_path):
-                    if os.path.isfile(os.path.join(sd_models_path, file)) and file.endswith('.ckpt'):
+                    if os.path.isfile(os.path.join(sd_models_path, file)) and (file.endswith('.ckpt') or file.endswith('.safesentors')):
                         hash = modules.sd_models.model_hash(os.path.join(sd_models_path, file))
                         item = {}
                         item['model_name'] = file

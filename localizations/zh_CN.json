@@ -84,6 +84,7 @@
     "Prompt matrix": "提示词矩阵",
     "Prompts from file or textbox": "从文本框或文件载入提示词",
     "X/Y plot": "X/Y 图表",
+    "X/Y/Z plot": "X/Y/Z 图表",
     "Source embedding to convert": "用于转换的源 Embedding",
     "Embedding token": "Embedding 的 token (关键词)",
     "Output directory": "输出目录",

@@ -2,12 +2,10 @@ import base64
 import io
 import os
 import re
-from pathlib import Path
 
 import gradio as gr
 from modules.shared import script_path
-from modules import shared
-import tempfile
+from modules import shared, ui_tempdir
 from PIL import Image
 
 re_param_code = r'\s*([\w ]+):\s*("(?:\\|\"|[^\"])+"|[^,]*)(?:,|$)'
@@ -35,9 +33,15 @@ def quote(text):
 
 
 def image_from_url_text(filedata):
-    if type(filedata) == dict and filedata["is_file"]:
+    if filedata is None:
+        return None
+
+    if type(filedata) == list and len(filedata) > 0 and type(filedata[0]) == dict and filedata[0].get("is_file", False):
+        filedata = filedata[0]
+
+    if type(filedata) == dict and filedata.get("is_file", False):
         filename = filedata["name"]
-        is_in_right_dir = any(Path(temp_dir).resolve() in Path(filename).resolve().parents for temp_dir in shared.demo.temp_dirs)
+        is_in_right_dir = ui_tempdir.check_tmp_file(shared.demo, filename)
         assert is_in_right_dir, 'trying to open image file outside of allowed directories'
 
         return Image.open(filename)
@@ -54,7 +58,6 @@ def image_from_url_text(filedata):
     filedata = base64.decodebytes(filedata.encode('utf-8'))
     image = Image.open(io.BytesIO(filedata))
     return image
-
 
 def add_paste_fields(tabname, init_img, fields):
     paste_fields[tabname] = {"init_img": init_img, "fields": fields}
