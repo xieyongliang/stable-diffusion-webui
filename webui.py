@@ -740,7 +740,9 @@ if cmd_opts.train:
                 f2=os.path.join(sd_models_path, f'{sd_models_path}/{db_model_name}_{train_steps}.ckpt')
                 if os.path.exists(f2):
                     shutil.copy(f2,"/opt/ml/model/")
-            except Exception as e:
+                f3=os.path.join(sd_models_path, f'{sd_models_path}/{db_model_name}_{train_steps}.safetensors')
+                if os.path.exists(f3):
+                    shutil.copy(f3,"/opt/ml/model/")            except Exception as e:
                 traceback.print_exc()
                 print(e)
             opts.data = default_options
