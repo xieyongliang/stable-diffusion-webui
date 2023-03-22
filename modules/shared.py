@@ -332,7 +332,7 @@ def intersection(lst1, lst2):
     intersec = set1.intersection(set2)
     return list(intersec)
 
-def get_sagemaker_endpoints(item):
+def get_available_sagemaker_endpoints(item):
     attrs = item.get('attributes', '')
     if attrs == '':
         return ''
@@ -364,8 +364,8 @@ def refresh_sagemaker_endpoints(username):
     }
     response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
     if response.status_code == 200 and response.text != '':
-        user = json.loads(response.text)
-        eps = get_sagemaker_endpoints(user)
+        data = json.loads(response.text)
+        eps = get_available_sagemaker_endpoints(data)
         if eps != '':
             sagemaker_endpoints = intersection(eps.split(','), sagemaker_endpoints)
             
