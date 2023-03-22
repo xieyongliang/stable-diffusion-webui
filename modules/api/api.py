@@ -418,7 +418,8 @@ class Api:
                 response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
                 if response.status_code == 200 and response.text != '':
                     try:
-                        shared.opts.data = json.loads(response.text)
+                        data = json.loads(response.text)
+                        shared.opts.data = data['options']
                         with self.queue_lock:
                             sd_models.reload_model_weights()
                     except Exception as e:
