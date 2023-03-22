@@ -580,7 +580,7 @@ if cmd_opts.train:
                 db_train_unfrozen = train_args['train_dreambooth_settings']['db_train_unfrozen']
                 db_512_model = train_args['train_dreambooth_settings']['db_512_model']
 
-                db_model_name, db_model_path, db_revision, db_epochs, db_scheduler, db_src, _, _, _ = create_model(
+                db_model_name, db_model_path, db_revision, db_epochs, db_scheduler, db_src, db_has_ema, db_v2, db_resolution = create_model(
                     db_new_model_name,
                     db_new_model_src,
                     db_new_model_scheduler,
@@ -612,6 +612,9 @@ if cmd_opts.train:
                     params_dict['db_epochs'] = db_epochs
                     params_dict['db_scheduler'] = db_scheduler
                     params_dict['db_src'] = db_src
+                    params_dict['db_has_ema'] = db_has_ema
+                    params_dict['db_v2'] = db_v2
+                    params_dict['db_resolution'] = db_resolution
 
                     if db_train_wizard_person or db_train_wizard_object:
                         db_num_train_epochs, \
