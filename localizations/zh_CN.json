@@ -634,6 +634,7 @@
     "Username": "用户名",
     "Password": "密码",
     "Options": "选项",
+    "Sagemaker Endpoints": "Sagemaker终端节点",
     "Output": "输出",
     "User management (Only available for admin user)": "用户管理 （仅管理员用户可用）",
     "Images S3 URI": "图像 S3 位置",

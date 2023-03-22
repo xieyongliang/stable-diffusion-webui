@@ -325,6 +325,20 @@ def list_sagemaker_endpoints():
 
     return sagemaker_endpoints
 
+def intersection(lst1, lst2):
+    set1 = set(lst1)
+    set2 = set(lst2)
+    
+    intersec = set1.intersection(set2)
+    return list(intersec)
+
+def get_available_sagemaker_endpoints(item):
+    attrs = item.get('attributes', '')
+    if attrs == '':
+        return ''
+
+    return attrs.get('sagemaker_endpoints', '')
+
 def refresh_sagemaker_endpoints(username):
     global industrial_model, api_endpoint, sagemaker_endpoints
 
@@ -343,6 +357,18 @@ def refresh_sagemaker_endpoints(username):
             for endpoint_item in json.loads(response.text):
                 sagemaker_endpoints.append(endpoint_item['EndpointName'])
 
+    # to filter user's available endpoints
+    inputs = {
+        'action': 'get',
+        'username': username
+    }
+    response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+    if response.status_code == 200 and response.text != '':
+        data = json.loads(response.text)
+        eps = get_available_sagemaker_endpoints(data)
+        if eps != '':
+            sagemaker_endpoints = intersection(eps.split(','), sagemaker_endpoints)
+            
     return sagemaker_endpoints
 
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
