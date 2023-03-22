@@ -46,6 +46,7 @@ if not cmd_opts.api:
     from extensions.sd_dreambooth_extension.dreambooth.db_config import DreamboothConfig
     from extensions.sd_dreambooth_extension.scripts.dreambooth import start_training_from_config, create_model
     from extensions.sd_dreambooth_extension.scripts.dreambooth import performance_wizard, training_wizard
+    from extensions.sd_dreambooth_extension.dreambooth.db_concept import Concept
     from modules import paths
 import glob
 
@@ -654,6 +655,25 @@ if cmd_opts.train:
                         params_dict['params_dict'] = save_weights_every
 
                     db_config = DreamboothConfig(db_model_name)
+                    concept_keys = ["c1_", "c2_", "c3_", "c4_"]
+                    concepts_list = []
+                    # If using a concepts file/string, keep concepts_list empty.
+                    if params_dict["db_use_concepts"] and params_dict["db_concepts_path"]:
+                        concepts_list = []
+                        params_dict["concepts_list"] = concepts_list
+                    else:
+                        for concept_key in concept_keys:
+                            concept_dict = {}
+                            for key, param in params_dict.items():
+                                if concept_key in key and param is not None:
+                                    concept_dict[key.replace(concept_key, "")] = param
+                            concept_test = Concept(concept_dict)
+                            if concept_test.is_valid:
+                                concepts_list.append(concept_test.__dict__)
+                        existing_concepts = params_dict["concepts_list"] if "concepts_list" in params_dict else []
+                        if len(concepts_list) and not len(existing_concepts):
+                            params_dict["concepts_list"] = concepts_list
+
                     db_config.load_params(params_dict)
             else:
                 db_model_name = train_args['train_dreambooth_settings']['db_model_name']
