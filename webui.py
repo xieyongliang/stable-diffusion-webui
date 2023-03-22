@@ -698,15 +698,21 @@ if cmd_opts.train:
             except:
                 cmd_dreambooth_models_path = None
 
+            try:
+                cmd_lora_models_path = shared.cmd_opts.lora_models_path
+            except:
+                cmd_lora_models_path = None
+
             db_model_dir = os.path.dirname(cmd_dreambooth_models_path) if cmd_dreambooth_models_path else paths.models_path
             db_model_dir = os.path.join(db_model_dir, "dreambooth")
 
-            lora_models_path = os.path.join(shared.models_path, "lora")
+            lora_model_dir = os.path.dirname(cmd_lora_models_path) if cmd_lora_models_path else paths.models_path
+            lora_model_dir = os.path.join(lora_model_dir, "lora")
 
-            print('---models path---', sd_models_path, lora_models_path)
+            print('---models path---', sd_models_path, lora_model_dir)
             os.system(f'ls -l {sd_models_path}')
             os.system('ls -l {0}'.format(os.path.join(sd_models_path, db_model_name)))
-            os.system(f'ls -l {lora_models_path}')
+            os.system(f'ls -l {lora_model_dir}')
 
             try:
                 print('Uploading SD Models...')
@@ -733,7 +739,7 @@ if cmd_opts.train:
                     print('Uploading Lora Models...')
                     upload_s3files(
                         lora_models_s3uri,
-                        os.path.join(lora_models_path, f'{db_model_name}_*.pt')
+                        os.path.join(lora_model_dir, f'{db_model_name}_*.pt')
                     )
             except Exception as e:
                 traceback.print_exc()
