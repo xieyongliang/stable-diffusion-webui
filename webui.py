@@ -591,7 +591,6 @@ if cmd_opts.train:
                     db_train_unfrozen,
                     db_512_model
                 )
-                print('---2---', db_model_name, db_model_path, db_revision, db_epochs, db_scheduler, db_src, db_has_ema, db_v2, db_resolution)
                 dreambooth_config_id = cmd_opts.dreambooth_config_id
                 try:
                     with open(f'/opt/ml/input/data/config/{dreambooth_config_id}.json', 'r') as f:
