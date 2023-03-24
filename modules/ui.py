@@ -688,7 +688,7 @@ def update_username():
         if response.status_code == 200:
             items = []
             for item in json.loads(response.text):
-                items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_sagemaker_endpoints(item)])
+                items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_available_sagemaker_endpoints(item)])
             return gr.update(value=shared.username), gr.update(value=items if items != [] else None)
         else:
             return gr.update(value=shared.username), gr.update()
