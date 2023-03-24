@@ -757,6 +757,12 @@ if cmd_opts.train:
                     f2=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}.ckpt')
                     if os.path.exists(f2):
                         shutil.copy(f2,"/opt/ml/model/")
+                f3=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}_lora.yaml')
+                if os.path.exists(f3):
+                    shutil.copy(f3,"/opt/ml/model/")
+                f4=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}_lora.pt')
+                if os.path.exists(f4):
+                    shutil.copy(f4,"/opt/ml/model/")
             except Exception as e:
                 traceback.print_exc()
                 print(e)
