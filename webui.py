@@ -746,15 +746,16 @@ if cmd_opts.train:
                 #automatic tar latest checkpoint and upload to s3 by zheng on 2023.03.22
                 os.makedirs(os.path.dirname("/opt/ml/model/"), exist_ok=True)
                 train_steps=int(db_config.revision)
-                f1=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}.yaml')
+                model_file_basename = f'{db_model_name}_{train_steps}_lora' if db_config.use_lora else f'{db_model_name}_{train_steps}'
+                f1=os.path.join(sd_models_path, db_model_name, f'{model_file_basename}.yaml')
                 if os.path.exists(f1):
                     shutil.copy(f1,"/opt/ml/model/")
                 if db_save_safetensors:
-                    f2=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}.safetensors')
+                    f2=os.path.join(sd_models_path, db_model_name, f'{model_file_basename}.safetensors')
                     if os.path.exists(f2):
                         shutil.copy(f2,"/opt/ml/model/")
                 else:
-                    f2=os.path.join(sd_models_path, db_model_name, f'{db_model_name}_{train_steps}.ckpt')
+                    f2=os.path.join(sd_models_path, db_model_name, f'{model_file_basename}.ckpt')
                     if os.path.exists(f2):
                         shutil.copy(f2,"/opt/ml/model/")
             except Exception as e:
