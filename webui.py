@@ -358,7 +358,10 @@ if cmd_opts.train:
             response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
             if response.status_code == 200 and response.text != '':
                 data = json.loads(response.text)
-                opts.data = data['options']
+                try:
+                    opts.data = json.loads(data['options'])
+                except Exception as e:
+                    print(e)
                 modules.sd_models.load_model()
 
         if train_task == 'embedding':
