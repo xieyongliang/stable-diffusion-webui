@@ -370,9 +370,9 @@ if cmd_opts.train:
             overwrite_old = train_args['embedding_settings']['overwrite_old']
             initialization_text = train_args['embedding_settings']['initialization_text']
             modules.textual_inversion.textual_inversion.create_embedding(
-                name, 
-                nvpt, 
-                overwrite_old, 
+                name,
+                nvpt,
+                overwrite_old,
                 init_text=initialization_text
             )
             if not cmd_opts.pureui:
