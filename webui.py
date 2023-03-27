@@ -750,10 +750,11 @@ if cmd_opts.train:
                 os.makedirs(os.path.dirname("/opt/ml/model/ControlNet/"), exist_ok=True)
                 train_steps=int(db_config.revision)
                 model_file_basename = f'{db_model_name}_{train_steps}_lora' if db_config.use_lora else f'{db_model_name}_{train_steps}'
-                f1=os.path.join(sd_models_dir, db_model_name, f'{model_file_basename}.yaml')
-                if os.path.exists(f1):
-                    shutil.copy(f1,"/opt/ml/model/Stable-diffusion/")
-                if db_save_safetensors:
+                if db_config.v2:
+                    f1=os.path.join(sd_models_dir, db_model_name, f'{model_file_basename}.yaml')
+                    if os.path.exists(f1):
+                        shutil.copy(f1,"/opt/ml/model/Stable-diffusion/")
+                if db_config.save_safetensors:
                     f2=os.path.join(sd_models_dir, db_model_name, f'{model_file_basename}.safetensors')
                     if os.path.exists(f2):
                         shutil.copy(f2,"/opt/ml/model/Stable-diffusion/")
