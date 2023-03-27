@@ -613,7 +613,7 @@ Requested path was: {f}
             with gr.Column():
                 with gr.Row():
                     if tabname != "extras":
-                        save = gr.Button('Save', elem_id=f'save_{tabname}', visible=False)
+                        save = gr.Button('Save', elem_id=f'save_{tabname}')
 
                     buttons = parameters_copypaste.create_buttons(["img2img", "inpaint", "extras"])
                     button_id = "hidden_element" if shared.cmd_opts.hide_ui_dir_config else 'open_folder'
@@ -667,16 +667,10 @@ Requested path was: {f}
                 parameters_copypaste.bind_buttons(buttons, result_gallery, "txt2img" if tabname == "txt2img" else None)
                 return result_gallery, generation_info if tabname != "extras" else html_info_x, html_info
 
-txt2img_submit = None
-img2img_submit = None
-extras_submit = None
-
 def update_sagemaker_endpoint():
-    print('---sagemaker_endpoint---', shared.opts.sagemaker_endpoint)
     return gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints)
 
 def update_sd_model_checkpoint():
-    print('---sd_model_checkpoint---', shared.opts.sd_model_checkpoint)
     return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
 
 def update_username():
@@ -953,7 +947,6 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as txt2img_interface:
         txt2img_prompt, roll, txt2img_prompt_style, txt2img_negative_prompt, txt2img_prompt_style2, submit, _, _, txt2img_prompt_style_apply, txt2img_save_style, txt2img_paste, token_counter, token_button = create_toprow(is_img2img=False)
         txt_prompt_img = gr.File(label="", elem_id="txt2img_prompt_image", file_count="single", type="bytes", visible=False)
-        txt2img_submit = submit
 
         with gr.Row(elem_id='txt2img_progress_row'):
             with gr.Column(scale=1):
@@ -1106,7 +1099,6 @@ def create_ui():
 
     with gr.Blocks(analytics_enabled=False) as img2img_interface:
         img2img_prompt, roll, img2img_prompt_style, img2img_negative_prompt, img2img_prompt_style2, submit, img2img_interrogate, img2img_deepbooru, img2img_prompt_style_apply, img2img_save_style, img2img_paste, token_counter, token_button = create_toprow(is_img2img=True)
-        img2img_submit = submit
 
         with gr.Row(elem_id='img2img_progress_row'):
             img2img_prompt_img = gr.File(label="", elem_id="img2img_prompt_image", file_count="single", type="bytes", visible=False)
@@ -1371,7 +1363,6 @@ def create_ui():
                             show_extras_results = gr.Checkbox(label='Show result images', value=True)
 
                 submit = gr.Button('Generate', elem_id="extras_generate", variant='primary')
-                extras_submit = submit
 
                 with gr.Tabs(elem_id="extras_resize_mode"):
                     with gr.TabItem('Scale by'):
@@ -2035,7 +2026,6 @@ def create_ui():
                 'items': items
             }
             response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-            print(response.text)
             if response.status_code == 200:
                 print(response.text)
                 return user_dataframe
