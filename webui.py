@@ -719,11 +719,12 @@ if cmd_opts.train:
 
             try:
                 print('Uploading SD Models...')
-                upload_s3files(
-                    sd_models_s3uri,
-                    os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
-                )
-                if db_save_safetensors:
+                if db_config.v2:
+                    upload_s3files(
+                        sd_models_s3uri,
+                        os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
+                    )
+                if db_config.save_safetensors:
                     upload_s3files(
                         sd_models_s3uri,
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.safetensors')
