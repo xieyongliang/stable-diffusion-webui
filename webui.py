@@ -747,7 +747,7 @@ if cmd_opts.train:
                 #automatic tar latest checkpoint and upload to s3 by zheng on 2023.03.22
                 os.makedirs(os.path.dirname("/opt/ml/model/"), exist_ok=True)
                 os.makedirs(os.path.dirname("/opt/ml/model/Stable-diffusion/"), exist_ok=True)
-                os.makedirs(os.path.dirname("/opt/ml/model/Lora/"), exist_ok=True)
+                os.makedirs(os.path.dirname("/opt/ml/model/ControlNet/"), exist_ok=True)
                 train_steps=int(db_config.revision)
                 model_file_basename = f'{db_model_name}_{train_steps}_lora' if db_config.use_lora else f'{db_model_name}_{train_steps}'
                 f1=os.path.join(sd_models_dir, db_model_name, f'{model_file_basename}.yaml')
