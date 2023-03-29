@@ -1542,6 +1542,9 @@ def create_ui():
                     with gr.Row():
                         with gr.Column(scale=3):
                             embedding_output = gr.Label(label='Output')
+                             ##begin add train job info by River
+                            embedding_training_job = gr.Markdown('Job detail')
+                            ##end add train job info by River
 
                         with gr.Column():
                             create_train_embedding = gr.Button(value="Train Embedding", variant='primary')
@@ -1628,6 +1631,9 @@ def create_ui():
                     with gr.Row():
                         with gr.Column(scale=3):
                             hypernetwork_output = gr.Label(label='Output')
+                            ##begin add train job info by River
+                            hypernetwork_training_job = gr.Markdown('Job detail')
+                            ##end add train job info by River
 
                         with gr.Column():
                             create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
@@ -1753,8 +1759,12 @@ def create_ui():
 
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
+                        ##begin add train job info by River
+                        training_job_url = response.text.replace('\"','')
                         return {
-                            embedding_output: gr.update(value='Submit training job sucessful')
+                            embedding_output: gr.update(value='Submit training job sucessful'),
+                            embedding_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                        ##end add train job info by River
                         }
                     else:
                         return {
@@ -1886,8 +1896,13 @@ def create_ui():
 
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
+                        ##begin add train job info by River
+                        training_job_url = response.text.replace('\"','')
                         return {
-                            hypernetwork_output: gr.update(value='Submit training job sucessful')
+                            ##begin add train job info by River
+                            hypernetwork_output: gr.update(value='Submit training job sucessful'),
+                            hypernetwork_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                            ##end add train job info by River
                         }
                     else:
                         return {
@@ -1935,7 +1950,7 @@ def create_ui():
                         embedding_training_instance_count,
                         *txt2img_preview_params
                     ],
-                    outputs=[embedding_output]
+                    outputs=[embedding_output,embedding_training_job]
                 )
                 
                 create_train_hypernetwork.click(
@@ -1983,7 +1998,7 @@ def create_ui():
                         hypernetwork_training_instance_count,
                         *txt2img_preview_params
                     ],
-                    outputs=[hypernetwork_output]
+                    outputs=[hypernetwork_output,hypernetwork_training_job]
                 )
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
