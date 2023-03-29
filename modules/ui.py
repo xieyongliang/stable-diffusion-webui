@@ -1995,7 +1995,8 @@ def create_ui():
             interactive=True,
             visible=True,
             datatype=["str","str","str", "str"],
-            type="array"
+            type="array",
+            wrap=True,
         )
 
         with gr.Row():
