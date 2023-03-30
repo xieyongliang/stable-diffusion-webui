@@ -11,7 +11,8 @@ import tempfile
 import time
 import traceback
 from functools import partial, reduce
-
+import boto3
+import datetime
 import gradio as gr
 import gradio.routes
 import gradio.utils
@@ -1463,6 +1464,27 @@ def create_ui():
 
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
+                ## Begin add s3 images upload interface by River
+                s3 = boto3.client('s3')
+                def upload_to_s3(imgs):
+                    username = shared.username 
+                    timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H-%M-%S') 
+                    bucket_name = opts.train_files_s3bucket
+                    if bucket_name == '':
+                        return 'Error, please configure a S3 bucket at settings page first'
+                    folder_name = f"train-images/{username}/{timestamp}"
+                    for i, img in enumerate(imgs):
+                        filename = img.name.split('/')[-1]
+                        object_name = f"{folder_name}/{filename}"
+                        s3.upload_file(img.name, bucket_name, object_name)
+                    return f"{len(imgs)} images uploaded to S3 folder: s3://{bucket_name}/{folder_name}"
+                
+                with gr.Tab(label="Upload Train Images to S3"):
+                    upload_files = gr.Files(label="Files")
+                    url_output = gr.Textbox(label="Output S3 folder")
+                    sub_btn = gr.Button("Upload")
+                    sub_btn.click(fn=upload_to_s3, inputs=upload_files, outputs=url_output)
+                ## End add s3 images upload interface by River
                 with gr.Tab(label="Train Embedding"):
                     gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
 

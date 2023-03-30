@@ -840,5 +840,10 @@
     "Save Preview(s) Frequency (Epochs)": "保存预览频率 (Epochs)",
     "A generic prompt used to generate a sample image to verify model fidelity.": "用于生成样本图像以验证模型保真度的通用提示。",
     "Job detail":"训练任务详情",
+    "S3 bucket name for uploading train images":"上传训练图片集的S3桶名",
+    "Output S3 folder":"S3文件夹目录",
+    "Upload Train Images to S3":"上传训练图片到S3",
+    "Error, please configure a S3 bucket at settings page first":"失败，请先到设置页面配置S3桶名",
+    "Upload":"上传",
     "--------": "--------"
 }
