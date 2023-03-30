@@ -12,7 +12,7 @@ import time
 import traceback
 from functools import partial, reduce
 import boto3
-import datetime
+from datetime import datetime, timedelta, timezone
 import gradio as gr
 import gradio.routes
 import gradio.utils
@@ -1468,7 +1468,7 @@ def create_ui():
                 s3 = boto3.client('s3')
                 def upload_to_s3(imgs):
                     username = shared.username 
-                    timestamp = datetime.datetime.now().strftime('%Y-%m-%dT%H-%M-%S') 
+                    timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
                     bucket_name = opts.train_files_s3bucket
                     if bucket_name == '':
                         return 'Error, please configure a S3 bucket at settings page first'
