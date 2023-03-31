@@ -12,6 +12,7 @@ import time
 import traceback
 from functools import partial, reduce
 import boto3
+from botocore.exceptions import ClientError
 from datetime import datetime, timedelta, timezone
 import gradio as gr
 import gradio.routes
@@ -1465,18 +1466,24 @@ def create_ui():
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
                 ## Begin add s3 images upload interface by River
-                s3 = boto3.client('s3')
+                s3_resource = boto3.resource('s3')
                 def upload_to_s3(imgs):
                     username = shared.username 
                     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
                     bucket_name = opts.train_files_s3bucket
                     if bucket_name == '':
                         return 'Error, please configure a S3 bucket at settings page first'
+                    s3_bucket = s3_resource.Bucket(bucket_name)
                     folder_name = f"train-images/{username}/{timestamp}"
-                    for i, img in enumerate(imgs):
-                        filename = img.name.split('/')[-1]
-                        object_name = f"{folder_name}/{filename}"
-                        s3.upload_file(img.name, bucket_name, object_name)
+                    try:
+                        for i, img in enumerate(imgs):
+                            filename = img.name.split('/')[-1]
+                            object_name = f"{folder_name}/{filename}"
+                            s3_bucket.upload_file(img.name,object_name)
+                    except ClientError as e:
+                        print(e)
+                        return e
+
                     return f"{len(imgs)} images uploaded to S3 folder: s3://{bucket_name}/{folder_name}"
                 
                 with gr.Tab(label="Upload Train Images to S3"):
