@@ -86,6 +86,29 @@ if cmd_opts.ngrok != None:
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
+## Begin output images uploaded to s3 by River
+s3_resource = boto3.resource('s3')
+
+def save_images_to_s3(full_fillnames,timestamp):
+    username = shared.username
+    sagemaker_endpoint = shared.opts.sagemaker_endpoint
+    bucket_name = opts.train_files_s3bucket
+    if bucket_name == '':
+        return 'Error, please configure a S3 bucket at settings page first'
+    s3_bucket = s3_resource.Bucket(bucket_name)
+    folder_name = f"output-images/{username}/{sagemaker_endpoint}/{timestamp}"
+    try:
+        for i, fname in enumerate(full_fillnames):
+            filename = fname.split('/')[-1]
+            object_name = f"{folder_name}/{filename}"
+            s3_bucket.upload_file(fname,object_name)
+            print (f'upload file [{i}]:{filename} to s3://{bucket_name}/{object_name}')
+    except ClientError as e:
+        print(e)
+        return e
+    return f"s3://{bucket_name}/{folder_name}"
+## End output images uploaded to s3 by River
+
 
 sample_img2img = "assets/stable-samples/img2img/sketch-mountains-input.jpg"
 sample_img2img = sample_img2img if os.path.exists(sample_img2img) else None
@@ -147,7 +170,7 @@ def save_files(js_data, images, do_make_zip, index):
 
     os.makedirs(opts.outdir_save, exist_ok=True)
 
-    with open(os.path.join(opts.outdir_save, "log.csv"), "a", encoding="utf8", newline='') as file:
+    with open(os.path.join(opts.outdir_save, "log.csv"), "w", encoding="utf8", newline='') as file:
         at_start = file.tell() == 0
         writer = csv.writer(file)
         if at_start:
@@ -163,16 +186,19 @@ def save_files(js_data, images, do_make_zip, index):
                 break
 
             fullfn, txt_fullfn = save_image(image, path, "", seed=p.all_seeds[i], prompt=p.all_prompts[i], extension=extension, info=p.infotexts[image_index], grid=is_grid, p=p, save_to_dirs=save_to_dirs)
-
             filename = os.path.relpath(fullfn, path)
+            print(f'fullfn:{fullfn},\n txt_fullfn:{txt_fullfn} \nfilename:{filename}')
             filenames.append(filename)
             fullfns.append(fullfn)
             if txt_fullfn:
                 filenames.append(os.path.basename(txt_fullfn))
                 fullfns.append(txt_fullfn)
-
         writer.writerow([data["prompt"], data["seed"], data["width"], data["height"], data["sampler_name"], data["cfg_scale"], data["steps"], filenames[0], data["negative_prompt"]])
-
+    
+    timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
+    logfile = os.path.join(opts.outdir_save, "log.csv")
+    s3folder = save_images_to_s3(fullfns,timestamp)
+    save_images_to_s3([logfile],timestamp)
     # Make Zip
     if do_make_zip:
         zip_filepath = os.path.join(path, "images.zip")
@@ -184,7 +210,7 @@ def save_files(js_data, images, do_make_zip, index):
                     zip_file.writestr(filenames[i], f.read())
         fullfns.insert(0, zip_filepath)
 
-    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}")
+    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}, \nS3 folder:\n{s3folder}")
 
 
 
@@ -1466,7 +1492,6 @@ def create_ui():
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
                 ## Begin add s3 images upload interface by River
-                s3_resource = boto3.resource('s3')
                 def upload_to_s3(imgs):
                     username = shared.username 
                     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')

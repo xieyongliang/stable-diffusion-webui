@@ -423,7 +423,7 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
 }))
 
 options_templates.update(options_section(('saving-paths', "Paths for saving"), {
-    "train_files_s3bucket":OptionInfo("","S3 bucket name for uploading train images",component_args=hide_dirs),
+    "train_files_s3bucket":OptionInfo("","S3 bucket name for uploading/downloading images",component_args=hide_dirs),
     "outdir_samples": OptionInfo("", "Output directory for images; if empty, defaults to three directories below", component_args=hide_dirs),
     "outdir_txt2img_samples": OptionInfo("outputs/txt2img-images", 'Output directory for txt2img images', component_args=hide_dirs),
     "outdir_img2img_samples": OptionInfo("outputs/img2img-images", 'Output directory for img2img images', component_args=hide_dirs),

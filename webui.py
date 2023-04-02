@@ -36,6 +36,9 @@ from modules import modelloader
 from modules.shared import cmd_opts, opts
 import modules.hypernetworks.hypernetwork
 import boto3
+import threading
+import time
+
 import traceback
 from botocore.exceptions import ClientError
 import requests
@@ -63,6 +66,21 @@ def initialize():
         shared.sd_upscalers = upscaler.UpscalerLanczos().scalers
         modules.scripts.load_scripts()
         return
+
+    ## auto reload new models from s3 add by River
+    sd_models_tmp_dir = "/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/"
+    cn_models_tmp_dir = "/opt/ml/code/stable-diffusion-webui/models/ControlNet/"
+    session = boto3.Session()
+    region_name = session.region_name
+    sts_client = session.client('sts')
+    account_id = sts_client.get_caller_identity()['Account']
+    sg_defaul_bucket_name = f"sagemaker-{region_name}-{account_id}"
+    s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+    s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+
+    sync_s3_folder(sg_defaul_bucket_name,s3_folder_sd,sd_models_tmp_dir,'sd')
+    sync_s3_folder(sg_defaul_bucket_name,s3_folder_cn,cn_models_tmp_dir,'cn')
+    ## end
 
     modelloader.cleanup_models()
     modules.sd_models.setup_model()
@@ -182,6 +200,114 @@ def user_auth(username, password):
 
     return response.status_code == 200
 
+
+def register_sd_models(sd_models_dir):
+    print ('---register_sd_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
+        for file in os.listdir(sd_models_dir):
+            if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
+                hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
+                item = {}
+                item['model_name'] = file
+                item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
+                item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
+                item['hash'] = hash
+                item['title'] = '{0} [{1}]'.format(file, hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'Stable-diffusion'
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_cn_models(cn_models_dir):
+    print ('---register_cn_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
+
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'ControlNet'
+        }
+        for file in os.listdir(cn_models_dir):
+            if os.path.isfile(os.path.join(cn_models_dir, file)) and \
+            (file.endswith('.pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
+                hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+                item = {}
+                item['model_name'] = file
+                item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+
+def sync_s3_folder(bucket_name, s3_folder, local_folder,mode):
+    print(f"sync S3 bucket '{bucket_name}', folder '{s3_folder}' for new files...")
+    # Create tmp folders 
+    os.makedirs(os.path.dirname(local_folder), exist_ok=True)
+    print(f'create dir: {os.path.dirname(local_folder)}')
+    # Create an S3 client
+    s3 = boto3.client('s3')
+    def sync():
+        # List all objects in the S3 folder
+        response = s3.list_objects_v2(Bucket=bucket_name, Prefix=s3_folder)
+        # Check if there are any new or deleted files
+        s3_files = set()
+        for obj in response.get('Contents', []):
+            s3_files.add(obj['Key'].replace(s3_folder, '').lstrip('/'))
+
+        local_files = set(os.listdir(local_folder))
+
+        new_files = s3_files - local_files
+        del_files = local_files - s3_files
+
+        # Copy new files to local folder
+        for file in new_files:
+            s3.download_file(bucket_name, s3_folder + '/' + file, os.path.join(local_folder, file))
+            print(f'download_file:from {bucket_name}/{s3_folder}/{file} to {os.path.join(local_folder, file)}')
+
+        # Delete vanished files from local folder
+        for file in del_files:
+            os.remove(os.path.join(local_folder, file))
+            print(f'remove file {os.path.join(local_folder, file)}')
+        # If there are changes
+        if len(new_files) | len(del_files):
+            if mode == 'sd':
+                register_sd_models(local_folder)
+            elif mode == 'cn':
+                register_cn_models(local_folder)
+            else:
+                print(f'unsupported mode:{mode}')
+    # Create a thread function to keep syncing with the S3 folder
+    def sync_thread():
+        while True:
+            sync()
+            time.sleep(60)
+    # Initialize at launch
+    sync()
+    # Start the thread
+    thread = threading.Thread(target=sync_thread)
+    thread.start()
+    return thread
+
+
 def webui():
     launch_api = cmd_opts.api
     initialize()
@@ -218,7 +344,7 @@ def webui():
 
         if launch_api:
             create_api(app)
-
+        
             cmd_sd_models_path = cmd_opts.ckpt_dir
             sd_models_dir = os.path.join(shared.models_path, "Stable-diffusion")
             if cmd_sd_models_path is not None:
@@ -274,7 +400,6 @@ def webui():
                 if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
                     response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
                     print(response)
-
         modules.script_callbacks.app_started_callback(shared.demo, app)
 
         wait_on_server(shared.demo)

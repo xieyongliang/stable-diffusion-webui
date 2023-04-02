@@ -457,7 +457,7 @@ class Api:
             traceback.print_exc()
 
     def ping(self):
-        print('-------ping------')
+        # print('-------ping------')
         return {'status': 'Healthy'}
 
     def launch(self, server_name, port):
