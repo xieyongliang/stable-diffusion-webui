@@ -11,11 +11,13 @@ from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from modules import extra_networks, ui_extra_networks_checkpoints
+from modules import extra_networks_hypernet, ui_extra_networks_hypernets, ui_extra_networks_textual_inversion
 
 from modules.call_queue import wrap_queued_call, queue_lock
 from modules.paths import script_path
 
-from modules import shared, sd_samplers, upscaler, extensions, localization, ui_tempdir
+from modules import shared, sd_samplers, upscaler, extensions, localization, ui_tempdir, ui_extra_networks
 import modules.codeformer_model as codeformer
 import modules.extras
 import modules.face_restoration
@@ -84,6 +86,14 @@ def initialize():
     shared.opts.onchange("sd_hypernetwork", wrap_queued_call(lambda: shared.reload_hypernetworks()))
     shared.opts.onchange("sd_hypernetwork_strength", modules.hypernetworks.hypernetwork.apply_strength)
     shared.opts.onchange("temp_dir", ui_tempdir.on_tmpdir_changed)
+
+    ui_extra_networks.intialize()
+    ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
+    ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+    ui_extra_networks.register_page(ui_extra_networks_checkpoints.ExtraNetworksPageCheckpoints())
+
+    extra_networks.initialize()
+    extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
 
     if cmd_opts.tls_keyfile is not None and cmd_opts.tls_keyfile is not None:
 
@@ -190,6 +200,7 @@ def webui():
         if shared.opts.clean_temp_dir_at_start:
             ui_tempdir.cleanup_tmpdr()
 
+        modules.script_callbacks.before_ui_callback()
         shared.demo = modules.ui.create_ui()
 
         app, local_url, share_url = shared.demo.launch(
@@ -274,6 +285,7 @@ def webui():
                 if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
                     response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
                     print(response)
+        ui_extra_networks.add_pages_to_demo(app)
 
         modules.script_callbacks.app_started_callback(shared.demo, app)
 
@@ -295,6 +307,14 @@ def webui():
         print('Refreshing Model List')
         modules.sd_models.list_models()
         print('Restarting Gradio')
+
+        ui_extra_networks.intialize()
+        ui_extra_networks.register_page(ui_extra_networks_textual_inversion.ExtraNetworksPageTextualInversion())
+        ui_extra_networks.register_page(ui_extra_networks_hypernets.ExtraNetworksPageHypernetworks())
+        ui_extra_networks.register_page(ui_extra_networks_checkpoints.ExtraNetworksPageCheckpoints())
+
+        extra_networks.initialize()
+        extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
 
 def upload_s3files(s3uri, file_path_with_pattern):
     pos = s3uri.find('/', 5)
