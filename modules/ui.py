@@ -1637,6 +1637,7 @@ def create_ui():
                         dreambooth_tab.render()
 
                 def sagemaker_train_embedding(
+                        request: gr.Request,
                         sd_model_checkpoint,
                         new_embedding_name,
                         initialization_text,
@@ -1673,8 +1674,7 @@ def create_ui():
                         embedding_preview_from_txt2img,
                         embedding_training_instance_type,
                         embedding_training_instance_count,
-                        *txt2img_preview_params,
-                        request: gr.Request
+                        *txt2img_preview_params
                     ):
 
                     tokens = shared.demo.server_app.tokens
@@ -1762,6 +1762,7 @@ def create_ui():
                         }
                     
                 def sagemaker_train_hypernetwork(
+                        request: gr.Request,
                         sd_model_checkpoint,
                         new_hypernetwork_name,
                         new_hypernetwork_sizes,
@@ -1802,8 +1803,7 @@ def create_ui():
                         hypernetwork_preview_from_txt2img,
                         hypernetwork_training_instance_type,
                         hypernetwork_training_instance_count,
-                        *txt2img_preview_params,
-                        request: gr.Request
+                        *txt2img_preview_params
                     ):
 
                     tokens = shared.demo.server_app.tokens
