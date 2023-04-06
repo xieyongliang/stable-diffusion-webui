@@ -436,7 +436,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
     def f(request: gr.Request, *args, extra_outputs_array=extra_outputs, **kwargs):
         tokens = shared.demo.server_app.tokens
-        cookies = request.headers['cookie'].split('; ')
+        cookies = shared.get_cookies(request)
         access_token = None
         for cookie in cookies:
             if cookie.startswith('access-token'):

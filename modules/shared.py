@@ -828,3 +828,9 @@ def html(filename):
             return file.read()
 
     return ""
+
+def get_cookies(request):
+    # request.headers is of type Gradio.queue.Obj, can't be subscripted
+    # directly, so we need to retrieve its underlying dict first.
+    cookies = request.headers.__dict__['cookie'].split('; ')
+    return cookies

@@ -634,7 +634,7 @@ def webui():
         modules.script_callbacks.before_ui_callback()
         shared.demo = modules.ui.create_ui()
 
-        app, local_url, share_url = shared.demo.launch(
+        app, local_url, share_url = shared.demo.queue(concurrency_count=5, max_size=20).launch(
             share=cmd_opts.share,
             server_name=server_name,
             server_port=cmd_opts.port,
