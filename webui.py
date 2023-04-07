@@ -54,7 +54,7 @@ if not cmd_opts.api:
     from extensions.sd_dreambooth_extension.scripts.dreambooth import performance_wizard, training_wizard
     from extensions.sd_dreambooth_extension.dreambooth.db_concept import Concept
     from modules import paths
-elif not cmd_opts.pureui
+elif not cmd_opts.pureui:
     import requests
     cache = dict()
     s3_client = boto3.client('s3')
