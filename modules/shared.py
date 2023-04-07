@@ -145,7 +145,6 @@ if not cmd_opts.train:
     sagemaker_endpoint_component = None
     sd_model_checkpoint_component = None
     create_train_dreambooth_component = None
-    username = ''
 else:
     api_endpoint = cmd_opts.api_endpoint
 
