@@ -347,6 +347,8 @@ def load_model(checkpoint_info=None):
     sd_model.eval()
     shared.sd_model = sd_model
 
+    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)  # Reload embeddings after model load as they may or may not fit the model
+
     script_callbacks.model_loaded_callback(sd_model)
 
     print(f"Model loaded.")
