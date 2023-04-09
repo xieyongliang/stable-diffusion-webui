@@ -311,10 +311,19 @@ def webui():
             if cmd_controlnet_models_path is not None:
                 cn_models_dir = cmd_controlnet_models_path
 
+            cmd_lora_models_path = cmd_opts.lora_dir
+            lora_models_dir = os.path.join(shared.models_path, "Lora")
+            if cmd_lora_models_path is not None:
+                lora_models_dir = cmd_lora_models_path
+
             if 'endpoint_name' in os.environ:
-                items = []
                 api_endpoint = os.environ['api_endpoint']
                 endpoint_name = os.environ['endpoint_name']
+
+                items = []
+                params = {
+                    'module': 'Stable-diffusion'
+                }
                 for file in os.listdir(sd_models_dir):
                     if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
                         hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
@@ -329,17 +338,11 @@ def webui():
                 inputs = {
                     'items': items
                 }
-                params = {
-                    'module': 'Stable-diffusion'
-                }
                 if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
                     response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
                     print(response)
 
                 items = []
-                inputs = {
-                    'items': items
-                }
                 params = {
                     'module': 'ControlNet'
                 }
@@ -352,10 +355,33 @@ def webui():
                         item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
                         item['endpoint_name'] = endpoint_name
                         items.append(item)
-
+                inputs = {
+                    'items': items
+                }
                 if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
                     response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
                     print(response)
+
+                items = []
+                params = {
+                    'module': 'Lora'
+                }
+                for file in os.listdir(lora_models_dir):
+                    if os.path.isfile(os.path.join(lora_models_dir, file)) and \
+                    (file.endswith('.pt') or file.endswith('.ckpt') or file.endswith('.safetensors')):
+                        hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
+                        item = {}
+                        item['model_name'] = file
+                        item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
+                        item['endpoint_name'] = endpoint_name
+                        items.append(item)
+                inputs = {
+                    'items': items
+                }
+                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+                    print(response)
+
         ui_extra_networks.add_pages_to_demo(app)
 
         modules.script_callbacks.app_started_callback(shared.demo, app)
