@@ -670,28 +670,6 @@ Requested path was: {f}
                 parameters_copypaste.bind_buttons(buttons, result_gallery, "txt2img" if tabname == "txt2img" else None)
                 return result_gallery, generation_info if tabname != "extras" else html_info_x, html_info
 
-def update_sagemaker_endpoint():
-    return gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints)
-
-def update_sd_model_checkpoint():
-    return gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())
-
-def update_username():
-    if shared.username == 'admin':
-        inputs = {
-            'action': 'load'
-        }
-        response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
-        if response.status_code == 200:
-            items = []
-            for item in json.loads(response.text):
-                items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_available_sagemaker_endpoints(item)])
-            return gr.update(value=shared.username), gr.update(value=items if items != [] else None)
-        else:
-            return gr.update(value=shared.username), gr.update()
-    else:
-        return gr.update(value=shared.username), gr.update()
-
 def create_ui():
     import modules.img2img
     import modules.txt2img
@@ -1455,8 +1433,6 @@ def create_ui():
                 with gr.Column(variant='panel'):
                     submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
 
-    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-
     with gr.Blocks(analytics_enabled=False) as train_interface:
         with gr.Row().style(equal_height=False):
             gr.HTML(value="<p style='margin-bottom: 0.7em'>See <b><a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\">wiki</a></b> for detailed explanation.</p>")
@@ -2040,9 +2016,6 @@ def create_ui():
             _js="var if alert('Only admin user can save user data')"
         )
 
-        user_interface.load(update_sagemaker_endpoint, inputs=None, outputs=[shared.sagemaker_endpoint_component])
-        user_interface.load(update_sd_model_checkpoint, inputs=None, outputs=[shared.sd_model_checkpoint_component])
-
     if cmd_opts.pureui:
         interfaces += [
             (txt2img_interface, "txt2img", "txt2img"),
@@ -2101,7 +2074,6 @@ def create_ui():
                     outputs=[username_state, user_dataframe],
                     _js="login"
                 )
-                user_interface.load(update_username, inputs=None, outputs=[username_state, user_dataframe])
             with gr.Column(scale=1):
                 logout_button = gr.Button(value="Logout")
 
@@ -2152,13 +2124,47 @@ def create_ui():
 
         component_keys = [k for k in opts.data_labels.keys() if k in component_dict]
 
-        def get_settings_values():
-            return [getattr(opts, key) for key in component_keys]
+        def demo_load(request: gr.Request):
+            tokens = shared.demo.server_app.tokens
+            cookies = request.headers['cookie'].split('; ')
+            access_token = None
+            for cookie in cookies:
+                if cookie.startswith('access-token'):
+                    access_token = cookie[len('access-token=') : ]
+                    break
+            username = tokens[access_token] if access_token else None
+
+            inputs = {
+                'action': 'load'
+            }
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            if response.status_code == 200:
+                if username == 'admin':
+                    items = []
+                    for item in json.loads(response.text):
+                        items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_available_sagemaker_endpoints(item)])
+
+                    additional_components = [gr.update(value=username), gr.update(value=items if items != [] else None), gr.update(), gr.update()]
+                else:
+                    for item in json.loads(response.text):
+                        if item['username'] == username:
+                            try:
+                                shared.opts.data = json.loads(item['options'])
+                                break
+                            except Exception as e:
+                                print(e)
+                    shared.refresh_sagemaker_endpoints(username)
+                    shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
+                    additional_components = [gr.update(value=username), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
+            else:
+                additional_components = [gr.update(value=username), gr.update(), gr.update(), gr.update()]
+
+            return [getattr(opts, key) for key in component_keys] + additional_components
 
         demo.load(
-            fn=get_settings_values,
+            fn=demo_load,
             inputs=[],
-            outputs=[component_dict[k] for k in component_keys],
+            outputs=[component_dict[k] for k in component_keys] + [username_state, user_dataframe, shared.sagemaker_endpoint_component, shared.sd_model_checkpoint_component]
         )
 
         if not cmd_opts.pureui:
