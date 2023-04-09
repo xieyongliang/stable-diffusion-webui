@@ -215,6 +215,27 @@ def user_auth(username, password):
 
     return response.status_code == 200
 
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def get_models(path, extensions):
+    candidates = []
+    models = []
+
+    for extension in extensions:
+        candidates = candidates + glob.glob(os.path.join(path, f'**/{extension}'), recursive=True)
+
+    for filename in sorted(candidates, key=str.lower):
+        if os.path.isdir(filename):
+            continue
+
+        models.append(filename)
+
+    return models
+
 def webui():
     launch_api = cmd_opts.api
 
@@ -301,6 +322,8 @@ def webui():
         if launch_api:
             create_api(app)
 
+            os.path.splitext(os.path.basename(filename))[0]
+
             cmd_sd_models_path = cmd_opts.ckpt_dir
             sd_models_dir = os.path.join(shared.models_path, "Stable-diffusion")
             if cmd_sd_models_path is not None:
@@ -324,17 +347,14 @@ def webui():
                 params = {
                     'module': 'Stable-diffusion'
                 }
-                for file in os.listdir(sd_models_dir):
-                    if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
-                        hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
-                        item = {}
-                        item['model_name'] = file
-                        item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-                        item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
-                        item['hash'] = hash
-                        item['title'] = '{0} [{1}]'.format(file, hash)
-                        item['endpoint_name'] = endpoint_name
-                        items.append(item)
+                for file in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
+                    hash = modules.sd_models.model_hash(file)
+                    item = {}
+                    item['model_name'] = os.path.basename(file)
+                    item['hash'] = hash
+                    item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
+                    item['endpoint_name'] = endpoint_name
+                    items.append(item)
                 inputs = {
                     'items': items
                 }
@@ -346,15 +366,13 @@ def webui():
                 params = {
                     'module': 'ControlNet'
                 }
-                for file in os.listdir(cn_models_dir):
-                    if os.path.isfile(os.path.join(cn_models_dir, file)) and \
-                    (file.endswith('.pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
-                        hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
-                        item = {}
-                        item['model_name'] = file
-                        item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
-                        item['endpoint_name'] = endpoint_name
-                        items.append(item)
+                for file in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
+                    hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+                    item = {}
+                    item['model_name'] = os.path.basename(file)
+                    item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+                    item['endpoint_name'] = endpoint_name
+                    items.append(item)
                 inputs = {
                     'items': items
                 }
@@ -366,15 +384,13 @@ def webui():
                 params = {
                     'module': 'Lora'
                 }
-                for file in os.listdir(lora_models_dir):
-                    if os.path.isfile(os.path.join(lora_models_dir, file)) and \
-                    (file.endswith('.pt') or file.endswith('.ckpt') or file.endswith('.safetensors')):
-                        hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
-                        item = {}
-                        item['model_name'] = file
-                        item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
-                        item['endpoint_name'] = endpoint_name
-                        items.append(item)
+                for file in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+                    hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
+                    item = {}
+                    item['model_name'] = os.path.basename(file)
+                    item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+                    item['endpoint_name'] = endpoint_name
+                    items.append(item)
                 inputs = {
                     'items': items
                 }
