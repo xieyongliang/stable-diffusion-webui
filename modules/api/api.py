@@ -406,7 +406,6 @@ class Api:
         if generated_images_s3uri:
             generated_images_s3uri = f'{generated_images_s3uri}{username}/'
             bucket, key = self.get_bucket_and_key(generated_images_s3uri)
-            images = []
             for b64image in b64images:
                 image = decode_base64_to_image(b64image).convert('RGB')
                 output = io.BytesIO()
@@ -417,10 +416,6 @@ class Api:
                     Bucket=bucket,
                     Key=f'{key}/{image_id}.jpg'
                 )
-                images.append(f's3://{bucket}/{key}/{image_id}.jpg')
-            return images
-        else:
-            return b64images
 
     def invocations(self, req: InvocationsRequest):
         print('-------invocation------')
@@ -456,24 +451,24 @@ class Api:
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                response.images = self.post_invocations(username, response.images)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'image-to-image':
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                response.images = self.post_invocations(username, response.images)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                response.image = self.post_invocations(username, [response.image])[0]
+                self.post_invocations(username, [response.image])
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                response.images = self.post_invocations(username, response.images)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response                
             else:
