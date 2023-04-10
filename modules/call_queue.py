@@ -310,9 +310,12 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
             for image in processed['images']:
                 images.append(Image.open(io.BytesIO(base64.b64decode(image))))
             parameters = processed['parameters']
-            info = json.loads(processed['info'])
+            try:
+                info = json.loads(processed['info'])
+                return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
+            else:
+                return images, '', ''
 
-            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
         else:
             extras_mode = args[0]
             resize_mode = args[1]
