@@ -24,7 +24,7 @@ from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_grad
 from modules import sd_hijack, sd_models, localization, script_callbacks, ui_extensions, deepbooru
 from modules.paths import script_path
 
-from modules.shared import opts, cmd_opts, restricted_opts
+from modules.shared import opts, cmd_opts, restricted_opts,get_default_sagemaker_bucket
 
 import modules.codeformer_model
 import modules.generation_parameters_copypaste as parameters_copypaste
@@ -733,6 +733,21 @@ def create_ui():
 
     interfaces = []
 
+    ##add images viewer
+    def translate(text):
+        return f'translated:{text}'
+    with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
+        with gr.Row().style(equal_height=False):
+            with gr.Column():
+                english = gr.Textbox(label="Placeholder")
+                translate_btn = gr.Button(value="Translate")
+            with gr.Column():
+                german = gr.Textbox(label="German Text")
+
+        translate_btn.click(translate, inputs=english, outputs=german, api_name="translate-to-german")
+        examples = gr.Examples(examples=["I went to the supermarket yesterday.", "Helen is a good swimmer."],
+                            inputs=[english])
+
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
@@ -760,6 +775,7 @@ def create_ui():
             interfaces += [ui_tab]
         else:
             dreambooth_tab = ui_tab[0]
+
 
     def create_setting_component(key, is_quicksettings=False):
         def fun():
@@ -879,11 +895,22 @@ def create_ui():
 
             return gr.update(value=value), opts.dumpjson()
 
+    default_sagemaker_s3 = get_default_sagemaker_bucket()
+    default_s3_path =  f"{default_sagemaker_s3}/stable-diffusion-webui/models/"
     with gr.Blocks(analytics_enabled=False) as settings_interface:
         dummy_component = gr.Label(visible=False)
-
-        settings_submit = gr.Button(value="Apply settings", variant='primary')
-
+        with gr.Row():
+            settings_submit = gr.Button(value="Apply settings", variant='primary')
+        with gr.Row():
+            with gr.Column(scale=2):
+                models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
+                                            value=default_s3_path)
+            with gr.Column(scale=1):
+                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket')
+            with gr.Column(scale=1):
+                reload_models_btn = gr.Button(value='Reload all models', elem_id='id_reload_all_models')
+        
+        
         result = gr.HTML()
 
         settings_cols = 3
@@ -898,6 +925,7 @@ def create_ui():
         items_displayed = 0
         previous_section = None
         column = None
+
         with gr.Row(elem_id="settings").style(equal_height=False):
             for i, (k, item) in enumerate(opts.data_labels.items()):
                 section_must_be_skipped = item.section[0] is None
@@ -916,6 +944,7 @@ def create_ui():
                     previous_section = item.section
 
                     elem_id, text = item.section
+                    print(text)
                     gr.HTML(elem_id="settings_header_text_{}".format(elem_id), value='<h1 class="gr-button-lg">{}</h1>'.format(text))
 
                 if k in quicksettings_names and not shared.cmd_opts.freeze_settings:
@@ -970,6 +999,48 @@ def create_ui():
             _js='restart_reload',
             inputs=[],
             outputs=[],
+        )
+
+        def reload_all_models():
+            sagemaker_endpoint=shared.opts.sagemaker_endpoint
+            print(f'reload_all_models from:{sagemaker_endpoint}')
+            inputs = {'task': 'reload-all-models'}
+            params = {'endpoint_name': sagemaker_endpoint}
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
+            if response.status_code == 200:
+                return f'[{sagemaker_endpoint}] reload_all_models success'
+            else:
+                print(response.status_code )
+                return f'[{sagemaker_endpoint}] reload_all_models failed'
+        
+        reload_models_btn.click(
+            fn=reload_all_models,
+            inputs=[],
+            outputs=[result]
+        )
+
+        def set_models_s3bucket(bucket_name):
+            if bucket_name == '':
+                return 'Error, please configure a S3 bucket for downloading model files'
+            sagemaker_endpoint=shared.opts.sagemaker_endpoint
+            print(f'set_models_s3bucket to:{sagemaker_endpoint}')
+            inputs = {'task': 'set-models-bucket',
+                        'models_bucket':bucket_name}
+            params = {'endpoint_name': 
+                        sagemaker_endpoint}
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
+            if response.status_code == 200:
+                return f'[{sagemaker_endpoint}] set bucket succeess'
+            else:
+                print(response.status_code )
+                return f'[{sagemaker_endpoint}] set bucket failed'
+
+        
+        set_models_s3bucket_btn.click(
+            fn=set_models_s3bucket,
+            inputs=[models_s3bucket],
+            outputs=[result]
+
         )
 
         if column is not None:
@@ -1498,7 +1569,7 @@ def create_ui():
                     bucket_name = opts.train_files_s3bucket
                     if bucket_name == '':
                         return 'Error, please configure a S3 bucket at settings page first'
-                    s3_bucket = s3_resource.Bucket(bucket_name)
+                    s3_bucket = s3_resource.Bucket(bucket_name.replace('s3://',''))
                     folder_name = f"train-images/{username}/{timestamp}"
                     try:
                         for i, img in enumerate(imgs):
@@ -1509,12 +1580,12 @@ def create_ui():
                         print(e)
                         return e
 
-                    return f"{len(imgs)} images uploaded to S3 folder: s3://{bucket_name}/{folder_name}"
+                    return f"{len(imgs)} images uploaded to S3 folder:{bucket_name}/{folder_name}"
                 
                 with gr.Tab(label="Upload Train Images to S3"):
                     upload_files = gr.Files(label="Files")
                     url_output = gr.Textbox(label="Output S3 folder")
-                    sub_btn = gr.Button("Upload")
+                    sub_btn = gr.Button(label="Upload",variant='primary',elem_id='id_upload_train_files')
                     sub_btn.click(fn=upload_to_s3, inputs=upload_files, outputs=url_output)
                 ## End add s3 images upload interface by River
                 with gr.Tab(label="Train Embedding"):
@@ -2150,6 +2221,7 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
+    interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
     interfaces += [(extensions_interface, "Extensions", "extensions")]

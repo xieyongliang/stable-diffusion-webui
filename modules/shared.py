@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import time
-
+import threading
 import gradio as gr
 import tqdm
 
@@ -16,8 +16,17 @@ import modules.devices as devices
 from modules import localization, sd_vae, extensions, script_loading
 from modules.paths import models_path, script_path, sd_path
 import requests
+import boto3
 
 demo = None
+#Add by River
+models_s3_bucket = None
+s3_folder_sd = None
+s3_folder_cn = None
+syncLock = threading.Lock()
+tmp_models_dir = '/tmp/models'
+tmp_cache_dir = '/tmp/cache'
+#end 
 
 sd_model_file = os.path.join(script_path, 'model.ckpt')
 default_sd_model_file = sd_model_file
@@ -273,11 +282,144 @@ interrogator = modules.interrogate.InterrogateModels("interrogate")
 
 face_restorers = []
 
+def get_default_sagemaker_bucket(default_region = 'us-west-2'):
+    session = boto3.Session()
+    region_name = session.region_name if session.region_name else default_region
+    sts_client = session.client('sts')
+    account_id = sts_client.get_caller_identity()['Account']
+    return f"s3://sagemaker-{region_name}-{account_id}"
 
 def realesrgan_models_names():
     import modules.realesrgan_model
     return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
 
+#add by River
+class ModelsRef:
+    def __init__(self):
+        self.models_ref = {}
+
+    def get_models_ref_dict(self):
+        return self.models_ref
+    
+    def add_models_ref(self, model_name):
+        if model_name in self.models_ref:
+            self.models_ref[model_name] += 1
+        else:
+            self.models_ref[model_name] = 0
+
+    def remove_model_ref(self,model_name):
+        if self.models_ref.get(model_name):
+            del self.models_ref[model_name]
+
+    def get_models_ref(self, model_name):
+        return self.models_ref.get(model_name)
+    
+    def get_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+    
+    def pop_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            del self.models_ref[least_ref_model]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+        
+sd_models_Ref = ModelsRef()
+cn_models_Ref = ModelsRef()
+
+def register_models(models_dir,mode):
+    if mode == 'sd':
+        register_sd_models(models_dir)
+    elif mode == 'cn':
+        register_cn_models(models_dir)
+
+def register_sd_models(sd_models_dir):
+    print ('---register_sd_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
+        for file in os.listdir(sd_models_dir):
+            if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
+                hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
+                item = {}
+                item['model_name'] = file
+                item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
+                item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
+                item['hash'] = hash
+                item['title'] = '{0} [{1}]'.format(file, hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'Stable-diffusion'
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_cn_models(cn_models_dir):
+    print ('---register_cn_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
+
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'ControlNet'
+        }
+        for file in os.listdir(cn_models_dir):
+            if os.path.isfile(os.path.join(cn_models_dir, file)) and \
+            (file.endswith('.pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
+                hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+                item = {}
+                item['model_name'] = file
+                item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def de_register_model(model_name,mode):
+    models_Ref = sd_models_Ref
+    if mode == 'sd' :
+        models_Ref = sd_models_Ref
+    elif mode == 'cn':
+        models_Ref = cn_models_Ref
+    models_Ref.remove_model_ref(model_name)
+    print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
+    if 'endpoint_name' in os.environ:
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        data = {
+            "module":mode,
+            "model_name": model_name,
+            "endpoint_name": endpoint_name
+        }  
+        response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
+        # Check if the request was successful
+        if response.status_code == requests.codes.ok:
+            print(f"{model_name} deleted successfully!")
+        else:
+            print(f"Error deleting {model_name}: ", response.text)
+
+#end by River
 
 class OptionInfo:
     def __init__(self, default=None, label="", component=None, component_args=None, onchange=None, section=None, refresh=None):
@@ -371,6 +513,8 @@ def refresh_sagemaker_endpoints(username):
             
     return sagemaker_endpoints
 
+
+
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
     "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": list_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
@@ -423,7 +567,7 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
 }))
 
 options_templates.update(options_section(('saving-paths', "Paths for saving"), {
-    "train_files_s3bucket":OptionInfo("","S3 bucket name for uploading/downloading images",component_args=hide_dirs),
+    "train_files_s3bucket":OptionInfo(get_default_sagemaker_bucket(),"S3 bucket name for uploading/downloading images",component_args=hide_dirs),
     "outdir_samples": OptionInfo("", "Output directory for images; if empty, defaults to three directories below", component_args=hide_dirs),
     "outdir_txt2img_samples": OptionInfo("outputs/txt2img-images", 'Output directory for txt2img images', component_args=hide_dirs),
     "outdir_img2img_samples": OptionInfo("outputs/img2img-images", 'Output directory for img2img images', component_args=hide_dirs),
@@ -639,6 +783,7 @@ if os.path.exists(config_filename):
 
 if cmd_opts.pureui and opts.localization == "None":
     opts.localization = "zh_CN"
+
 
 sd_upscalers = []
 

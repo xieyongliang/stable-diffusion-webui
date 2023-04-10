@@ -19,6 +19,7 @@ import json
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(models_path, model_dir))
 
+
 CheckpointInfo = namedtuple("CheckpointInfo", ['filename', 'title', 'hash', 'model_name', 'config'])
 checkpoints_list = {}
 checkpoints_loaded = collections.OrderedDict()
@@ -161,6 +162,8 @@ def model_hash(filename):
 
 
 def select_checkpoint():
+    ##add log by Rive
+    print('checkpoints_list:',checkpoints_list)
     model_checkpoint = shared.opts.sd_model_checkpoint
     checkpoint_info = checkpoints_list.get(model_checkpoint, None)
     if checkpoint_info is not None:
