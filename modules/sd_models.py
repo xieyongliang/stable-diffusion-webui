@@ -82,7 +82,8 @@ def list_models(sagemaker_endpoint=None):
     if shared.cmd_opts.pureui:
         if sagemaker_endpoint:
             params = {
-                'module': 'Stable-diffusion', 'endpoint_name': sagemaker_endpoint
+                'module': 'Stable-diffusion',
+                'endpoint_name': sagemaker_endpoint
             }
             response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
             if response.status_code == 200:

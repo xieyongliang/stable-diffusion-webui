@@ -153,7 +153,6 @@ if not cmd_opts.train:
     sagemaker_endpoint_component = None
     sd_model_checkpoint_component = None
     create_train_dreambooth_component = None
-    username = ''
 else:
     api_endpoint = cmd_opts.api_endpoint
 
@@ -491,8 +490,7 @@ def refresh_sagemaker_endpoints(username):
 
     if industrial_model != '':
         params = {
-            'industrial_model': industrial_model,
-            'username': username
+            'industrial_model': industrial_model
         }
         response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
         if response.status_code == 200:
