@@ -29,6 +29,7 @@ import requests
 import piexif
 import piexif.helper
 import numpy as np
+import uuid
 
 def upscaler_to_index(name: str):
     try:

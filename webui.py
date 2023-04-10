@@ -352,6 +352,8 @@ def webui():
                     item = {}
                     item['model_name'] = os.path.basename(file)
                     item['hash'] = hash
+                    item['filename'] = file
+                    item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
                     item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
                     item['endpoint_name'] = endpoint_name
                     items.append(item)
