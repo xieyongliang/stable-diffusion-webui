@@ -409,8 +409,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 images = []
                 for image in processed['images']:
                     images.append(Image.open(io.BytesIO(base64.b64decode(image))))
-            info = json.loads(processed['html_info'])
-            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
+            return images, '', ''
 
     def f(username, *args, **kwargs):
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
