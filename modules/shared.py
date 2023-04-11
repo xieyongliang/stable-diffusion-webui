@@ -25,7 +25,7 @@ s3_folder_sd = None
 s3_folder_cn = None
 syncLock = threading.Lock()
 tmp_models_dir = '/tmp/models'
-tmp_cache_dir = '/tmp/cache'
+tmp_cache_dir = '/tmp/model_sync_cache'
 #end 
 
 sd_model_file = os.path.join(script_path, 'model.ckpt')
@@ -514,6 +514,7 @@ def refresh_sagemaker_endpoints(username):
 
 
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
+    # "models_s3_bucket": OptionInfo(f'{get_default_sagemaker_bucket()}/stable-diffusion-webui/models/', "S3 path for downloading model files (E.g, s3://bucket-name/models/)", ),
     "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": list_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
     "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),

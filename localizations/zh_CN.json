@@ -844,7 +844,7 @@
     "Output S3 folder":"S3文件夹目录",
     "Upload Train Images to S3":"上传训练图片到S3",
     "Error, please configure a S3 bucket at settings page first":"失败，请先到设置页面配置S3桶名",
-    "Upload":"上传",
+    "Upload Images":"上传图片",
     "Reload all models":"重新加载模型文件",
     "Update model files path":"更新模型加载路径",
     "S3 path for downloading model files (E.g, s3://bucket-name/models/)":"加载模型的S3路径，例如：s3://bucket-name/models/",

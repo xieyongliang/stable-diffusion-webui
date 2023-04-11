@@ -79,8 +79,11 @@ def initialize():
         region_name = session.region_name
         sts_client = session.client('sts')
         account_id = sts_client.get_caller_identity()['Account']
+        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+        #print ('environ:',os.environ)
         if not shared.models_s3_bucket:
-            shared.models_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+            
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
             shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
 
@@ -99,7 +102,7 @@ def initialize():
     modules.scripts.load_scripts()
 
     modelloader.load_upscalers()
-
+ 
     modules.sd_vae.refresh_vae_list()
     if not cmd_opts.pureui:
         modules.sd_models.load_model()
@@ -186,92 +189,6 @@ def user_auth(username, password):
     response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
 
     return response.status_code == 200
-
-# def register_models(models_dir,mode):
-#     if mode == 'sd':
-#         register_sd_models(models_dir)
-#     elif mode == 'cn':
-#         register_cn_models(models_dir)
-
-# def register_sd_models(sd_models_dir):
-#     print ('---register_sd_models()----')
-#     if 'endpoint_name' in os.environ:
-#         items = []
-#         api_endpoint = os.environ['api_endpoint']
-#         endpoint_name = os.environ['endpoint_name']
-#         print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
-#         for file in os.listdir(sd_models_dir):
-#             if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
-#                 hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
-#                 item = {}
-#                 item['model_name'] = file
-#                 item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-#                 item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
-#                 item['hash'] = hash
-#                 item['title'] = '{0} [{1}]'.format(file, hash)
-#                 item['endpoint_name'] = endpoint_name
-#                 items.append(item)
-#         inputs = {
-#             'items': items
-#         }
-#         params = {
-#             'module': 'Stable-diffusion'
-#         }
-#         if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-#             response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-#             print(response)
-
-# def register_cn_models(cn_models_dir):
-#     print ('---register_cn_models()----')
-#     if 'endpoint_name' in os.environ:
-#         items = []
-#         api_endpoint = os.environ['api_endpoint']
-#         endpoint_name = os.environ['endpoint_name']
-#         print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
-
-#         inputs = {
-#             'items': items
-#         }
-#         params = {
-#             'module': 'ControlNet'
-#         }
-#         for file in os.listdir(cn_models_dir):
-#             if os.path.isfile(os.path.join(cn_models_dir, file)) and \
-#             (file.endswith('.pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
-#                 hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
-#                 item = {}
-#                 item['model_name'] = file
-#                 item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
-#                 item['endpoint_name'] = endpoint_name
-#                 items.append(item)
-
-#         if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-#             response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-#             print(response)
-
-# def de_register_model(model_name,mode):
-#     models_Ref = shared.sd_models_Ref
-#     if mode == 'sd' :
-#         models_Ref = shared.sd_models_Ref
-#     elif mode == 'cn':
-#         models_Ref = shared.cn_models_Ref
-#     models_Ref.remove_model_ref(model_name)
-#     print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
-#     if 'endpoint_name' in os.environ:
-#         api_endpoint = os.environ['api_endpoint']
-#         endpoint_name = os.environ['endpoint_name']
-#         data = {
-#             "module":mode,
-#             "model_name": model_name,
-#             "endpoint_name": endpoint_name
-#         }  
-#         response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
-#         # Check if the request was successful
-#         if response.status_code == requests.codes.ok:
-#             print(f"{model_name} deleted successfully!")
-#         else:
-#             print(f"Error deleting {model_name}: ", response.text)
-
 
 
 def check_space_s3_download(s3,bucket_name,s3_folder,local_folder,file,size,mode):
@@ -365,7 +282,6 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
             model.append(filename)
         else:
             fnames_dict[root] = [filename]
-    print(f'-----fnames_dict---{fnames_dict}')
 
     tmp_s3_files = {}
     for i, obj in enumerate (s3_objects):
@@ -460,12 +376,13 @@ def sync_s3_folder(local_folder,cache_dir,mode):
                     retry = retry - 1
         if registerflag:
             register_models(local_folder,mode)
-            if mode == 'sd':
-                #Refreshing Model List
-                modules.sd_models.list_models()
-            elif mode == 'cn':
-            #Reload extension models, such as ControlNet
-                modules.scripts.reload_scripts()
+            reload_webui_infer(mode)
+            # if mode == 'sd':
+            #     #Refreshing Model List
+            #     modules.sd_models.list_models()
+            # elif mode == 'cn':
+            # #Reload extension models, such as ControlNet
+            #     modules.scripts.reload_scripts()
 
 
     # Create a thread function to keep syncing with the S3 folder
@@ -479,7 +396,17 @@ def sync_s3_folder(local_folder,cache_dir,mode):
     thread.start()
     return thread
 
-
+def reload_webui_infer(mode):
+    extensions.list_extensions()
+    print('Reloading custom scripts')
+    modules.scripts.load_scripts()
+    modelloader.load_upscalers()
+    # print('Reloading modules: modules.ui')
+    # importlib.reload(modules.ui)
+    if mode == 'sd':
+        print('Refreshing SD Model List')
+        modules.sd_models.list_models()
+        shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()))
 
 def webui():
     launch_api = cmd_opts.api

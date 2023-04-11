@@ -89,10 +89,22 @@ def gr_show(visible=True):
 ## Begin output images uploaded to s3 by River
 s3_resource = boto3.resource('s3')
 
-def save_images_to_s3(full_fillnames,timestamp):
-    username = shared.username
+def get_webui_username(request):
+    tokens = shared.demo.server_app.tokens
+    cookies = request.headers['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    username = tokens[access_token] if access_token else None
+    return username
+
+def save_images_to_s3(full_fillnames,timestamp,username):
     sagemaker_endpoint = shared.opts.sagemaker_endpoint
-    bucket_name = opts.train_files_s3bucket
+    bucket_name = opts.train_files_s3bucket.replace('s3://','')
+    if bucket_name.endswith('/'):
+        bucket_name= bucket_name[:-1]
     if bucket_name == '':
         return 'Error, please configure a S3 bucket at settings page first'
     s3_bucket = s3_resource.Bucket(bucket_name)
@@ -134,6 +146,10 @@ refresh_symbol = '\U0001f504'  # 🔄
 save_style_symbol = '\U0001f4be'  # 💾
 apply_style_symbol = '\U0001f4cb'  # 📋
 
+def text_to_hyperlink_html(url):
+    text= f'<p><a target="_blank" href="{url}">{url}</a></p>'
+    return text
+
 def plaintext_to_html(text):
     text = "<p>" + "<br>\n".join([f"{html.escape(x)}" for x in text.split('\n')]) + "</p>"
     return text
@@ -143,7 +159,7 @@ def send_gradio_gallery_to_image(x):
         return None
     return image_from_url_text(x[0])
 
-def save_files(js_data, images, do_make_zip, index):
+def save_files(username,js_data, images, do_make_zip, index):
     import csv
     filenames = []
     fullfns = []
@@ -197,8 +213,7 @@ def save_files(js_data, images, do_make_zip, index):
     
     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
     logfile = os.path.join(opts.outdir_save, "log.csv")
-    s3folder = save_images_to_s3(fullfns,timestamp)
-    save_images_to_s3([logfile],timestamp)
+    s3folder = save_images_to_s3(fullfns+[logfile],timestamp,username)
     # Make Zip
     if do_make_zip:
         zip_filepath = os.path.join(path, "images.zip")
@@ -210,7 +225,7 @@ def save_files(js_data, images, do_make_zip, index):
                     zip_file.writestr(filenames[i], f.read())
         fullfns.insert(0, zip_filepath)
 
-    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}, \nS3 folder:\n{s3folder}")
+    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}"),text_to_hyperlink_html(s3folder)
 
 
 
@@ -683,13 +698,14 @@ Requested path was: {f}
                                 generation_info,
                                 result_gallery,
                                 do_make_zip,
-                                html_info,
+                                html_info
                             ],
                             outputs=[
                                 download_files,
                                 html_info,
                                 html_info,
                                 html_info,
+                                html_info
                             ]
                         )
                 else:
@@ -711,20 +727,20 @@ def create_ui():
 
     interfaces = []
 
-    ##add images viewer
-    def translate(text):
-        return f'translated:{text}'
-    with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
-        with gr.Row().style(equal_height=False):
-            with gr.Column():
-                english = gr.Textbox(label="Placeholder")
-                translate_btn = gr.Button(value="Translate")
-            with gr.Column():
-                german = gr.Textbox(label="German Text")
+    ##add River
+    # def translate(text):
+    #     return f'translated:{text}'
+    # with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
+    #     with gr.Row().style(equal_height=False):
+    #         with gr.Column():
+    #             english = gr.Textbox(label="Placeholder")
+    #             translate_btn = gr.Button(value="Translate")
+    #         with gr.Column():
+    #             german = gr.Textbox(label="German Text")
 
-        translate_btn.click(translate, inputs=english, outputs=german, api_name="translate-to-german")
-        examples = gr.Examples(examples=["I went to the supermarket yesterday.", "Helen is a good swimmer."],
-                            inputs=[english])
+    #     translate_btn.click(translate, inputs=english, outputs=german, api_name="translate-to-german")
+    #     examples = gr.Examples(examples=["I went to the supermarket yesterday.", "Helen is a good swimmer."],
+    #                         inputs=[english])
 
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
         with gr.Row().style(equal_height=False):
@@ -880,13 +896,14 @@ def create_ui():
         with gr.Row():
             settings_submit = gr.Button(value="Apply settings", variant='primary')
         with gr.Row():
-            with gr.Column(scale=2):
+            with gr.Column(scale=4):
                 models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
                                             value=default_s3_path)
             with gr.Column(scale=1):
                 set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket')
             with gr.Column(scale=1):
                 reload_models_btn = gr.Button(value='Reload all models', elem_id='id_reload_all_models')
+
         
         
         result = gr.HTML()
@@ -996,7 +1013,8 @@ def create_ui():
             inputs=[],
             outputs=[result]
         )
-
+        
+        # River
         def set_models_s3bucket(bucket_name):
             if bucket_name == '':
                 return 'Error, please configure a S3 bucket for downloading model files'
@@ -1539,10 +1557,13 @@ def create_ui():
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
                 ## Begin add s3 images upload interface by River
-                def upload_to_s3(imgs):
-                    username = shared.username 
+                def upload_to_s3(imgs,request : gr.Request):
+                    username = get_webui_username(request)
+                    print (f'--get_webui_username--:{username}')
                     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
-                    bucket_name = opts.train_files_s3bucket
+                    bucket_name = opts.train_files_s3bucket.replace('s3://','')
+                    if bucket_name.endswith('/'):
+                        bucket_name= bucket_name[:-1]
                     if bucket_name == '':
                         return 'Error, please configure a S3 bucket at settings page first'
                     s3_bucket = s3_resource.Bucket(bucket_name.replace('s3://',''))
@@ -1561,7 +1582,7 @@ def create_ui():
                 with gr.Tab(label="Upload Train Images to S3"):
                     upload_files = gr.Files(label="Files")
                     url_output = gr.Textbox(label="Output S3 folder")
-                    sub_btn = gr.Button(label="Upload",variant='primary',elem_id='id_upload_train_files')
+                    sub_btn = gr.Button(value="Upload Images",elem_id='id_upload_train_images',variant='primary')
                     sub_btn.click(fn=upload_to_s3, inputs=upload_files, outputs=url_output)
                 ## End add s3 images upload interface by River
                 with gr.Tab(label="Train Embedding"):
@@ -2194,7 +2215,7 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
-    interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
+    # interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
     interfaces += [(extensions_interface, "Extensions", "extensions")]
