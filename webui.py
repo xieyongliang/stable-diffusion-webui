@@ -39,7 +39,7 @@ import modules.script_callbacks
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts, opts, sd_model,syncLock
+from modules.shared import cmd_opts, opts, sd_model,syncLock,de_register_model
 import modules.hypernetworks.hypernetwork
 import boto3
 import threading
@@ -547,31 +547,6 @@ def register_cn_models(cn_models_dir):
         if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
             response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
             print(response)
-
-def de_register_model(model_name,mode):
-    models_Ref = sd_models_Ref
-    if mode == 'sd' :
-        models_Ref = sd_models_Ref
-    elif mode == 'cn':
-        models_Ref = cn_models_Ref
-    elif mode == 'lora':
-        models_Ref = lora_models_Ref
-    models_Ref.remove_model_ref(model_name)
-    print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
-    if 'endpoint_name' in os.environ:
-        api_endpoint = os.environ['api_endpoint']
-        endpoint_name = os.environ['endpoint_name']
-        data = {
-            "module":mode,
-            "model_name": model_name,
-            "endpoint_name": endpoint_name
-        }  
-        response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
-        # Check if the request was successful
-        if response.status_code == requests.codes.ok:
-            print(f"{model_name} deleted successfully!")
-        else:
-            print(f"Error deleting {model_name}: ", response.text)
 
 def webui():
     launch_api = cmd_opts.api
