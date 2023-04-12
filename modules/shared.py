@@ -7,6 +7,7 @@ import time
 import threading
 import gradio as gr
 import tqdm
+import glob
 
 import modules.artists
 import modules.interrogate
@@ -23,6 +24,7 @@ demo = None
 models_s3_bucket = None
 s3_folder_sd = None
 s3_folder_cn = None
+s3_folder_lora = None
 syncLock = threading.Lock()
 tmp_models_dir = '/tmp/models'
 tmp_cache_dir = '/tmp/model_sync_cache'
@@ -145,6 +147,7 @@ config_filename = cmd_opts.ui_settings_file
 os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetwork = None
+loaded_hypernetworks = []
 
 if not cmd_opts.train:
     api_endpoint = os.environ['api_endpoint']
@@ -332,91 +335,7 @@ class ModelsRef:
         
 sd_models_Ref = ModelsRef()
 cn_models_Ref = ModelsRef()
-
-def register_models(models_dir,mode):
-    if mode == 'sd':
-        register_sd_models(models_dir)
-    elif mode == 'cn':
-        register_cn_models(models_dir)
-
-def register_sd_models(sd_models_dir):
-    print ('---register_sd_models()----')
-    if 'endpoint_name' in os.environ:
-        items = []
-        api_endpoint = os.environ['api_endpoint']
-        endpoint_name = os.environ['endpoint_name']
-        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
-        for file in os.listdir(sd_models_dir):
-            if os.path.isfile(os.path.join(sd_models_dir, file)) and (file.endswith('.ckpt') or file.endswith('.safetensors')):
-                hash = modules.sd_models.model_hash(os.path.join(sd_models_dir, file))
-                item = {}
-                item['model_name'] = file
-                item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-                item['filename'] = '/opt/ml/code/stable-diffusion-webui/models/Stable-diffusion/{0}'.format(file)
-                item['hash'] = hash
-                item['title'] = '{0} [{1}]'.format(file, hash)
-                item['endpoint_name'] = endpoint_name
-                items.append(item)
-        inputs = {
-            'items': items
-        }
-        params = {
-            'module': 'Stable-diffusion'
-        }
-        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-            print(response)
-
-def register_cn_models(cn_models_dir):
-    print ('---register_cn_models()----')
-    if 'endpoint_name' in os.environ:
-        items = []
-        api_endpoint = os.environ['api_endpoint']
-        endpoint_name = os.environ['endpoint_name']
-        print(f'api_endpoint:{api_endpoint}\nendpoint_name:{endpoint_name}')
-
-        inputs = {
-            'items': items
-        }
-        params = {
-            'module': 'ControlNet'
-        }
-        for file in os.listdir(cn_models_dir):
-            if os.path.isfile(os.path.join(cn_models_dir, file)) and \
-            (file.endswith('.pt') or file.endswith('.pth') or file.endswith('.ckpt') or file.endswith('.safetensors')):
-                hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
-                item = {}
-                item['model_name'] = file
-                item['title'] = '{0} [{1}]'.format(os.path.splitext(file)[0], hash)
-                item['endpoint_name'] = endpoint_name
-                items.append(item)
-
-        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-            print(response)
-
-def de_register_model(model_name,mode):
-    models_Ref = sd_models_Ref
-    if mode == 'sd' :
-        models_Ref = sd_models_Ref
-    elif mode == 'cn':
-        models_Ref = cn_models_Ref
-    models_Ref.remove_model_ref(model_name)
-    print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
-    if 'endpoint_name' in os.environ:
-        api_endpoint = os.environ['api_endpoint']
-        endpoint_name = os.environ['endpoint_name']
-        data = {
-            "module":mode,
-            "model_name": model_name,
-            "endpoint_name": endpoint_name
-        }  
-        response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
-        # Check if the request was successful
-        if response.status_code == requests.codes.ok:
-            print(f"{model_name} deleted successfully!")
-        else:
-            print(f"Error deleting {model_name}: ", response.text)
+lora_models_Ref = ModelsRef()
 
 #end by River
 
@@ -630,6 +549,15 @@ options_templates.update(options_section(('interrogate', "Interrogate Options"),
     "deepbooru_escape": OptionInfo(True, "escape (\\) brackets in deepbooru (so they are used as literal brackets and not for emphasis)"),
 }))
 
+options_templates.update(options_section(('extra_networks', "Extra Networks"), {
+    "extra_networks_default_view": OptionInfo("cards", "Default view for Extra Networks", gr.Dropdown, {"choices": ["cards", "thumbs"]}),
+    "extra_networks_default_multiplier": OptionInfo(1.0, "Multiplier for extra networks", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
+    "extra_networks_card_width": OptionInfo(0, "Card width for Extra Networks (px)"),
+    "extra_networks_card_height": OptionInfo(0, "Card height for Extra Networks (px)"),
+    "extra_networks_add_text_separator": OptionInfo(" ", "Extra text to add before <...> when adding extra network to prompt"),
+    "sd_hypernetwork": OptionInfo("None", "Add hypernetwork to prompt", gr.Dropdown, lambda: {"choices": [""] + [x for x in hypernetworks.keys()]}, refresh=reload_hypernetworks),
+}))
+
 options_templates.update(options_section(('ui', "User interface"), {
     "show_progressbar": OptionInfo(True, "Show progressbar"),
     "show_progress_every_n_steps": OptionInfo(0, "Show image creation progress every N sampling steps. Set to 0 to disable. Set to -1 to show after completion of batch.", gr.Slider, {"minimum": -1, "maximum": 32, "step": 1}),
@@ -646,6 +574,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "show_progress_in_title": OptionInfo(True, "Show generation progress in window title."),
     'quicksettings': OptionInfo("", "Quicksettings list"),
     'localization': OptionInfo("None", "Localization (requires restart)", gr.Dropdown, lambda: {"choices": ["None"] + list(localization.localizations.keys())}, refresh=lambda: localization.list_localizations(cmd_opts.localizations_dir)),
+    "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order"),
 }))
 
 options_templates.update(options_section(('sampler-params', "Sampler parameters"), {
@@ -834,3 +763,16 @@ mem_mon.start()
 def listfiles(dirname):
     filenames = [os.path.join(dirname, x) for x in sorted(os.listdir(dirname)) if not x.startswith(".")]
     return [file for file in filenames if os.path.isfile(file)]
+
+def html_path(filename):
+    return os.path.join(script_path, "html", filename)
+
+
+def html(filename):
+    path = html_path(filename)
+
+    if os.path.exists(path):
+        with open(path, encoding="utf8") as file:
+            return file.read()
+
+    return ""

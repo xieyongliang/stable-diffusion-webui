@@ -13,7 +13,7 @@ from skimage import exposure
 from typing import Any, Dict, List, Optional
 
 import modules.sd_hijack
-from modules import devices, prompt_parser, masking, sd_samplers, lowvram, generation_parameters_copypaste
+from modules import devices, prompt_parser, masking, sd_samplers, lowvram, generation_parameters_copypaste,  extra_networks
 from modules.sd_hijack import model_hijack
 from modules.shared import opts, cmd_opts, state
 import modules.shared as shared
@@ -120,6 +120,7 @@ class StableDiffusionProcessing():
         self.s_noise = s_noise or opts.s_noise
         self.override_settings = {k: v for k, v in (override_settings or {}).items() if k not in shared.restricted_opts}
         self.is_using_inpainting_conditioning = False
+        self.disable_extra_networks = False
 
         self.script_args = json.loads(script_args) if script_args != None else None
 
@@ -530,6 +531,12 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
             if len(prompts) == 0:
                 break
 
+            prompts, extra_network_data = extra_networks.parse_prompts(prompts)
+
+            if not p.disable_extra_networks:
+                with devices.autocast():
+                    extra_networks.activate(p, extra_network_data)
+
             if p.scripts is not None:
                 p.scripts.process_batch(p, batch_number=n, prompts=prompts, seeds=seeds, subseeds=subseeds)
 
@@ -617,6 +624,9 @@ def process_images_inner(p: StableDiffusionProcessing) -> Processed:
 
             if opts.grid_save:
                 images.save_image(grid, p.outpath_grids, "grid", p.all_seeds[0], p.all_prompts[0], opts.grid_format, info=infotext(), short_filename=not opts.grid_extended_filename, p=p, grid=True)
+
+    if not p.disable_extra_networks and extra_network_data:
+        extra_networks.deactivate(p, extra_network_data)
 
     devices.torch_gc()
 

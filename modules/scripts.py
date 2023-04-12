@@ -181,7 +181,6 @@ def load_scripts():
     script_callbacks.clear_callbacks()
 
     scripts_list = list_scripts("scripts", ".py")
-    print('scripts_list:',scripts_list)
     syspath = sys.path
 
     for scriptfile in sorted(scripts_list):
@@ -226,9 +225,6 @@ class ScriptRunner:
         self.infotext_fields = []
 
     def initialize_scripts(self, is_img2img):
-        print('----initialize_scripts()------')
-        print(f'--scripts_data--{scripts_data}')
-        traceback.print_stack()
         self.scripts.clear()
         self.alwayson_scripts.clear()
         self.selectable_scripts.clear()
@@ -320,8 +316,6 @@ class ScriptRunner:
 
         if script_index == 0:
             return None
-        print('self.selectable_scripts:',self.selectable_scripts)
-        print('script_index:',script_index)
         script = self.selectable_scripts[script_index-1]
 
         if script is None:

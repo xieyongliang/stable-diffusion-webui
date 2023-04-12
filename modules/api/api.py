@@ -29,6 +29,7 @@ import requests
 import piexif
 import piexif.helper
 import numpy as np
+import uuid
 
 def upscaler_to_index(name: str):
     try:
@@ -399,6 +400,23 @@ class Api:
 
         json.dump(self.cache, open('cache', 'w'))
 
+    def post_invocations(self, username, b64images):
+        generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+        if generated_images_s3uri:
+            generated_images_s3uri = f'{generated_images_s3uri}{username}/'
+            bucket, key = self.get_bucket_and_key(generated_images_s3uri)
+            for b64image in b64images:
+                image = decode_base64_to_image(b64image).convert('RGB')
+                output = io.BytesIO()
+                image.save(output, format='JPEG')
+                image_id = str(uuid.uuid4())
+                self.s3_client.put_object(
+                    Body=output.getvalue(),
+                    Bucket=bucket,
+                    Key=f'{key}/{image_id}.jpg'
+                )
+
     def invocations(self, req: InvocationsRequest):
         print('-------invocation------')
         print(req)
@@ -437,24 +455,26 @@ class Api:
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'image-to-image':
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
+                self.post_invocations(username, [response.image])
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
+                self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response                
-            elif req.task == 'sd-models':
-                return self.get_sd_models()
             elif req.task == 'reload-all-models':
                 return self.reload_all_models()
             elif req.task == 'set-models-bucket':
@@ -514,3 +534,9 @@ class Api:
     def launch(self, server_name, port):
         self.app.include_router(self.router)
         uvicorn.run(self.app, host=server_name, port=port)
+
+    def get_bucket_and_key(self, s3uri):
+        pos = s3uri.find('/', 5)
+        bucket = s3uri[5 : pos]
+        key = s3uri[pos + 1 : ]
+        return bucket, key
