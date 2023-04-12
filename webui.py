@@ -1137,17 +1137,17 @@ if cmd_opts.train:
                 print('Uploading SD Models...')
                 if db_config.v2:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
                     )
                 if db_config.save_safetensors:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.safetensors')
                     )
                 else:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.ckpt')
                     )
                 print('Uploading DB Models...')
@@ -1158,7 +1158,7 @@ if cmd_opts.train:
                 if db_config.use_lora:
                     print('Uploading Lora Models...')
                     upload_s3files(
-                        f'{lora_models_s3uri}/{username}/',
+                        f'{lora_models_s3uri}{username}/',
                         os.path.join(lora_model_dir, f'{db_model_name}_*.pt')
                     )
                 #automatic tar latest checkpoint and upload to s3 by zheng on 2023.03.22
