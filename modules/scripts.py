@@ -181,7 +181,6 @@ def load_scripts():
     script_callbacks.clear_callbacks()
 
     scripts_list = list_scripts("scripts", ".py")
-
     syspath = sys.path
 
     for scriptfile in sorted(scripts_list):
@@ -203,6 +202,7 @@ def load_scripts():
         finally:
             sys.path = syspath
             current_basedir = paths.script_path
+    print('scripts_data',scripts_data)
 
 
 def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
@@ -316,7 +316,6 @@ class ScriptRunner:
 
         if script_index == 0:
             return None
-
         script = self.selectable_scripts[script_index-1]
 
         if script is None:

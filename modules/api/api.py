@@ -8,7 +8,7 @@ from gradio.processing_utils import decode_base64_to_file
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from secrets import compare_digest
-
+from modules.shared import de_register_model
 import modules.shared as shared
 from modules import sd_samplers, deepbooru
 from modules.api.models import *
@@ -427,6 +427,7 @@ class Api:
         try:
             username = req.username
             default_options = shared.opts.data
+
             if username != '':
                 inputs = {
                     'action': 'get',
@@ -446,7 +447,10 @@ class Api:
                 self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
                 hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)
                 hypernetworks.hypernetwork.apply_strength()
-
+            ##add sd model usage stats by River
+            print(f'default_options:{shared.opts.data}')
+            shared.sd_models_Ref.add_models_ref(shared.opts.data['sd_model_checkpoint'])
+            ##end 
             if req.task == 'text-to-image':
                 self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
@@ -471,14 +475,61 @@ class Api:
                 self.post_invocations(username, response.images)
                 shared.opts.data = default_options
                 return response                
+            elif req.task == 'reload-all-models':
+                return self.reload_all_models()
+            elif req.task == 'set-models-bucket':
+                bucket = req.models_bucket
+                return self.set_models_bucket(bucket)
             else:
                 raise NotImplementedError
         except Exception as e:
             traceback.print_exc()
 
     def ping(self):
-        print('-------ping------')
+        # print('-------ping------')
         return {'status': 'Healthy'}
+
+    def reload_all_models(self):
+        print('-------reload_all_models------')
+        def remove_files(path):
+            for file_name in os.listdir(path):
+                file_path = os.path.join(path, file_name)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f'{file_path} has been removed')
+                    if file_path.find('Stable-diffusion'):
+                        de_register_model(file_name,'sd')
+                    elif file_path.find('ControlNet'):
+                        de_register_model(file_name,'cn')
+                elif os.path.isdir(file_path):
+                    remove_files(file_path)
+                    os.rmdir(file_path)
+        shared.syncLock.acquire()
+        #remove all files in /tmp/models/ and /tmp/cache/
+        remove_files(shared.tmp_models_dir)
+        remove_files(shared.tmp_cache_dir)
+        shared.syncLock.release()
+        return {'simple_result':'success'}
+    
+    def set_models_bucket(self,bucket):
+        shared.syncLock.acquire()
+        if bucket.endswith('/'):
+            bucket = bucket[:-1]
+        url_parts = bucket.replace('s3://','').split('/')
+        shared.models_s3_bucket = url_parts[0]
+        lastfolder = url_parts[-1]
+        if lastfolder == 'Stable-diffusion':
+            shared.s3_folder_sd = '/'.join(url_parts[1:])
+        elif lastfolder == 'ControlNet':
+            shared.s3_folder_cn = '/'.join(url_parts[1:])
+        else:
+            shared.s3_folder_sd = '/'.join(url_parts[1:]+['Stable-diffusion'])
+            shared.s3_folder_cn = '/'.join(url_parts[1:]+['ControlNet'])
+        print(f'set_models_bucket to {shared.models_s3_bucket}')
+        print(f'set_s3_folder_sd to {shared.s3_folder_sd}')
+        print(f'set_s3_folder_cn to {shared.s3_folder_cn}')
+        shared.syncLock.release()
+        return {'simple_result':'success'}
 
     def launch(self, server_name, port):
         self.app.include_router(self.router)

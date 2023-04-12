@@ -11,11 +11,15 @@ from fastapi import Request, status
 from fastapi.encoders import jsonable_encoder
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+import psutil
+
 from modules import extra_networks, ui_extra_networks_checkpoints
 from modules import extra_networks_hypernet, ui_extra_networks_hypernets, ui_extra_networks_textual_inversion
 
 from modules.call_queue import wrap_queued_call, queue_lock
 from modules.paths import script_path
+from collections import OrderedDict
 
 from modules import shared, sd_samplers, upscaler, extensions, localization, ui_tempdir, ui_extra_networks
 import modules.codeformer_model as codeformer
@@ -35,9 +39,12 @@ import modules.script_callbacks
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts, opts
+from modules.shared import cmd_opts, opts, sd_model,syncLock,de_register_model
 import modules.hypernetworks.hypernetwork
 import boto3
+import threading
+import time
+
 import traceback
 from botocore.exceptions import ClientError
 import requests
@@ -99,6 +106,7 @@ if cmd_opts.server_name:
 else:
     server_name = "0.0.0.0" if cmd_opts.listen else None
 
+FREESPACE = 20
 
 def initialize():
     extensions.list_extensions()
@@ -108,7 +116,7 @@ def initialize():
         shared.sd_upscalers = upscaler.UpscalerLanczos().scalers
         modules.scripts.load_scripts()
         return
-
+   
     modelloader.cleanup_models()
     modules.sd_models.setup_model()
     codeformer.setup_model(cmd_opts.codeformer_models_path)
@@ -118,7 +126,7 @@ def initialize():
     modules.scripts.load_scripts()
 
     modelloader.load_upscalers()
-
+ 
     modules.sd_vae.refresh_vae_list()
     if not cmd_opts.pureui:
         modules.sd_models.load_model()
@@ -187,7 +195,6 @@ def wait_on_server(demo=None):
 
 def api_only():
     initialize()
-
     app = FastAPI()
     setup_cors(app)
     app.add_middleware(GZipMiddleware, minimum_size=1000)
@@ -210,9 +217,7 @@ def user_auth(username, password):
         'password': password
     }
     api_endpoint = os.environ['api_endpoint']
-
     response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
-
     return response.status_code == 200
 
 def get_bucket_and_key(s3uri):
@@ -224,17 +229,324 @@ def get_bucket_and_key(s3uri):
 def get_models(path, extensions):
     candidates = []
     models = []
-
     for extension in extensions:
         candidates = candidates + glob.glob(os.path.join(path, f'**/{extension}'), recursive=True)
 
     for filename in sorted(candidates, key=str.lower):
         if os.path.isdir(filename):
             continue
-
         models.append(filename)
-
     return models
+
+def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+    # s3_client = boto3.client('s3')
+    src = s3_folder + '/' + file
+    dist =  os.path.join(local_folder, file)
+    # Get disk usage statistics
+    disk_usage = psutil.disk_usage('/tmp')
+    freespace = disk_usage.free/(1024**3)
+    print(f"Total space: {disk_usage.total/(1024**3)}, Used space: {disk_usage.used/(1024**3)}, Free space: {freespace}")
+    if freespace - size >= FREESPACE:
+        try:
+            s3_client.download_file(bucket_name, src, dist)
+            #init ref cnt to 0, when the model file first time download
+            hash = modules.sd_models.model_hash(dist)
+            if mode == 'sd' :
+                shared.sd_models_Ref.add_models_ref('{0} [{1}]'.format(file, hash))
+            elif mode == 'cn':
+                shared.cn_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            elif mode == 'lora':
+                shared.lora_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            print(f'download_file success:from {bucket_name}/{src} to {dist}')
+        except Exception as e:
+            print(f'download_file error: from {bucket_name}/{src} to {dist}')
+            print(f"An error occurred: {e}") 
+            return False
+        return True
+    else:
+        return False
+
+def free_local_disk(local_folder,size,mode):
+    disk_usage = psutil.disk_usage('/tmp')
+    freespace = disk_usage.free/(1024**3)
+    if freespace - size >= FREESPACE:
+        return
+    models_Ref = None
+    if mode == 'sd' :
+        models_Ref = shared.sd_models_Ref
+    elif mode == 'cn':
+        models_Ref = shared.cn_models_Ref
+    elif mode == 'lora':
+        models_Ref = shared.lora_models_Ref
+    model_name,ref_cnt  = models_Ref.get_least_ref_model()
+    print (f'shared.{mode}_models_Ref:{models_Ref.get_models_ref_dict()} -- model_name:{model_name}')
+    if model_name and ref_cnt:
+        filename = model_name[:model_name.rfind("[")]
+        os.remove(os.path.join(local_folder, filename))
+        disk_usage = psutil.disk_usage('/tmp')
+        freespace = disk_usage.free/(1024**3)
+        print(f"Remove file: {os.path.join(local_folder, filename)} now left space:{freespace}") 
+        de_register_model(filename,mode)
+    else:
+        ## if ref_cnt == 0, then delete the oldest zero_ref one
+        zero_ref_models = set([model[:model.rfind(" [")] for model, count in models_Ref.get_models_ref_dict().items() if count == 0])
+        local_files = set(os.listdir(local_folder))
+        # join with local
+        files = [(os.path.join(local_folder, file), os.path.getctime(os.path.join(local_folder, file))) for file in zero_ref_models.intersection(local_files)]
+        if len(files) == 0:
+            print(f"No files to remove in folder: {local_folder}, please remove some files in S3 bucket") 
+            return
+        files.sort(key=lambda x: x[1])
+        oldest_file = files[0][0]
+        os.remove(oldest_file)
+        disk_usage = psutil.disk_usage('/tmp')
+        freespace = disk_usage.free/(1024**3)
+        print(f"Remove file: {oldest_file} now left space:{freespace}") 
+        filename = os.path.basename(oldest_file)
+        de_register_model(filename,mode)
+
+def list_s3_objects(s3_client,bucket_name, prefix=''):
+    # s3_client = boto3.client('s3')
+    objects = []
+    # initial request
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+    # iterate over pages
+    for page in page_iterator:
+        # loop through objects in page
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                # add object to list
+                objects.append(obj)
+        # if there are more pages to fetch, continue
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix,
+                                                ContinuationToken=page['NextContinuationToken'])
+    return objects
+
+
+def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
+    # Create tmp folders 
+    os.makedirs(os.path.dirname(local_folder), exist_ok=True)
+    os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+    print(f'create dir: {os.path.dirname(local_folder)}')
+    print(f'create dir: {os.path.dirname(cache_dir)}')
+    s3_file_name = os.path.join(cache_dir,f's3_files_{mode}.json')
+    # Create an empty file if not exist
+    if os.path.isfile(s3_file_name) == False:
+        s3_files = {}
+        with open(s3_file_name, "w") as f:
+            json.dump(s3_files, f)
+    s3 = boto3.client('s3')
+    # List all objects in the S3 folder
+    s3_objects = list_s3_objects(s3_client=s3, bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+    # only download on model at initialization
+    fnames_dict = {}
+    # if there v2 models, one root should have two files (.ckpt,.yaml)
+    for obj in s3_objects:
+        filename = obj['Key'].replace(s3_folder, '').lstrip('/')
+        root, ext = os.path.splitext(filename)
+        model = fnames_dict.get(root)
+        if model:
+            model.append(filename)
+        else:
+            fnames_dict[root] = [filename]
+    tmp_s3_files = {}
+    for i, obj in enumerate (s3_objects):
+        etag = obj['ETag'].strip('"').strip("'")   
+        size = obj['Size']/(1024**3)
+        filename = obj['Key'].replace(s3_folder, '').lstrip('/')
+        tmp_s3_files[filename] = [etag,size]
+    
+    #only fetch the first model to download. 
+    if mode == 'sd':
+        s3_files = {}
+        _, file_names =  next(iter(fnames_dict.items()))
+        for fname in file_names:
+            s3_files[fname] = tmp_s3_files.get(fname)
+            check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
+            register_models(local_folder,mode)
+
+    print(f'-----s3_files---{s3_files}')
+    # save the lastest one
+    with open(s3_file_name, "w") as f:
+        json.dump(s3_files, f)
+    
+
+
+def sync_s3_folder(local_folder,cache_dir,mode):
+    s3 = boto3.client('s3')
+    def sync(mode):
+        # print (f'sync:{mode}')
+        if mode == 'sd':
+            s3_folder = shared.s3_folder_sd 
+        elif mode == 'cn':
+            s3_folder = shared.s3_folder_cn 
+        elif mode == 'lora':
+            s3_folder = shared.s3_folder_lora
+        else: 
+            s3_folder = ''
+        # Check and Create tmp folders 
+        os.makedirs(os.path.dirname(local_folder), exist_ok=True)
+        os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+        s3_file_name = os.path.join(cache_dir,f's3_files_{mode}.json')
+        # Create an empty file if not exist
+        if os.path.isfile(s3_file_name) == False:
+            s3_files = {}
+            with open(s3_file_name, "w") as f:
+                json.dump(s3_files, f)
+
+        # List all objects in the S3 folder
+        s3_objects = list_s3_objects(s3_client=s3,bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+        # Check if there are any new or deleted files
+        s3_files = {}
+        for obj in s3_objects:
+            etag = obj['ETag'].strip('"').strip("'")   
+            size = obj['Size']/(1024**3)
+            key = obj['Key'].replace(s3_folder, '').lstrip('/')
+            s3_files[key] = [etag,size]
+
+        # to compared the latest s3 list with last time saved in local json,
+        # read it first
+        s3_files_local = {}
+        with open(s3_file_name, "r") as f:
+            s3_files_local = json.load(f)
+        # print (f's3_files:{s3_files}')
+        # print (f's3_files_local:{s3_files_local}')
+        # save the lastest one
+        with open(s3_file_name, "w") as f:
+            json.dump(s3_files, f)
+        mod_files = set()
+        new_files = set([key for key in s3_files if key not in s3_files_local])
+        del_files = set([key for key in s3_files_local if key not in s3_files])
+        registerflag = False
+        #compare etag changes
+        for key in set(s3_files_local.keys()).intersection(s3_files.keys()):
+            local_etag  = s3_files_local.get(key)[0]
+            if local_etag and local_etag != s3_files[key][0]:
+                mod_files.add(key)
+        # Delete vanished files from local folder
+        for file in del_files:
+            if os.path.isfile(os.path.join(local_folder, file)):
+                os.remove(os.path.join(local_folder, file))
+                print(f'remove file {os.path.join(local_folder, file)}')
+                de_register_model(file,mode)
+        # Add new files 
+        for file in new_files.union(mod_files):
+            registerflag = True
+            retry = 3 ##retry limit times to prevent dead loop in case other folders is empty
+            while retry:
+                ret = check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, file, s3_files[file][1], mode)
+                #if the space is not enough free
+                if ret:
+                    retry = 0
+                else:
+                    free_local_disk(local_folder,s3_files[file][1],mode)
+                    retry = retry - 1
+        if registerflag:
+            register_models(local_folder,mode)
+            if mode == 'sd':
+                #Refreshing Model List
+                modules.sd_models.list_models()
+            # cn models sync not supported temporally due to an unfixed bug
+            elif mode == 'cn':
+                modules.script_callbacks.update_cn_models_callback()
+            elif mode == 'lora':
+                print('To do: update lora??')
+
+
+    # Create a thread function to keep syncing with the S3 folder
+    def sync_thread(mode):  
+        while True:
+            syncLock.acquire()
+            sync(mode)
+            syncLock.release()
+            time.sleep(30)
+    thread = threading.Thread(target=sync_thread,args=(mode,))
+    thread.start()
+    print (f'{mode}_sync thread start')
+    return thread
+
+def register_models(models_dir,mode):
+    if mode == 'sd':
+        register_sd_models(models_dir)
+    elif mode == 'cn':
+        register_cn_models(models_dir)
+    elif mode == 'lora':
+        register_lora_models(models_dir)
+
+
+def register_lora_models(lora_models_dir):
+    print ('---register_lora_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        params = {
+            'module': 'Lora'
+        }
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_sd_models(sd_models_dir):
+    print ('---register_sd_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(file)
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['hash'] = hash
+            item['filename'] = file
+            item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
+            item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'Stable-diffusion'
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_cn_models(cn_models_dir):
+    print ('---register_cn_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        params = {
+            'module': 'ControlNet'
+        }
+        for file in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
 
 def webui():
     launch_api = cmd_opts.api
@@ -286,6 +598,32 @@ def webui():
                 name = http_model['name']
                 http_download(uri, f'/tmp/models/{name}/{filename}')
 
+    ## auto reload new models from s3 add by River
+    if not cmd_opts.pureui and not cmd_opts.train:
+        print(os.system('df -h'))
+        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
+        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
+        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        cache_dir = f"{shared.tmp_cache_dir}/"
+        session = boto3.Session()
+        region_name = session.region_name
+        sts_client = session.client('sts')
+        account_id = sts_client.get_caller_identity()['Account']
+        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+        if not shared.models_s3_bucket:
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+
+         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
+        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
+
+    ## end
+
     initialize()
 
     while 1:
@@ -322,7 +660,7 @@ def webui():
         if launch_api:
             create_api(app)
 
-            os.path.splitext(os.path.basename(filename))[0]
+            
 
             cmd_sd_models_path = cmd_opts.ckpt_dir
             sd_models_dir = os.path.join(shared.models_path, "Stable-diffusion")
@@ -338,67 +676,9 @@ def webui():
             lora_models_dir = os.path.join(shared.models_path, "Lora")
             if cmd_lora_models_path is not None:
                 lora_models_dir = cmd_lora_models_path
-
-            if 'endpoint_name' in os.environ:
-                api_endpoint = os.environ['api_endpoint']
-                endpoint_name = os.environ['endpoint_name']
-
-                items = []
-                params = {
-                    'module': 'Stable-diffusion'
-                }
-                for file in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
-                    hash = modules.sd_models.model_hash(file)
-                    item = {}
-                    item['model_name'] = os.path.basename(file)
-                    item['hash'] = hash
-                    item['filename'] = file
-                    item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-                    item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
-                    item['endpoint_name'] = endpoint_name
-                    items.append(item)
-                inputs = {
-                    'items': items
-                }
-                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-                    print(response)
-
-                items = []
-                params = {
-                    'module': 'ControlNet'
-                }
-                for file in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
-                    hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
-                    item = {}
-                    item['model_name'] = os.path.basename(file)
-                    item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
-                    item['endpoint_name'] = endpoint_name
-                    items.append(item)
-                inputs = {
-                    'items': items
-                }
-                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-                    print(response)
-
-                items = []
-                params = {
-                    'module': 'Lora'
-                }
-                for file in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
-                    hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
-                    item = {}
-                    item['model_name'] = os.path.basename(file)
-                    item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
-                    item['endpoint_name'] = endpoint_name
-                    items.append(item)
-                inputs = {
-                    'items': items
-                }
-                if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-                    response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-                    print(response)
+            register_sd_models(sd_models_dir)
+            register_cn_models(cn_models_dir)
+            register_lora_models(lora_models_dir)
 
         ui_extra_networks.add_pages_to_demo(app)
 
@@ -430,6 +710,7 @@ def webui():
 
         extra_networks.initialize()
         extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
+
 
 def upload_s3files(s3uri, file_path_with_pattern):
     pos = s3uri.find('/', 5)
@@ -848,25 +1129,25 @@ if cmd_opts.train:
             lora_model_dir = os.path.join(lora_model_dir, "lora")
 
             print('---models path---', sd_models_dir, lora_model_dir)
-            os.system(f'ls -l {sd_models_dir}')
-            os.system('ls -l {0}'.format(os.path.join(sd_models_dir, db_model_name)))
-            os.system(f'ls -l {lora_model_dir}')
+            print(os.system(f'ls -l {sd_models_dir}'))
+            print(os.system('ls -l {0}'.format(os.path.join(sd_models_dir, db_model_name))))
+            print(os.system(f'ls -l {lora_model_dir}'))
 
             try:
                 print('Uploading SD Models...')
                 if db_config.v2:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
                     )
                 if db_config.save_safetensors:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.safetensors')
                     )
                 else:
                     upload_s3files(
-                        f'{sd_models_s3uri}/{username}/',
+                        f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.ckpt')
                     )
                 print('Uploading DB Models...')
@@ -877,7 +1158,7 @@ if cmd_opts.train:
                 if db_config.use_lora:
                     print('Uploading Lora Models...')
                     upload_s3files(
-                        f'{lora_models_s3uri}/{username}/',
+                        f'{lora_models_s3uri}{username}/',
                         os.path.join(lora_model_dir, f'{db_model_name}_*.pt')
                     )
                 #automatic tar latest checkpoint and upload to s3 by zheng on 2023.03.22

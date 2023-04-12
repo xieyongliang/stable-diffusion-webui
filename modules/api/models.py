@@ -244,6 +244,8 @@ class ArtistItem(BaseModel):
 class InvocationsRequest(BaseModel):
     task: str
     username: Optional[str]
+    models_bucket:Optional[str]
+    simple_result:Optional[str]
     txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
     img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
     extras_single_payload: Optional[ExtrasSingleImageRequest]
@@ -251,4 +253,3 @@ class InvocationsRequest(BaseModel):
 
 class PingResponse(BaseModel):
     status: str
-

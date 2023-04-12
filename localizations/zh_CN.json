@@ -839,6 +839,18 @@
     "Amount of time to pause between Epochs (s)": "Epochs 间隔等待时间",
     "Save Preview(s) Frequency (Epochs)": "保存预览频率 (Epochs)",
     "A generic prompt used to generate a sample image to verify model fidelity.": "用于生成样本图像以验证模型保真度的通用提示。",
-
+    "Job detail":"训练任务详情",
+    "S3 bucket name for uploading/downloading images":"上传训练图片集或者下载生成图片的S3桶名",
+    "Output S3 folder":"S3文件夹目录",
+    "Upload Train Images to S3":"上传训练图片到S3",
+    "Error, please configure a S3 bucket at settings page first":"失败，请先到设置页面配置S3桶名",
+    "Upload Images":"上传图片",
+    "Reload all models":"重新加载模型文件",
+    "Update model files path":"更新模型加载路径",
+    "S3 path for downloading model files (E.g, s3://bucket-name/models/)":"加载模型的S3路径，例如：s3://bucket-name/models/",
+    "Images Viewer":"图片浏览器",
+    "Input S3 path of images":"输入图片的S3路径",
+    "Submit":"确定",
+    "columns width":"每行图片列数",
     "--------": "--------"
 }
