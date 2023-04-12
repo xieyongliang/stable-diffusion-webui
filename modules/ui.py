@@ -728,20 +728,44 @@ def create_ui():
     interfaces = []
 
     ##add River
-    # def translate(text):
-    #     return f'translated:{text}'
-    # with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
-    #     with gr.Row().style(equal_height=False):
-    #         with gr.Column():
-    #             english = gr.Textbox(label="Placeholder")
-    #             translate_btn = gr.Button(value="Translate")
-    #         with gr.Column():
-    #             german = gr.Textbox(label="German Text")
+    session = boto3.Session()
+    s3 = session.client('s3')
+    def list_objects(bucket,prefix=''):
+        response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+        objects = response['Contents'] if response.get('Contents') else []
+        return [obj['Key'] for obj in objects]
 
-    #     translate_btn.click(translate, inputs=english, outputs=german, api_name="translate-to-german")
-    #     examples = gr.Examples(examples=["I went to the supermarket yesterday.", "Helen is a good swimmer."],
-    #                         inputs=[english])
+    def image_viewer(path,cols_width,request:gr.Request):
+        dirs = path.replace('s3://','').split('/')
+        prefix = '/'.join(dirs[1:])
+        bucket = dirs[0]
+        objects = list_objects(bucket,prefix)
+        image_url = []
+        for object_key in objects:
+            if object_key.endswith('.jpg') or object_key.endswith('.jpeg') or object_key.endswith('.png'):
+                image_url.append([s3.generate_presigned_url('get_object', Params={
+                    'Bucket': bucket, 'Key': object_key}, ExpiresIn=3600),object_key.split('/')[-1]])
+        image_tags = ""
+        for image,key in image_url:
+            image_tags += f"<div style='padding: 5px;';widget><a href='{image}' target='_blank'><img src='{image}'></a><div style='color:#7d8998'>{key}</div></div>"
+        div = f"<div style='display: grid; grid-template-columns: repeat({cols_width}, 1fr); grid-gap: 10px;border: 1px solid #e9ebed; border-radius:10px;padding: 10px;'>{image_tags}</div>"
+        return div
 
+    
+    with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
+        with gr.Row():
+            with gr.Column(scale=3):
+                images_s3_path = gr.Textbox(label="Input S3 path of images",value = get_default_sagemaker_bucket()+'/output-images')
+            with gr.Column(scale=1):
+                cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
+            with gr.Column(scale=1):
+                images_s3_path_btn = gr.Button(value="Submit",variant='primary')
+        with gr.Row():
+            result = gr.HTML("<div style='height:300px;border:1px solid #e9ebed;border-radius:10px;'></div>")
+        images_s3_path_btn.click(fn=image_viewer, inputs=[images_s3_path,cols_width], outputs=[result])
+
+
+    ## end
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
@@ -1526,7 +1550,6 @@ def create_ui():
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
         )
-
     if not cmd_opts.pureui:
         with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
             with gr.Row().style(equal_height=False):
@@ -1577,7 +1600,7 @@ def create_ui():
                         print(e)
                         return e
 
-                    return f"{len(imgs)} images uploaded to S3 folder:{bucket_name}/{folder_name}"
+                    return f"{len(imgs)} images uploaded to S3 folder:s3://{bucket_name}/{folder_name}"
                 
                 with gr.Tab(label="Upload Train Images to S3"):
                     upload_files = gr.Files(label="Files")
@@ -2215,7 +2238,7 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
-    # interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
+    interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
     interfaces += [(extensions_interface, "Extensions", "extensions")]

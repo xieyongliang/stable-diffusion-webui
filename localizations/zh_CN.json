@@ -849,5 +849,8 @@
     "Update model files path":"更新模型加载路径",
     "S3 path for downloading model files (E.g, s3://bucket-name/models/)":"加载模型的S3路径，例如：s3://bucket-name/models/",
     "Images Viewer":"图片浏览器",
+    "Input S3 path of images":"输入图片的S3路径",
+    "Submit":"确定",
+    "columns width":"每行图片列数",
     "--------": "--------"
 }
