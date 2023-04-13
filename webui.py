@@ -68,6 +68,8 @@ elif not cmd_opts.pureui:
     s3_resource= boto3.resource('s3')
 
     def s3_download(s3uri, path):
+        global cache
+
         pos = s3uri.find('/', 5)
         bucket = s3uri[5 : pos]
         key = s3uri[pos + 1 : ]
