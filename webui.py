@@ -509,7 +509,6 @@ def register_sd_models(sd_models_dir):
         for file in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
             hash = modules.sd_models.model_hash(file)
             item = {}
-            ##remove the prefix, but remain the sub dir path in model_name. eg. 'river/jp-style-girl-2_200_lora.safetensors [4d3a456f]'
             item['model_name'] = file.replace("/tmp/models/Stable-diffusion/",'')
             item['hash'] = hash
             item['filename'] = file
