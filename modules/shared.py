@@ -404,10 +404,17 @@ options_templates = {}
 
 sagemaker_endpoints = []
 
+sd_models = []
+
 def list_sagemaker_endpoints():
     global sagemaker_endpoints
 
     return sagemaker_endpoints
+
+def list_sd_models():
+    global sd_models
+
+    return sd_models
 
 def intersection(lst1, lst2):
     set1 = set(lst1)
@@ -454,7 +461,28 @@ def refresh_sagemaker_endpoints(username):
             
     return sagemaker_endpoints
 
+def refresh_sd_models(username):
+    global api_endpoint, sd_models
 
+    names = set()
+
+    if not username:
+        return sd_models
+
+    params = {
+        'module': 'sd_models'
+    }
+    params['username'] = username
+
+    response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+    if response.status_code == 200:
+        model_list = json.loads(response.text)
+        for model in model_list:
+            names.add(model)
+
+    sd_models = list(names)
+
+    return sd_models
 
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
     # "models_s3_bucket": OptionInfo(f'{get_default_sagemaker_bucket()}/stable-diffusion-webui/models/', "S3 path for downloading model files (E.g, s3://bucket-name/models/)", ),

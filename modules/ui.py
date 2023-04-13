@@ -597,6 +597,24 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
+    def refresh_sd_models(request: gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = request.headers['cookie'].split('; ')
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
     def refresh_checkpoints(sagemaker_endpoint):
         refresh_method(sagemaker_endpoint)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
@@ -610,6 +628,12 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
     if elem_id == 'refresh_sagemaker_endpoint':
         refresh_button.click(
             fn=refresh_sagemaker_endpoints,
+            inputs=[],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_models':
+        refresh_button.click(
+            fn=refresh_sd_models,
             inputs=[],
             outputs=[refresh_component]
         )
@@ -2345,6 +2369,7 @@ def create_ui():
                             except Exception as e:
                                 print(e)
                     shared.refresh_sagemaker_endpoints(username)
+                    shared.refresh_sd_models(username)
                     shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
                     additional_components = [gr.update(value=username), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
             else:
