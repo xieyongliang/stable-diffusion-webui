@@ -852,5 +852,6 @@
     "Input S3 path of images":"输入图片的S3路径",
     "Submit":"确定",
     "columns width":"每行图片列数",
+    "Show current user's images only":"只显示当前用户图片集",
     "--------": "--------"
 }

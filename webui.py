@@ -242,6 +242,7 @@ def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,si
     # s3_client = boto3.client('s3')
     src = s3_folder + '/' + file
     dist =  os.path.join(local_folder, file)
+    os.makedirs(os.path.dirname(dist), exist_ok=True)
     # Get disk usage statistics
     disk_usage = psutil.disk_usage('/tmp')
     freespace = disk_usage.free/(1024**3)
@@ -508,11 +509,12 @@ def register_sd_models(sd_models_dir):
         for file in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
             hash = modules.sd_models.model_hash(file)
             item = {}
-            item['model_name'] = os.path.basename(file)
+            ##remove the prefix, but remain the sub dir path in model_name. eg. 'river/jp-style-girl-2_200_lora.safetensors [4d3a456f]'
+            item['model_name'] = file.replace("/tmp/models/Stable-diffusion/",'')
             item['hash'] = hash
             item['filename'] = file
             item['config'] = '/opt/ml/code/stable-diffusion-webui/repositories/stable-diffusion/configs/stable-diffusion/v1-inference.yaml'
-            item['title'] = '{0} [{1}]'.format(os.path.basename(file), hash)
+            item['title'] = '{0} [{1}]'.format(file.replace("/tmp/models/Stable-diffusion/",''), hash)
             item['endpoint_name'] = endpoint_name
             items.append(item)
         inputs = {
