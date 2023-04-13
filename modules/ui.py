@@ -735,7 +735,10 @@ def create_ui():
         objects = response['Contents'] if response.get('Contents') else []
         return [obj['Key'] for obj in objects]
 
-    def image_viewer(path,cols_width,request:gr.Request):
+    def image_viewer(path,cols_width,current_only,request:gr.Request):
+        if current_only:
+            username = get_webui_username(request)
+            path = path+'/'+username
         dirs = path.replace('s3://','').split('/')
         prefix = '/'.join(dirs[1:])
         bucket = dirs[0]
@@ -755,14 +758,16 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
         with gr.Row():
             with gr.Column(scale=3):
-                images_s3_path = gr.Textbox(label="Input S3 path of images",value = get_default_sagemaker_bucket()+'/output-images')
+                images_s3_path = gr.Textbox(label="Input S3 path of images",value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+            with gr.Column(scale=1):
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True)
             with gr.Column(scale=1):
                 cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
             with gr.Column(scale=1):
                 images_s3_path_btn = gr.Button(value="Submit",variant='primary')
         with gr.Row():
             result = gr.HTML("<div style='height:300px;border:1px solid #e9ebed;border-radius:10px;'></div>")
-        images_s3_path_btn.click(fn=image_viewer, inputs=[images_s3_path,cols_width], outputs=[result])
+        images_s3_path_btn.click(fn=image_viewer, inputs=[images_s3_path,cols_width,show_user_only], outputs=[result])
 
 
     ## end
