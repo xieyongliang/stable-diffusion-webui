@@ -30,6 +30,7 @@ import piexif
 import piexif.helper
 import numpy as np
 import uuid
+import modules.sd_vae
 
 def upscaler_to_index(name: str):
     try:
@@ -438,9 +439,13 @@ class Api:
                 if response.status_code == 200 and response.text != '':
                     try:
                         data = json.loads(response.text)
+                        sd_model_checkpoint = shared.opts.sd_model_checkpoint
                         shared.opts.data = json.loads(data['options'])
+                        modules.sd_vae.refresh_vae_list()
                         with self.queue_lock:
                             sd_models.reload_model_weights()
+                            if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
+                                modules.sd_vae.reload_vae_weights()
                     except Exception as e:
                         print(e)
 
