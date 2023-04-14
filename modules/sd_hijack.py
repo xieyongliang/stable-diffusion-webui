@@ -79,7 +79,10 @@ class StableDiffusionModelHijack:
     circular_enabled = False
     clip = None
 
-    embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase(cmd_opts.embeddings_dir)
+    embedding_db = modules.textual_inversion.textual_inversion.EmbeddingDatabase()
+
+    def __init__(self):
+        self.embedding_db.add_embedding_dir(cmd_opts.embeddings_dir)
 
     def hijack(self, m):
         if type(m.cond_stage_model) == ldm.modules.encoders.modules.FrozenCLIPEmbedder:

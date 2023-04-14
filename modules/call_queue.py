@@ -310,12 +310,9 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
             for image in processed['images']:
                 images.append(Image.open(io.BytesIO(base64.b64decode(image))))
             parameters = processed['parameters']
-            try:
-                info = json.loads(processed['info'])
-                return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
-            except Exception:
-                return images, '', ''
+            info = json.loads(processed['info'])
 
+            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
         else:
             extras_mode = args[0]
             resize_mode = args[1]
@@ -409,7 +406,8 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 images = []
                 for image in processed['images']:
                     images.append(Image.open(io.BytesIO(base64.b64decode(image))))
-            return images, '', ''
+            info = json.loads(processed['html_info'])
+            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
 
     def f(username, *args, **kwargs):
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
@@ -452,7 +450,7 @@ def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
         t = time.perf_counter()
 
         try:
-            if func.__name__ == 'f' or func.__name__ == 'run_settings':
+            if func.__name__ == 'f' or func.__name__ == 'run_settings' or func.__name__ == 'save_files':
                 res = list(func(username, *args, **kwargs))
             else:
                 res = list(func(*args, **kwargs))

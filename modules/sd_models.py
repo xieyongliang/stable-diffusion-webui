@@ -19,6 +19,7 @@ import json
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(models_path, model_dir))
 
+
 CheckpointInfo = namedtuple("CheckpointInfo", ['filename', 'title', 'hash', 'model_name', 'config'])
 checkpoints_list = {}
 checkpoints_loaded = collections.OrderedDict()
@@ -162,6 +163,8 @@ def model_hash(filename):
 
 
 def select_checkpoint():
+    ##add log by Rive
+    print('checkpoints_list:',checkpoints_list)
     model_checkpoint = shared.opts.sd_model_checkpoint
     checkpoint_info = checkpoints_list.get(model_checkpoint, None)
     if checkpoint_info is not None:
@@ -215,6 +218,28 @@ def get_state_dict_from_checkpoint(pl_sd):
 
     return pl_sd
 
+def read_metadata_from_safetensors(filename):
+    import json
+
+    with open(filename, mode="rb") as file:
+        metadata_len = file.read(8)
+        metadata_len = int.from_bytes(metadata_len, "little")
+        json_start = file.read(2)
+
+        assert metadata_len > 2 and json_start in (b'{"', b"{'"), f"{filename} is not a safetensors file"
+        json_data = json_start + file.read(metadata_len-2)
+        json_obj = json.loads(json_data)
+
+        res = {}
+        for k, v in json_obj.get("__metadata__", {}).items():
+            res[k] = v
+            if isinstance(v, str) and v[0:1] == '{':
+                try:
+                    res[k] = json.loads(v)
+                except Exception as e:
+                    pass
+
+        return res
 
 def read_state_dict(checkpoint_file, print_global_state=False, map_location=None):
     _, extension = os.path.splitext(checkpoint_file)
@@ -325,6 +350,8 @@ def load_model(checkpoint_info=None):
 
     sd_model.eval()
     shared.sd_model = sd_model
+
+    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)  # Reload embeddings after model load as they may or may not fit the model
 
     script_callbacks.model_loaded_callback(sd_model)
 

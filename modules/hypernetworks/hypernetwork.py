@@ -292,6 +292,25 @@ def load_hypernetwork(filename):
 
         shared.loaded_hypernetwork = None
 
+def load_hypernetworks(names, multipliers=None):
+    already_loaded = {}
+
+    for hypernetwork in shared.loaded_hypernetworks:
+        if hypernetwork.name in names:
+            already_loaded[hypernetwork.name] = hypernetwork
+
+    shared.loaded_hypernetworks.clear()
+
+    for i, name in enumerate(names):
+        hypernetwork = already_loaded.get(name, None)
+        if hypernetwork is None:
+            hypernetwork = load_hypernetwork(name)
+
+        if hypernetwork is None:
+            continue
+
+        hypernetwork.set_multiplier(multipliers[i] if multipliers else 1.0)
+        shared.loaded_hypernetworks.append(hypernetwork)
 
 def find_closest_hypernetwork_name(search: str):
     if not search:

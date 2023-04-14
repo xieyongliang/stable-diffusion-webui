@@ -11,7 +11,9 @@ import tempfile
 import time
 import traceback
 from functools import partial, reduce
-
+import boto3
+from botocore.exceptions import ClientError
+from datetime import datetime, timedelta, timezone
 import gradio as gr
 import gradio.routes
 import gradio.utils
@@ -22,7 +24,7 @@ from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_grad
 from modules import sd_hijack, sd_models, localization, script_callbacks, ui_extensions, deepbooru
 from modules.paths import script_path
 
-from modules.shared import opts, cmd_opts, restricted_opts
+from modules.shared import opts, cmd_opts, restricted_opts,get_default_sagemaker_bucket
 
 import modules.codeformer_model
 import modules.generation_parameters_copypaste as parameters_copypaste
@@ -84,6 +86,41 @@ if cmd_opts.ngrok != None:
 def gr_show(visible=True):
     return {"visible": visible, "__type__": "update"}
 
+## Begin output images uploaded to s3 by River
+s3_resource = boto3.resource('s3')
+
+def get_webui_username(request):
+    tokens = shared.demo.server_app.tokens
+    cookies = request.headers['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    username = tokens[access_token] if access_token else None
+    return username
+
+def save_images_to_s3(full_fillnames,timestamp,username):
+    sagemaker_endpoint = shared.opts.sagemaker_endpoint
+    bucket_name = opts.train_files_s3bucket.replace('s3://','')
+    if bucket_name.endswith('/'):
+        bucket_name= bucket_name[:-1]
+    if bucket_name == '':
+        return 'Error, please configure a S3 bucket at settings page first'
+    s3_bucket = s3_resource.Bucket(bucket_name)
+    folder_name = f"output-images/{username}/{sagemaker_endpoint}/{timestamp}"
+    try:
+        for i, fname in enumerate(full_fillnames):
+            filename = fname.split('/')[-1]
+            object_name = f"{folder_name}/{filename}"
+            s3_bucket.upload_file(fname,object_name)
+            print (f'upload file [{i}]:{filename} to s3://{bucket_name}/{object_name}')
+    except ClientError as e:
+        print(e)
+        return e
+    return f"s3://{bucket_name}/{folder_name}"
+## End output images uploaded to s3 by River
+
 
 sample_img2img = "assets/stable-samples/img2img/sketch-mountains-input.jpg"
 sample_img2img = sample_img2img if os.path.exists(sample_img2img) else None
@@ -109,6 +146,10 @@ refresh_symbol = '\U0001f504'  # 🔄
 save_style_symbol = '\U0001f4be'  # 💾
 apply_style_symbol = '\U0001f4cb'  # 📋
 
+def text_to_hyperlink_html(url):
+    text= f'<p><a target="_blank" href="{url}">{url}</a></p>'
+    return text
+
 def plaintext_to_html(text):
     text = "<p>" + "<br>\n".join([f"{html.escape(x)}" for x in text.split('\n')]) + "</p>"
     return text
@@ -118,7 +159,7 @@ def send_gradio_gallery_to_image(x):
         return None
     return image_from_url_text(x[0])
 
-def save_files(js_data, images, do_make_zip, index):
+def save_files(username,js_data, images, do_make_zip, index):
     import csv
     filenames = []
     fullfns = []
@@ -145,7 +186,7 @@ def save_files(js_data, images, do_make_zip, index):
 
     os.makedirs(opts.outdir_save, exist_ok=True)
 
-    with open(os.path.join(opts.outdir_save, "log.csv"), "a", encoding="utf8", newline='') as file:
+    with open(os.path.join(opts.outdir_save, "log.csv"), "w", encoding="utf8", newline='') as file:
         at_start = file.tell() == 0
         writer = csv.writer(file)
         if at_start:
@@ -161,16 +202,18 @@ def save_files(js_data, images, do_make_zip, index):
                 break
 
             fullfn, txt_fullfn = save_image(image, path, "", seed=p.all_seeds[i], prompt=p.all_prompts[i], extension=extension, info=p.infotexts[image_index], grid=is_grid, p=p, save_to_dirs=save_to_dirs)
-
             filename = os.path.relpath(fullfn, path)
+            print(f'fullfn:{fullfn},\n txt_fullfn:{txt_fullfn} \nfilename:{filename}')
             filenames.append(filename)
             fullfns.append(fullfn)
             if txt_fullfn:
                 filenames.append(os.path.basename(txt_fullfn))
                 fullfns.append(txt_fullfn)
-
         writer.writerow([data["prompt"], data["seed"], data["width"], data["height"], data["sampler_name"], data["cfg_scale"], data["steps"], filenames[0], data["negative_prompt"]])
-
+    
+    timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
+    logfile = os.path.join(opts.outdir_save, "log.csv")
+    s3folder = save_images_to_s3(fullfns+[logfile],timestamp,username)
     # Make Zip
     if do_make_zip:
         zip_filepath = os.path.join(path, "images.zip")
@@ -182,7 +225,7 @@ def save_files(js_data, images, do_make_zip, index):
                     zip_file.writestr(filenames[i], f.read())
         fullfns.insert(0, zip_filepath)
 
-    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}")
+    return gr.File.update(value=fullfns, visible=True), '', '', plaintext_to_html(f"Saved: {filenames[0]}"),text_to_hyperlink_html(s3folder)
 
 
 
@@ -554,6 +597,24 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
+    def refresh_sd_models(request: gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = request.headers['cookie'].split('; ')
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
     def refresh_checkpoints(sagemaker_endpoint):
         refresh_method(sagemaker_endpoint)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
@@ -567,6 +628,12 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
     if elem_id == 'refresh_sagemaker_endpoint':
         refresh_button.click(
             fn=refresh_sagemaker_endpoints,
+            inputs=[],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_models':
+        refresh_button.click(
+            fn=refresh_sd_models,
             inputs=[],
             outputs=[refresh_component]
         )
@@ -655,13 +722,14 @@ Requested path was: {f}
                                 generation_info,
                                 result_gallery,
                                 do_make_zip,
-                                html_info,
+                                html_info
                             ],
                             outputs=[
                                 download_files,
                                 html_info,
                                 html_info,
                                 html_info,
+                                html_info
                             ]
                         )
                 else:
@@ -683,6 +751,50 @@ def create_ui():
 
     interfaces = []
 
+    ##add River
+    session = boto3.Session()
+    s3 = session.client('s3')
+    def list_objects(bucket,prefix=''):
+        response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+        objects = response['Contents'] if response.get('Contents') else []
+        return [obj['Key'] for obj in objects]
+
+    def image_viewer(path,cols_width,current_only,request:gr.Request):
+        if current_only:
+            username = get_webui_username(request)
+            path = path+'/'+username
+        dirs = path.replace('s3://','').split('/')
+        prefix = '/'.join(dirs[1:])
+        bucket = dirs[0]
+        objects = list_objects(bucket,prefix)
+        image_url = []
+        for object_key in objects:
+            if object_key.endswith('.jpg') or object_key.endswith('.jpeg') or object_key.endswith('.png'):
+                image_url.append([s3.generate_presigned_url('get_object', Params={
+                    'Bucket': bucket, 'Key': object_key}, ExpiresIn=3600),object_key.split('/')[-1]])
+        image_tags = ""
+        for image,key in image_url:
+            image_tags += f"<div style='padding: 5px;';widget><a href='{image}' target='_blank'><img src='{image}'></a><div style='color:#7d8998'>{key}</div></div>"
+        div = f"<div style='display: grid; grid-template-columns: repeat({cols_width}, 1fr); grid-gap: 10px;border: 1px solid #e9ebed; border-radius:10px;padding: 10px;'>{image_tags}</div>"
+        return div
+
+    
+    with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
+        with gr.Row():
+            with gr.Column(scale=3):
+                images_s3_path = gr.Textbox(label="Input S3 path of images",value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+            with gr.Column(scale=1):
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True)
+            with gr.Column(scale=1):
+                cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
+            with gr.Column(scale=1):
+                images_s3_path_btn = gr.Button(value="Submit",variant='primary')
+        with gr.Row():
+            result = gr.HTML("<div style='height:300px;border:1px solid #e9ebed;border-radius:10px;'></div>")
+        images_s3_path_btn.click(fn=image_viewer, inputs=[images_s3_path,cols_width,show_user_only], outputs=[result])
+
+
+    ## end
     with gr.Blocks(analytics_enabled=False) as pnginfo_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
@@ -710,6 +822,7 @@ def create_ui():
             interfaces += [ui_tab]
         else:
             dreambooth_tab = ui_tab[0]
+
 
     def create_setting_component(key, is_quicksettings=False):
         def fun():
@@ -829,11 +942,23 @@ def create_ui():
 
             return gr.update(value=value), opts.dumpjson()
 
+    default_sagemaker_s3 = get_default_sagemaker_bucket()
+    default_s3_path =  f"{default_sagemaker_s3}/stable-diffusion-webui/models/"
     with gr.Blocks(analytics_enabled=False) as settings_interface:
         dummy_component = gr.Label(visible=False)
+        with gr.Row():
+            settings_submit = gr.Button(value="Apply settings", variant='primary')
+        with gr.Row():
+            with gr.Column(scale=4):
+                models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
+                                            value=default_s3_path)
+            with gr.Column(scale=1):
+                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket')
+            with gr.Column(scale=1):
+                reload_models_btn = gr.Button(value='Reload all models', elem_id='id_reload_all_models')
 
-        settings_submit = gr.Button(value="Apply settings", variant='primary')
-
+        
+        
         result = gr.HTML()
 
         settings_cols = 3
@@ -848,6 +973,7 @@ def create_ui():
         items_displayed = 0
         previous_section = None
         column = None
+
         with gr.Row(elem_id="settings").style(equal_height=False):
             for i, (k, item) in enumerate(opts.data_labels.items()):
                 section_must_be_skipped = item.section[0] is None
@@ -866,6 +992,7 @@ def create_ui():
                     previous_section = item.section
 
                     elem_id, text = item.section
+                    print(text)
                     gr.HTML(elem_id="settings_header_text_{}".format(elem_id), value='<h1 class="gr-button-lg">{}</h1>'.format(text))
 
                 if k in quicksettings_names and not shared.cmd_opts.freeze_settings:
@@ -920,6 +1047,49 @@ def create_ui():
             _js='restart_reload',
             inputs=[],
             outputs=[],
+        )
+
+        def reload_all_models():
+            sagemaker_endpoint=shared.opts.sagemaker_endpoint
+            print(f'reload_all_models from:{sagemaker_endpoint}')
+            inputs = {'task': 'reload-all-models'}
+            params = {'endpoint_name': sagemaker_endpoint}
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
+            if response.status_code == 200:
+                return f'[{sagemaker_endpoint}] reload_all_models success'
+            else:
+                print(response.status_code )
+                return f'[{sagemaker_endpoint}] reload_all_models failed'
+        
+        reload_models_btn.click(
+            fn=reload_all_models,
+            inputs=[],
+            outputs=[result]
+        )
+        
+        # River
+        def set_models_s3bucket(bucket_name):
+            if bucket_name == '':
+                return 'Error, please configure a S3 bucket for downloading model files'
+            sagemaker_endpoint=shared.opts.sagemaker_endpoint
+            print(f'set_models_s3bucket to:{sagemaker_endpoint}')
+            inputs = {'task': 'set-models-bucket',
+                        'models_bucket':bucket_name}
+            params = {'endpoint_name': 
+                        sagemaker_endpoint}
+            response = requests.post(url=f'{shared.api_endpoint}/inference', params=params, json=inputs)
+            if response.status_code == 200:
+                return f'[{sagemaker_endpoint}] set bucket succeess'
+            else:
+                print(response.status_code )
+                return f'[{sagemaker_endpoint}] set bucket failed'
+
+        
+        set_models_s3bucket_btn.click(
+            fn=set_models_s3bucket,
+            inputs=[models_s3bucket],
+            outputs=[result]
+
         )
 
         if column is not None:
@@ -1409,7 +1579,6 @@ def create_ui():
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
         )
-
     if not cmd_opts.pureui:
         with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
             with gr.Row().style(equal_height=False):
@@ -1439,6 +1608,35 @@ def create_ui():
 
         with gr.Row().style(equal_height=False):
             with gr.Tabs(elem_id="train_tabs"):
+                ## Begin add s3 images upload interface by River
+                def upload_to_s3(imgs,request : gr.Request):
+                    username = get_webui_username(request)
+                    print (f'--get_webui_username--:{username}')
+                    timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
+                    bucket_name = opts.train_files_s3bucket.replace('s3://','')
+                    if bucket_name.endswith('/'):
+                        bucket_name= bucket_name[:-1]
+                    if bucket_name == '':
+                        return 'Error, please configure a S3 bucket at settings page first'
+                    s3_bucket = s3_resource.Bucket(bucket_name.replace('s3://',''))
+                    folder_name = f"train-images/{username}/{timestamp}"
+                    try:
+                        for i, img in enumerate(imgs):
+                            filename = img.name.split('/')[-1]
+                            object_name = f"{folder_name}/{filename}"
+                            s3_bucket.upload_file(img.name,object_name)
+                    except ClientError as e:
+                        print(e)
+                        return e
+
+                    return f"{len(imgs)} images uploaded to S3 folder:s3://{bucket_name}/{folder_name}"
+                
+                with gr.Tab(label="Upload Train Images to S3"):
+                    upload_files = gr.Files(label="Files")
+                    url_output = gr.Textbox(label="Output S3 folder")
+                    sub_btn = gr.Button(value="Upload Images",elem_id='id_upload_train_images',variant='primary')
+                    sub_btn.click(fn=upload_to_s3, inputs=upload_files, outputs=url_output)
+                ## End add s3 images upload interface by River
                 with gr.Tab(label="Train Embedding"):
                     gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
 
@@ -1518,6 +1716,9 @@ def create_ui():
                     with gr.Row():
                         with gr.Column(scale=3):
                             embedding_output = gr.Label(label='Output')
+                             ##begin add train job info by River
+                            embedding_training_job = gr.Markdown('Job detail')
+                            ##end add train job info by River
 
                         with gr.Column():
                             create_train_embedding = gr.Button(value="Train Embedding", variant='primary')
@@ -1604,6 +1805,9 @@ def create_ui():
                     with gr.Row():
                         with gr.Column(scale=3):
                             hypernetwork_output = gr.Label(label='Output')
+                            ##begin add train job info by River
+                            hypernetwork_training_job = gr.Markdown('Job detail')
+                            ##end add train job info by River
 
                         with gr.Column():
                             create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
@@ -1729,8 +1933,12 @@ def create_ui():
 
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
+                        ##begin add train job info by River
+                        training_job_url = response.text.replace('\"','')
                         return {
-                            embedding_output: gr.update(value='Submit training job sucessful')
+                            embedding_output: gr.update(value='Submit training job sucessful'),
+                            embedding_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                        ##end add train job info by River
                         }
                     else:
                         return {
@@ -1862,8 +2070,13 @@ def create_ui():
 
                     response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
                     if response.status_code == 200:
+                        ##begin add train job info by River
+                        training_job_url = response.text.replace('\"','')
                         return {
-                            hypernetwork_output: gr.update(value='Submit training job sucessful')
+                            ##begin add train job info by River
+                            hypernetwork_output: gr.update(value='Submit training job sucessful'),
+                            hypernetwork_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                            ##end add train job info by River
                         }
                     else:
                         return {
@@ -1911,7 +2124,7 @@ def create_ui():
                         embedding_training_instance_count,
                         *txt2img_preview_params
                     ],
-                    outputs=[embedding_output]
+                    outputs=[embedding_output,embedding_training_job]
                 )
                 
                 create_train_hypernetwork.click(
@@ -1959,7 +2172,7 @@ def create_ui():
                         hypernetwork_training_instance_count,
                         *txt2img_preview_params
                     ],
-                    outputs=[hypernetwork_output]
+                    outputs=[hypernetwork_output,hypernetwork_training_job]
                 )
 
     with gr.Blocks(analytics_enabled=False) as user_interface:
@@ -1971,7 +2184,8 @@ def create_ui():
             interactive=True,
             visible=True,
             datatype=["str","str","str", "str"],
-            type="array"
+            type="array",
+            wrap=True,
         )
 
         with gr.Row():
@@ -2053,6 +2267,7 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
+    interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
     interfaces += [(extensions_interface, "Extensions", "extensions")]
@@ -2154,6 +2369,7 @@ def create_ui():
                             except Exception as e:
                                 print(e)
                     shared.refresh_sagemaker_endpoints(username)
+                    shared.refresh_sd_models(username)
                     shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
                     additional_components = [gr.update(value=username), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
             else:

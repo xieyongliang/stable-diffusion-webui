@@ -4,9 +4,10 @@ import json
 import os
 import sys
 import time
-
+import threading
 import gradio as gr
 import tqdm
+import glob
 
 import modules.artists
 import modules.interrogate
@@ -16,8 +17,18 @@ import modules.devices as devices
 from modules import localization, sd_vae, extensions, script_loading
 from modules.paths import models_path, script_path, sd_path
 import requests
+import boto3
 
 demo = None
+#Add by River
+models_s3_bucket = None
+s3_folder_sd = None
+s3_folder_cn = None
+s3_folder_lora = None
+syncLock = threading.Lock()
+tmp_models_dir = '/tmp/models'
+tmp_cache_dir = '/tmp/model_sync_cache'
+#end 
 
 sd_model_file = os.path.join(script_path, 'model.ckpt')
 default_sd_model_file = sd_model_file
@@ -136,6 +147,7 @@ config_filename = cmd_opts.ui_settings_file
 os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetwork = None
+loaded_hypernetworks = []
 
 if not cmd_opts.train:
     api_endpoint = os.environ['api_endpoint']
@@ -272,11 +284,84 @@ interrogator = modules.interrogate.InterrogateModels("interrogate")
 
 face_restorers = []
 
+def get_default_sagemaker_bucket(default_region = 'us-west-2'):
+    session = boto3.Session()
+    region_name = session.region_name if session.region_name else default_region
+    sts_client = session.client('sts')
+    account_id = sts_client.get_caller_identity()['Account']
+    return f"s3://sagemaker-{region_name}-{account_id}"
 
 def realesrgan_models_names():
     import modules.realesrgan_model
     return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
 
+#add by River
+class ModelsRef:
+    def __init__(self):
+        self.models_ref = {}
+
+    def get_models_ref_dict(self):
+        return self.models_ref
+    
+    def add_models_ref(self, model_name):
+        if model_name in self.models_ref:
+            self.models_ref[model_name] += 1
+        else:
+            self.models_ref[model_name] = 0
+
+    def remove_model_ref(self,model_name):
+        if self.models_ref.get(model_name):
+            del self.models_ref[model_name]
+
+    def get_models_ref(self, model_name):
+        return self.models_ref.get(model_name)
+    
+    def get_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+    
+    def pop_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            del self.models_ref[least_ref_model]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+        
+sd_models_Ref = ModelsRef()
+cn_models_Ref = ModelsRef()
+lora_models_Ref = ModelsRef()
+
+def de_register_model(model_name,mode):
+    models_Ref = sd_models_Ref
+    if mode == 'sd' :
+        models_Ref = sd_models_Ref
+    elif mode == 'cn':
+        models_Ref = cn_models_Ref
+    elif mode == 'lora':
+        models_Ref = lora_models_Ref
+    models_Ref.remove_model_ref(model_name)
+    print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
+    if 'endpoint_name' in os.environ:
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        data = {
+            "module":mode,
+            "model_name": model_name,
+            "endpoint_name": endpoint_name
+        }  
+        response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
+        # Check if the request was successful
+        if response.status_code == requests.codes.ok:
+            print(f"{model_name} deleted successfully!")
+        else:
+            print(f"Error deleting {model_name}: ", response.text)
+#end by River
 
 class OptionInfo:
     def __init__(self, default=None, label="", component=None, component_args=None, onchange=None, section=None, refresh=None):
@@ -319,10 +404,17 @@ options_templates = {}
 
 sagemaker_endpoints = []
 
+sd_models = []
+
 def list_sagemaker_endpoints():
     global sagemaker_endpoints
 
     return sagemaker_endpoints
+
+def list_sd_models():
+    global sd_models
+
+    return sd_models
 
 def intersection(lst1, lst2):
     set1 = set(lst1)
@@ -369,7 +461,31 @@ def refresh_sagemaker_endpoints(username):
             
     return sagemaker_endpoints
 
+def refresh_sd_models(username):
+    global api_endpoint, sd_models
+
+    names = set()
+
+    if not username:
+        return sd_models
+
+    params = {
+        'module': 'sd_models'
+    }
+    params['username'] = username
+
+    response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+    if response.status_code == 200:
+        model_list = json.loads(response.text)
+        for model in model_list:
+            names.add(model)
+
+    sd_models = list(names)
+
+    return sd_models
+
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
+    # "models_s3_bucket": OptionInfo(f'{get_default_sagemaker_bucket()}/stable-diffusion-webui/models/', "S3 path for downloading model files (E.g, s3://bucket-name/models/)", ),
     "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": list_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
     "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
@@ -421,6 +537,7 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
 }))
 
 options_templates.update(options_section(('saving-paths', "Paths for saving"), {
+    "train_files_s3bucket":OptionInfo(get_default_sagemaker_bucket(),"S3 bucket name for uploading/downloading images",component_args=hide_dirs),
     "outdir_samples": OptionInfo("", "Output directory for images; if empty, defaults to three directories below", component_args=hide_dirs),
     "outdir_txt2img_samples": OptionInfo("outputs/txt2img-images", 'Output directory for txt2img images', component_args=hide_dirs),
     "outdir_img2img_samples": OptionInfo("outputs/img2img-images", 'Output directory for img2img images', component_args=hide_dirs),
@@ -484,6 +601,15 @@ options_templates.update(options_section(('interrogate', "Interrogate Options"),
     "deepbooru_escape": OptionInfo(True, "escape (\\) brackets in deepbooru (so they are used as literal brackets and not for emphasis)"),
 }))
 
+options_templates.update(options_section(('extra_networks', "Extra Networks"), {
+    "extra_networks_default_view": OptionInfo("cards", "Default view for Extra Networks", gr.Dropdown, {"choices": ["cards", "thumbs"]}),
+    "extra_networks_default_multiplier": OptionInfo(1.0, "Multiplier for extra networks", gr.Slider, {"minimum": 0.0, "maximum": 1.0, "step": 0.01}),
+    "extra_networks_card_width": OptionInfo(0, "Card width for Extra Networks (px)"),
+    "extra_networks_card_height": OptionInfo(0, "Card height for Extra Networks (px)"),
+    "extra_networks_add_text_separator": OptionInfo(" ", "Extra text to add before <...> when adding extra network to prompt"),
+    "sd_hypernetwork": OptionInfo("None", "Add hypernetwork to prompt", gr.Dropdown, lambda: {"choices": [""] + [x for x in hypernetworks.keys()]}, refresh=reload_hypernetworks),
+}))
+
 options_templates.update(options_section(('ui', "User interface"), {
     "show_progressbar": OptionInfo(True, "Show progressbar"),
     "show_progress_every_n_steps": OptionInfo(0, "Show image creation progress every N sampling steps. Set to 0 to disable. Set to -1 to show after completion of batch.", gr.Slider, {"minimum": -1, "maximum": 32, "step": 1}),
@@ -500,6 +626,7 @@ options_templates.update(options_section(('ui', "User interface"), {
     "show_progress_in_title": OptionInfo(True, "Show generation progress in window title."),
     'quicksettings': OptionInfo("", "Quicksettings list"),
     'localization': OptionInfo("None", "Localization (requires restart)", gr.Dropdown, lambda: {"choices": ["None"] + list(localization.localizations.keys())}, refresh=lambda: localization.list_localizations(cmd_opts.localizations_dir)),
+    "ui_extra_networks_tab_reorder": OptionInfo("", "Extra networks tab order"),
 }))
 
 options_templates.update(options_section(('sampler-params', "Sampler parameters"), {
@@ -637,6 +764,7 @@ if os.path.exists(config_filename):
 if cmd_opts.pureui and opts.localization == "None":
     opts.localization = "zh_CN"
 
+
 sd_upscalers = []
 
 sd_model = None
@@ -687,3 +815,16 @@ mem_mon.start()
 def listfiles(dirname):
     filenames = [os.path.join(dirname, x) for x in sorted(os.listdir(dirname)) if not x.startswith(".")]
     return [file for file in filenames if os.path.isfile(file)]
+
+def html_path(filename):
+    return os.path.join(script_path, "html", filename)
+
+
+def html(filename):
+    path = html_path(filename)
+
+    if os.path.exists(path):
+        with open(path, encoding="utf8") as file:
+            return file.read()
+
+    return ""
