@@ -615,6 +615,24 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
+    def refresh_sd_models(request: gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = request.headers['cookie'].split('; ')
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
     def refresh_checkpoints(sagemaker_endpoint):
         refresh_method(sagemaker_endpoint)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
@@ -1579,7 +1597,6 @@ def create_ui():
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
         )
-
     with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
