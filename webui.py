@@ -362,11 +362,15 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
     #only fetch the first model to download. 
     if mode == 'sd':
         s3_files = {}
-        _, file_names =  next(iter(fnames_dict.items()))
-        for fname in file_names:
-            s3_files[fname] = tmp_s3_files.get(fname)
-            check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
-            register_models(local_folder,mode)
+        try:
+            _, file_names =  next(iter(fnames_dict.items()))
+            for fname in file_names:
+                s3_files[fname] = tmp_s3_files.get(fname)
+                check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
+                register_models(local_folder,mode)
+        except Exception as e:
+            traceback.print_stack()
+            print(e)
 
     print(f'-----s3_files---{s3_files}')
     # save the lastest one
