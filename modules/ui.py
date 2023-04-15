@@ -34,6 +34,7 @@ import modules.scripts
 import modules.shared as shared
 import modules.styles
 import modules.textual_inversion.ui
+import modules.model_merger
 from modules import prompt_parser
 from modules.images import save_image
 from modules.sd_hijack import model_hijack
@@ -568,7 +569,6 @@ def update_generation_info(args):
     # if the json parse or anything else fails, just return the old html_info
     return html_info
 
-
 def create_refresh_button(refresh_component, refresh_method, refreshed_args, elem_id):
     def refresh():
         refresh_method()
@@ -580,6 +580,24 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         return gr.update(**(args or {}))
 
     def refresh_sagemaker_endpoints(request : gr.Request):
+        tokens = shared.demo.server_app.tokens
+        cookies = shared.get_cookies(request)
+        access_token = None
+        for cookie in cookies:
+            if cookie.startswith('access-token'):
+                access_token = cookie[len('access-token=') : ]
+                break
+        username = tokens[access_token] if access_token else None
+
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_sd_models(request: gr.Request):
         tokens = shared.demo.server_app.tokens
         cookies = request.headers['cookie'].split('; ')
         access_token = None
@@ -903,7 +921,7 @@ def create_ui():
 
     def run_settings_single(value, key, request : gr.Request):
         tokens = shared.demo.server_app.tokens
-        cookies = request.headers['cookie'].split('; ')
+        cookies = shared.get_cookies(request)
         access_token = None
         for cookie in cookies:
             if cookie.startswith('access-token'):
@@ -1579,28 +1597,42 @@ def create_ui():
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
         )
-    if not cmd_opts.pureui:
-        with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
-            with gr.Row().style(equal_height=False):
-                with gr.Column(variant='panel'):
-                    gr.HTML(value="<p>A merger of the two checkpoints will be generated in your <b>checkpoint</b> directory.</p>")
+    with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
+        with gr.Row().style(equal_height=False):
+            with gr.Column(variant='panel'):
+                gr.HTML(value="<p>Merged checkpoints will be put in the specified output S3 location</p>")
 
-                    with gr.Row():
-                        primary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
-                        secondary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
-                        tertiary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
-                    custom_name = gr.Textbox(label="Custom Name (Optional)")
-                    interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
-                    interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
+                with gr.Row():
+                    chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", placeholder='s3://bucket/stable-diffusion-webui/models/')
+                    chkpt_s3uri_button = gr.Button(value="Load Checkpoints", elem_id="checkpt_s3uri", variant='primary')
+                merge_output_s3uri = gr.Textbox(label="Merge Result S3 URI", placeholder="If not specified, will put into " +  modules.model_merger.get_default_output_model_s3uri())
+        
+                with gr.Row():
+                    primary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
+                    secondary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
+                    tertiary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
+                custom_name = gr.Textbox(label="Custom Name (Optional)")
+                interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
+                interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
 
-                    with gr.Row():
-                        checkpoint_format = gr.Radio(choices=["ckpt", "safetensors"], value="ckpt", label="Checkpoint format")
-                        save_as_half = gr.Checkbox(value=False, label="Save as float16")
+                chkpt_s3uri_button.click(
+                        fn=modules.model_merger.load_checkpoints_from_s3_uri,
+                        inputs=[chkpt_s3uri],
+                        outputs=[primary_model_name, secondary_model_name, tertiary_model_name])
 
-                    modelmerger_merge = gr.Button(elem_id="modelmerger_merge", label="Merge", variant='primary')
+                with gr.Row():
+                    checkpoint_format = gr.Radio(choices=["ckpt", "safetensors"], value="ckpt", label="Checkpoint format")
+                    save_as_half = gr.Checkbox(value=False, label="Save as float16")
 
-                with gr.Column(variant='panel'):
-                    submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
+                modelmerger_merge = gr.Button(elem_id="modelmerger_merge", label="Merge", variant='primary')
+
+            with gr.Column(variant='panel'):
+                submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
+
+        # A periodic function to check the submit output
+        modelmerger_interface.load(modules.model_merger.get_processing_job_status,
+                                   inputs=None, outputs=submit_result,
+                                   every=10, queue=True)
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
         with gr.Row().style(equal_height=False):
@@ -1858,7 +1890,7 @@ def create_ui():
                     ):
 
                     tokens = shared.demo.server_app.tokens
-                    cookies = request.headers['cookie'].split('; ')
+                    cookies = shared.get_cookies(request)
                     access_token = None
                     for cookie in cookies:
                         if cookie.startswith('access-token'):
@@ -1991,7 +2023,7 @@ def create_ui():
                     ):
 
                     tokens = shared.demo.server_app.tokens
-                    cookies = request.headers['cookie'].split('; ')
+                    cookies = shared.get_cookies(request)
                     access_token = None
                     for cookie in cookies:
                         if cookie.startswith('access-token'):
@@ -2193,7 +2225,7 @@ def create_ui():
 
         def save_userdata(user_dataframe, request: gr.Request):
             tokens = shared.demo.server_app.tokens
-            cookies = request.headers['cookie'].split('; ')
+            cookies = shared.get_cookies(request)
             access_token = None
             for cookie in cookies:
                 if cookie.startswith('access-token'):
@@ -2236,6 +2268,7 @@ def create_ui():
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
             (pnginfo_interface, "PNG Info", "pnginfo"),
+            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
             (train_interface, "Train", "ti"),
             (user_interface, "User", "user")
         ]
@@ -2294,7 +2327,7 @@ def create_ui():
 
             def user_logout(request: gr.Request):
                 tokens = shared.demo.server_app.tokens
-                cookies = request.headers['cookie'].split('; ')
+                cookies = shared.get_cookies(request)
                 access_token = None
                 for cookie in cookies:
                     if cookie.startswith('access-token'):
@@ -2341,7 +2374,7 @@ def create_ui():
 
         def demo_load(request: gr.Request):
             tokens = shared.demo.server_app.tokens
-            cookies = request.headers['cookie'].split('; ')
+            cookies = shared.get_cookies(request)
             access_token = None
             for cookie in cookies:
                 if cookie.startswith('access-token'):
@@ -2383,37 +2416,33 @@ def create_ui():
             outputs=[component_dict[k] for k in component_keys] + [username_state, user_dataframe, shared.sagemaker_endpoint_component, shared.sd_model_checkpoint_component]
         )
 
-        if not cmd_opts.pureui:
-            def modelmerger(*args):
-                try:
-                    results = modules.extras.run_modelmerger(*args)
-                except Exception as e:
-                    print("Error loading/saving model file:", file=sys.stderr)
-                    print(traceback.format_exc(), file=sys.stderr)
-                    modules.sd_models.list_models()  # to remove the potentially missing models from the list
-                    return ["Error loading/saving model file. It doesn't exist or the name contains illegal characters"] + [gr.Dropdown.update(choices=modules.sd_models.checkpoint_tiles()) for _ in range(3)]
-                return results
+        def modelmerger(*args):
+            try:
+                results = modules.model_merger.run_modelmerger_remote(*args)
+            except Exception as e:
+                print("Error loading/saving model file:", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                return "Error running model merge"
+            return results
 
-            modelmerger_merge.click(
-                fn=modelmerger,
-                inputs=[
-                    primary_model_name,
-                    secondary_model_name,
-                    tertiary_model_name,
-                    interp_method,
-                    interp_amount,
-                    save_as_half,
-                    custom_name,
-                    checkpoint_format,
-                ],
-                outputs=[
-                    submit_result,
-                    primary_model_name,
-                    secondary_model_name,
-                    tertiary_model_name,
-                    component_dict['sd_model_checkpoint'],
-                ]
-            )
+        modelmerger_merge.click(
+            fn=modelmerger,
+            inputs=[
+                primary_model_name,
+                secondary_model_name,
+                tertiary_model_name,
+                interp_method,
+                interp_amount,
+                save_as_half,
+                custom_name,
+                checkpoint_format,
+                merge_output_s3uri,
+                submit_result,
+            ],
+            outputs=[
+                submit_result,
+            ]
+        )
 
     ui_config_file = cmd_opts.ui_config_file
     ui_settings = {}
@@ -2479,8 +2508,7 @@ def create_ui():
     visit(txt2img_interface, loadsave, "txt2img")
     visit(img2img_interface, loadsave, "img2img")
     visit(extras_interface, loadsave, "extras")
-    if not cmd_opts.pureui:
-        visit(modelmerger_interface, loadsave, "modelmerger")
+    visit(modelmerger_interface, loadsave, "modelmerger")
 
     if not error_loading and (not os.path.exists(ui_config_file) or settings_count != len(ui_settings)):
         with open(ui_config_file, "w", encoding="utf8") as file:
