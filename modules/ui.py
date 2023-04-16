@@ -1592,8 +1592,7 @@ def create_ui():
             with gr.Tabs(elem_id="train_tabs"):
                 ## Begin add s3 images upload interface by River
                 def upload_to_s3(imgs,request : gr.Request):
-                    username = get_webui_username(request)
-                    print (f'--get_webui_username--:{username}')
+                    username = shared.get_webui_username(request)
                     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
                     bucket_name = opts.train_files_s3bucket.replace('s3://','')
                     if bucket_name.endswith('/'):
