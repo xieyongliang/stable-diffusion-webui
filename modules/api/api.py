@@ -415,7 +415,7 @@ class Api:
                 self.s3_client.put_object(
                     Body=output.getvalue(),
                     Bucket=bucket,
-                    Key=f'{key}/{image_id}.jpg'
+                    Key=f'{key}{image_id}.jpg'
                 )
 
     def invocations(self, req: InvocationsRequest):
