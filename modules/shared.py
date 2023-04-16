@@ -113,6 +113,7 @@ parser.add_argument('--lora-models-s3uri', default='', type=str, help='Lora Mode
 parser.add_argument('--username', default='', type=str, help='Username')
 parser.add_argument('--api-endpoint', default='', type=str, help='API Endpoint')
 parser.add_argument('--dreambooth-config-id', default='', type=str, help='Dreambooth config ID')
+parser.add_argument('--model-name', default='', type=str, help='Model name')
 
 script_loading.preload_extensions(extensions.extensions_dir, parser)
 script_loading.preload_extensions(extensions.extensions_builtin_dir, parser)
@@ -414,7 +415,7 @@ def list_sagemaker_endpoints():
 def list_sd_models():
     global sd_models
 
-    return sd_models
+    return sd_models + [ x['filename'] for x in huggingface_models ]
 
 def intersection(lst1, lst2):
     set1 = set(lst1)
@@ -845,3 +846,34 @@ def get_webui_username(request):
             break
     username = tokens[access_token] if access_token else None
     return username
+
+huggingface_models = [
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2-1',
+        'filename': 'v2-1_768-ema-pruned.ckpt',
+    },
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2-1',
+        'filename': 'v2-1_768-nonema-pruned.ckpt',
+    },
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2',
+        'filename': '768-v-ema.ckpt',
+    },
+    {
+        'repo_id': 'runwayml/stable-diffusion-v1-5',
+        'filename': 'v1-5-pruned-emaonly.ckpt',          
+    },
+    {
+        'repo_id': 'runwayml/stable-diffusion-v1-5',
+        'filename': 'v1-5-pruned.ckpt',          
+    },
+    {
+        'repo_id': 'CompVis/stable-diffusion-v-1-4-original',
+        'filename': 'sd-v1-4.ckpt',          
+    },
+    {
+        'repo_id': 'CompVis/stable-diffusion-v-1-4-original',
+        'filename': 'sd-v1-4-full-ema.ckpt',          
+    },
+]

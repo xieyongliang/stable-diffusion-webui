@@ -61,45 +61,45 @@ if not cmd_opts.api:
     from extensions.sd_dreambooth_extension.scripts.dreambooth import performance_wizard, training_wizard
     from extensions.sd_dreambooth_extension.dreambooth.db_concept import Concept
     from modules import paths
-elif not cmd_opts.pureui:
-    import requests
-    cache = dict()
-    s3_client = boto3.client('s3')
-    s3_resource= boto3.resource('s3')
 
-    def s3_download(s3uri, path):
-        global cache
+import requests
+cache = dict()
+s3_client = boto3.client('s3')
+s3_resource= boto3.resource('s3')
 
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
+def s3_download(s3uri, path):
+    global cache
 
-        s3_bucket = s3_resource.Bucket(bucket)
-        objs = list(s3_bucket.objects.filter(Prefix=key))
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
 
-        if os.path.isfile('cache'):
-            cache = json.load(open('cache', 'r'))
+    s3_bucket = s3_resource.Bucket(bucket)
+    objs = list(s3_bucket.objects.filter(Prefix=key))
 
-        for obj in objs:
-            response = s3_client.head_object(
-                Bucket = bucket,
-                Key =  obj.key
-            )
-            obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
-            if obj_key not in  cache or cache[obj_key] != response['ETag']:
-                filename = obj.key[obj.key.rfind('/') + 1 : ]
+    if os.path.isfile('cache'):
+        cache = json.load(open('cache', 'r'))
 
-                s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
-                cache[obj_key] = response['ETag']
+    for obj in objs:
+        response = s3_client.head_object(
+            Bucket = bucket,
+            Key =  obj.key
+        )
+        obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
+        if obj_key not in  cache or cache[obj_key] != response['ETag']:
+            filename = obj.key[obj.key.rfind('/') + 1 : ]
 
-        json.dump(cache, open('cache', 'w'))
+            s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
+            cache[obj_key] = response['ETag']
 
-    def http_download(httpuri, path):
-        with requests.get(httpuri, stream=True) as r:
-            r.raise_for_status()
-            with open(path, 'wb') as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    f.write(chunk)
+    json.dump(cache, open('cache', 'w'))
+
+def http_download(httpuri, path):
+    with requests.get(httpuri, stream=True) as r:
+        r.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
 
 if cmd_opts.server_name:
     server_name = cmd_opts.server_name
@@ -239,7 +239,6 @@ def get_models(path, extensions):
     return models
 
 def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
-    # s3_client = boto3.client('s3')
     src = s3_folder + '/' + file
     dist =  os.path.join(local_folder, file)
     os.makedirs(os.path.dirname(dist), exist_ok=True)
@@ -307,9 +306,7 @@ def free_local_disk(local_folder,size,mode):
         de_register_model(filename,mode)
 
 def list_s3_objects(s3_client,bucket_name, prefix=''):
-    # s3_client = boto3.client('s3')
     objects = []
-    # initial request
     paginator = s3_client.get_paginator('list_objects_v2')
     page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
     # iterate over pages
@@ -573,10 +570,7 @@ def webui():
 
         if huggingface_models:
             huggingface_models = json.loads(huggingface_models)
-            huggingface_token = huggingface_models['token']
-            os.system(f'huggingface-cli login --token {huggingface_token}')
-            hf_hub_models = huggingface_models['models']
-            for huggingface_model in hf_hub_models:
+            for huggingface_model in huggingface_models:
                 repo_id = huggingface_model['repo_id']
                 filename = huggingface_model['filename']
                 name = huggingface_model['name']
@@ -757,6 +751,24 @@ def upload_s3folder(s3uri, file_path):
 
 if cmd_opts.train:
     def train():
+        if cmd_opts.model_name != '':
+            for huggingface_model in shared.huggingface_models:
+                repo_id = huggingface_model['repo_id']
+                filename = huggingface_model['filename']
+                if filename == cmd_opts.model_name:
+                    hf_hub_download(
+                        repo_id=repo_id,
+                        filename=filename,
+                        local_dir='/opt/ml/input/data/models',
+                        cache_dir='/opt/ml/input/data/models'
+                    )
+                    if filename in ['v2-1_768-ema-pruned.ckpt', '']:
+                        name = os.path.splitext(filename)[0]
+                        http_download(
+                            'https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/v2-inference-v.yaml',
+                            f'/opt/ml/input/data/models/{name}.yaml'
+                        )
+
         initialize()
 
         train_task = cmd_opts.train_task
