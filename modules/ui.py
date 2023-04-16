@@ -90,17 +90,6 @@ def gr_show(visible=True):
 ## Begin output images uploaded to s3 by River
 s3_resource = boto3.resource('s3')
 
-def get_webui_username(request):
-    tokens = shared.demo.server_app.tokens
-    cookies = request.headers['cookie'].split('; ')
-    access_token = None
-    for cookie in cookies:
-        if cookie.startswith('access-token'):
-            access_token = cookie[len('access-token=') : ]
-            break
-    username = tokens[access_token] if access_token else None
-    return username
-
 def save_images_to_s3(full_fillnames,timestamp,username):
     sagemaker_endpoint = shared.opts.sagemaker_endpoint
     bucket_name = opts.train_files_s3bucket.replace('s3://','')
@@ -580,14 +569,7 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         return gr.update(**(args or {}))
 
     def refresh_sagemaker_endpoints(request : gr.Request):
-        tokens = shared.demo.server_app.tokens
-        cookies = shared.get_cookies(request)
-        access_token = None
-        for cookie in cookies:
-            if cookie.startswith('access-token'):
-                access_token = cookie[len('access-token=') : ]
-                break
-        username = tokens[access_token] if access_token else None
+        username = shared.get_webui_username(request)
 
         refresh_method(username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
@@ -598,32 +580,7 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
         return gr.update(**(args or {}))
 
     def refresh_sd_models(request: gr.Request):
-        tokens = shared.demo.server_app.tokens
-        cookies = request.headers['cookie'].split('; ')
-        access_token = None
-        for cookie in cookies:
-            if cookie.startswith('access-token'):
-                access_token = cookie[len('access-token=') : ]
-                break
-        username = tokens[access_token] if access_token else None
-
-        refresh_method(username)
-        args = refreshed_args() if callable(refreshed_args) else refreshed_args
-
-        for k, v in args.items():
-            setattr(refresh_component, k, v)
-
-        return gr.update(**(args or {}))
-
-    def refresh_sd_models(request: gr.Request):
-        tokens = shared.demo.server_app.tokens
-        cookies = request.headers['cookie'].split('; ')
-        access_token = None
-        for cookie in cookies:
-            if cookie.startswith('access-token'):
-                access_token = cookie[len('access-token=') : ]
-                break
-        username = tokens[access_token] if access_token else None
+        username = shared.get_webui_username(request)
 
         refresh_method(username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
@@ -779,7 +736,7 @@ def create_ui():
 
     def image_viewer(path,cols_width,current_only,request:gr.Request):
         if current_only:
-            username = get_webui_username(request)
+            username = shared.get_webui_username(request)
             path = path+'/'+username
         dirs = path.replace('s3://','').split('/')
         prefix = '/'.join(dirs[1:])
@@ -920,14 +877,7 @@ def create_ui():
         return opts.dumpjson(), 'Settings changed and saved'
 
     def run_settings_single(value, key, request : gr.Request):
-        tokens = shared.demo.server_app.tokens
-        cookies = shared.get_cookies(request)
-        access_token = None
-        for cookie in cookies:
-            if cookie.startswith('access-token'):
-                access_token = cookie[len('access-token=') : ]
-                break
-        username = tokens[access_token] if access_token else None
+        username = shared.get_webui_username(request)
 
         if username and username != '':
             if not opts.same_type(value, opts.data_labels[key].default):
@@ -1889,14 +1839,7 @@ def create_ui():
                         *txt2img_preview_params
                     ):
 
-                    tokens = shared.demo.server_app.tokens
-                    cookies = shared.get_cookies(request)
-                    access_token = None
-                    for cookie in cookies:
-                        if cookie.startswith('access-token'):
-                            access_token = cookie[len('access-token=') : ]
-                            break
-                    username = tokens[access_token] if access_token else None
+                    username = shared.get_webui_username(request)
 
                     train_args = {
                         'embedding_settings': {
@@ -2022,14 +1965,7 @@ def create_ui():
                         *txt2img_preview_params
                     ):
 
-                    tokens = shared.demo.server_app.tokens
-                    cookies = shared.get_cookies(request)
-                    access_token = None
-                    for cookie in cookies:
-                        if cookie.startswith('access-token'):
-                            access_token = cookie[len('access-token=') : ]
-                            break
-                    username = tokens[access_token] if access_token else None
+                    username = shared.get_webui_username(request)
 
                     train_args = {
                         'hypernetwork_settings': {
@@ -2224,14 +2160,8 @@ def create_ui():
             save_userdata_btn = gr.Button(value="Save")
 
         def save_userdata(user_dataframe, request: gr.Request):
-            tokens = shared.demo.server_app.tokens
-            cookies = shared.get_cookies(request)
-            access_token = None
-            for cookie in cookies:
-                if cookie.startswith('access-token'):
-                    access_token = cookie[len('access-token=') : ]
-                    break
-            if not access_token or tokens[access_token] != 'admin':
+            username = shared.get_webui_username(request)
+            if username == 'admin':
                 return gr.update()
             items = []
             for user_df in user_dataframe:
@@ -2373,14 +2303,7 @@ def create_ui():
         component_keys = [k for k in opts.data_labels.keys() if k in component_dict]
 
         def demo_load(request: gr.Request):
-            tokens = shared.demo.server_app.tokens
-            cookies = shared.get_cookies(request)
-            access_token = None
-            for cookie in cookies:
-                if cookie.startswith('access-token'):
-                    access_token = cookie[len('access-token=') : ]
-                    break
-            username = tokens[access_token] if access_token else None
+            username = shared.get_webui_username(request)
 
             inputs = {
                 'action': 'load'

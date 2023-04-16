@@ -834,3 +834,14 @@ def get_cookies(request):
     # directly, so we need to retrieve its underlying dict first.
     cookies = request.headers.__dict__['cookie'].split('; ')
     return cookies
+
+def get_webui_username(request):
+    tokens = demo.server_app.tokens
+    cookies = request.headers.__dict__['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    username = tokens[access_token] if access_token else None
+    return username
