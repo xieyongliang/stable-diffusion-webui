@@ -757,12 +757,12 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
         with gr.Row():
             with gr.Column(scale=3):
-                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
-                dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, interactive=False,
+                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+                dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, interactive=False,
                                                   value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated/{username}')
 
             with gr.Column(scale=1):
-                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=True,interactive=False)
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=True,interactive=True)
             with gr.Column(scale=1):
                 cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
             with gr.Column(scale=1):
@@ -1565,12 +1565,12 @@ def create_ui():
                 with gr.Row():
                         dummy_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="dummy_chkpt_s3uri",
                                                     value='模型存放位置:'+default_ckpt_s3+'{用户名}',
-                                                    lines=2, visible=True,interactive=False)
-                        chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="chkpt_s3uri", value= default_ckpt_s3,lines=2,visible=False)
+                                                    lines=2, visible=False,interactive=False)
+                        chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="chkpt_s3uri", value= default_ckpt_s3,lines=2,visible=True)
                         merge_output_s3uri = gr.Textbox(label="Merge Result S3 URI",lines=2, visible=True,placeholder='（选填），默认输出位置:'+default_ckpt_s3+'{用户名}')
                 with gr.Row():
                     with gr.Column(scale=1):
-                        load_all_user = gr.Checkbox(label="Don't load other user's models",interactive=False, value=True,visible=True)
+                        load_all_user = gr.Checkbox(label="Don't load other user's models",interactive=True, value=True,visible=True)
                     with gr.Column(scale=2):
                         chkpt_s3uri_button = gr.Button(value="Load Checkpoints", variant='primary')
                     

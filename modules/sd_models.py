@@ -98,11 +98,11 @@ def list_models(sagemaker_endpoint=None,username=''):
                     config = model['config']
 
                     ##filter by username . e.g title: river/jp-style-girl-3_200_lora.safetensors
-                    dir = title.split('/')
-                    if len(dir) > 1:
-                        dir_user = dir[0]
-                        if dir_user != username:
-                            continue
+                    # dir = title.split('/')
+                    # if len(dir) > 1:
+                    #     dir_user = dir[0]
+                    #     if dir_user != username:
+                    #         continue
 
                     if 'sd_model_checkpoint' not in shared.opts.data:
                         shared.opts.data['sd_model_checkpoint'] = title
