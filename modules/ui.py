@@ -2179,7 +2179,7 @@ def create_ui():
 
         def save_userdata(user_dataframe, request: gr.Request):
             username = shared.get_webui_username(request)
-            if username == 'admin':
+            if username != 'admin':
                 return gr.update()
             items = []
             for user_df in user_dataframe:
