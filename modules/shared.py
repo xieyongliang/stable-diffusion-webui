@@ -387,9 +387,9 @@ def list_checkpoint_tiles():
     return modules.sd_models.checkpoint_tiles()
 
 
-def refresh_checkpoints(sagemaker_endpoint=None):
+def refresh_checkpoints(sagemaker_endpoint=None,username=''):
     import modules.sd_models
-    modules.sd_models.list_models(sagemaker_endpoint)
+    modules.sd_models.list_models(sagemaker_endpoint,username)
     checkpoints = modules.sd_models.checkpoints_list
     return checkpoints
 
@@ -486,7 +486,6 @@ def refresh_sd_models(username):
     return sd_models
 
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
-    # "models_s3_bucket": OptionInfo(f'{get_default_sagemaker_bucket()}/stable-diffusion-webui/models/', "S3 path for downloading model files (E.g, s3://bucket-name/models/)", ),
     "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": list_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
     "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
@@ -538,7 +537,7 @@ options_templates.update(options_section(('saving-images', "Saving images/grids"
 }))
 
 options_templates.update(options_section(('saving-paths', "Paths for saving"), {
-    "train_files_s3bucket":OptionInfo(get_default_sagemaker_bucket(),"S3 bucket name for uploading/downloading images",component_args=hide_dirs),
+    # "train_files_s3bucket":OptionInfo(get_default_sagemaker_bucket(),"S3 bucket name for uploading/downloading images",component_args=hide_dirs),
     "outdir_samples": OptionInfo("", "Output directory for images; if empty, defaults to three directories below", component_args=hide_dirs),
     "outdir_txt2img_samples": OptionInfo("outputs/txt2img-images", 'Output directory for txt2img images', component_args=hide_dirs),
     "outdir_img2img_samples": OptionInfo("outputs/img2img-images", 'Output directory for img2img images', component_args=hide_dirs),

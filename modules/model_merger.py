@@ -109,11 +109,9 @@ def is_valid_s3_uri(s3_uri):
     match = s3_uri_pattern.match(s3_uri)
     return bool(match)
 
-def load_checkpoints_from_s3_uri(s3_uri, primary_component,
-                                 secondary_component, tertiary_component):
+def load_checkpoints_from_s3_uri(s3_uri,load_all_user,username):
     global input_chkpt_s3uri
     global s3_checkpoints
-
     if not is_valid_s3_uri(s3_uri):
         return
 
@@ -130,11 +128,22 @@ def load_checkpoints_from_s3_uri(s3_uri, primary_component,
         return
 
     text = json.loads(response.text)
-    for obj in text['payload']:
-        obj_key = obj['key']
-        ckpt = obj_key.split('/')[-1]
-        s3_checkpoints.append(ckpt)
-
+    
+    if not load_all_user:
+        for obj in text['payload']:
+            title = obj['key'].replace('stable-diffusion-webui/models/Stable-diffusion/','')
+            # ckpt = title.split('/')[-1]
+            s3_checkpoints.append(title)
+    else:
+        for obj in text['payload']:
+            title = obj['key'].replace('stable-diffusion-webui/models/Stable-diffusion/','')
+            ##filter by username . e.g title: river/jp-style-girl-3_200_lora.safetensors
+            dir = title.split('/')
+            if len(dir) > 1:
+                dir_user = dir[0]
+                if dir_user != username:
+                    continue
+            s3_checkpoints.append(title)
     return [gr.Dropdown.update(choices=s3_checkpoints) for _ in range(3)]
 
 def get_checkpoints_to_merge():
@@ -217,31 +226,38 @@ def get_default_output_model_s3uri():
 def run_modelmerger_remote(primary_model_name, secondary_model_name,
                            tertiary_model_name, interp_method, multiplier,
                            save_as_half, custom_name, checkpoint_format,
-                           output_chkpt_s3uri, submit_result):
+                           output_chkpt_s3uri, submit_result,request):
     """ This is the same as run_modelmerger, but it calls a RESTful API to do the job """
     if isinstance(primary_model_name, list) or \
         isinstance(secondary_model_name, list):
         ret_msg = "At least primary_model_name and secondary_model_name must be set."
         set_last_processing_output_message(ret_msg)
-        return reg_msg
+        return ret_msg
 
     if output_chkpt_s3uri != '' and not is_valid_s3_uri(output_chkpt_s3uri):
         ret_msg = f"output_chkpt_s3uri is not valid: {output_chkpt_s3uri}"
         set_last_processing_output_message(ret_msg)
-        return reg_msg
+        return ret_msg
 
     input_srcs = f"{input_chkpt_s3uri}/{primary_model_name}," + \
                  f"{input_chkpt_s3uri}/{secondary_model_name}"
     input_dsts = f"/opt/ml/processing/input/primary," + \
                  f"/opt/ml/processing/input/secondary"
-
+    username = shared.get_webui_username(request)
     if is_valid_s3_uri(output_chkpt_s3uri):
-        output_dst = output_chkpt_s3uri 
+        if output_chkpt_s3uri[-1] == '/':
+            output_dst = output_chkpt_s3uri+username
+        else:
+            output_dst = output_chkpt_s3uri+'/'+username
     else:
-        output_dst = get_default_output_model_s3uri()
+        output_dst = get_default_output_model_s3uri()+'/'+username
     output_name = get_merged_chkpt_name(primary_model_name, secondary_model_name,
                           tertiary_model_name, multiplier, interp_method,
                           checkpoint_format, custom_name)
+    ##outputName' failed to satisfy constraint: Member must have length less than or equal to 64
+    if len(output_name) > 64:
+        output_name = output_name[len(output_name)-64:]
+
     # Make an argument dict to be accessible in the process script  
     args = {
         "primary_model": primary_model_name,
