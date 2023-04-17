@@ -25,7 +25,6 @@ from modules import sd_hijack, sd_models, localization, script_callbacks, ui_ext
 from modules.paths import script_path
 
 from modules.shared import opts, cmd_opts, restricted_opts,get_default_sagemaker_bucket
-
 import modules.codeformer_model
 import modules.generation_parameters_copypaste as parameters_copypaste
 import modules.gfpgan_model
@@ -759,8 +758,11 @@ def create_ui():
         with gr.Row():
             with gr.Column(scale=3):
                 images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+                dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, interactive=False,
+                                                  value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated/{username}')
+
             with gr.Column(scale=1):
-                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=False)
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=True,interactive=False)
             with gr.Column(scale=1):
                 cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
             with gr.Column(scale=1):
@@ -1548,16 +1550,32 @@ def create_ui():
             fn=modules.extras.clear_cache,
             inputs=[], outputs=[]
         )
+
+    def load_checkpoints_from_s3_uri(model_s3url,load_all_user,request:gr.Request):
+        username = shared.get_webui_username(request)
+        print(username)
+        return modules.model_merger.load_checkpoints_from_s3_uri(model_s3url,load_all_user,username)
+
     with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
         with gr.Row().style(equal_height=False):
-            with gr.Column(variant='panel'):
+            with gr.Column():
                 gr.HTML(value="<p>Merged checkpoints will be put in the specified output S3 location</p>")
-
+                default_ckpt_s3 = get_default_sagemaker_bucket()+'/stable-diffusion-webui/models/Stable-diffusion/'
+                # default_merge_output_s3 =  default_ckpt_s3
                 with gr.Row():
-                    chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", placeholder='s3://bucket/stable-diffusion-webui/models/')
-                    chkpt_s3uri_button = gr.Button(value="Load Checkpoints", elem_id="checkpt_s3uri", variant='primary')
-                merge_output_s3uri = gr.Textbox(label="Merge Result S3 URI", placeholder="If not specified, will put into " +  modules.model_merger.get_default_output_model_s3uri())
-        
+                        dummy_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="dummy_chkpt_s3uri",
+                                                    value='模型存放位置:'+default_ckpt_s3+'{用户名}',
+                                                    lines=2, visible=True,interactive=False)
+                        chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="chkpt_s3uri", value= default_ckpt_s3,lines=2,visible=False)
+                        merge_output_s3uri = gr.Textbox(label="Merge Result S3 URI",lines=2, visible=True,placeholder='（选填），默认输出位置:'+default_ckpt_s3+'{用户名}')
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        load_all_user = gr.Checkbox(label="Don't load other user's models",interactive=False, value=True,visible=True)
+                    with gr.Column(scale=2):
+                        chkpt_s3uri_button = gr.Button(value="Load Checkpoints", variant='primary')
+                    
+               
+
                 with gr.Row():
                     primary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
                     secondary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
@@ -1566,19 +1584,19 @@ def create_ui():
                 interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
                 interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
 
-                chkpt_s3uri_button.click(
-                        fn=modules.model_merger.load_checkpoints_from_s3_uri,
-                        inputs=[chkpt_s3uri],
-                        outputs=[primary_model_name, secondary_model_name, tertiary_model_name])
 
                 with gr.Row():
                     checkpoint_format = gr.Radio(choices=["ckpt", "safetensors"], value="ckpt", label="Checkpoint format")
                     save_as_half = gr.Checkbox(value=False, label="Save as float16")
 
-                modelmerger_merge = gr.Button(elem_id="modelmerger_merge", label="Merge", variant='primary')
+                modelmerger_merge = gr.Button(elem_id="modelmerger_merge", value="Merge", variant='primary')
 
-            with gr.Column(variant='panel'):
+            with gr.Column():
                 submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
+        chkpt_s3uri_button.click(
+                        fn=load_checkpoints_from_s3_uri,
+                        inputs=[chkpt_s3uri,load_all_user],
+                        outputs=[primary_model_name, secondary_model_name, tertiary_model_name])
 
         # A periodic function to check the submit output
         modelmerger_interface.load(modules.model_merger.get_processing_job_status,
@@ -2198,7 +2216,7 @@ def create_ui():
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
             (pnginfo_interface, "PNG Info", "pnginfo"),
-            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
+            # (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
             (train_interface, "Train", "ti"),
             (user_interface, "User", "user")
         ]
@@ -2208,7 +2226,7 @@ def create_ui():
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
             (pnginfo_interface, "PNG Info", "pnginfo"),
-            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
+            # (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
             (train_interface, "Train", "ti"),
         ]
 
@@ -2230,6 +2248,7 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
+    interfaces +=  [(modelmerger_interface,"Checkpoint Merger", "modelmerger")]
     interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
@@ -2339,9 +2358,15 @@ def create_ui():
             outputs=[component_dict[k] for k in component_keys] + [username_state, user_dataframe, shared.sagemaker_endpoint_component, shared.sd_model_checkpoint_component]
         )
 
-        def modelmerger(*args):
+        def modelmerger(primary_model_name, secondary_model_name,
+                           tertiary_model_name, interp_method, multiplier,
+                           save_as_half, custom_name, checkpoint_format,
+                           output_chkpt_s3uri, submit_result,request:gr.Request):
             try:
-                results = modules.model_merger.run_modelmerger_remote(*args)
+                results = modules.model_merger.run_modelmerger_remote(primary_model_name, secondary_model_name,
+                           tertiary_model_name, interp_method, multiplier,
+                           save_as_half, custom_name, checkpoint_format,
+                           output_chkpt_s3uri, submit_result,request)
             except Exception as e:
                 print("Error loading/saving model file:", file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
@@ -2431,7 +2456,7 @@ def create_ui():
     visit(txt2img_interface, loadsave, "txt2img")
     visit(img2img_interface, loadsave, "img2img")
     visit(extras_interface, loadsave, "extras")
-    visit(modelmerger_interface, loadsave, "modelmerger")
+    # visit(modelmerger_interface, loadsave, "modelmerger")
 
     if not error_loading and (not os.path.exists(ui_config_file) or settings_count != len(ui_settings)):
         with open(ui_config_file, "w", encoding="utf8") as file:
