@@ -922,9 +922,9 @@ def create_ui():
         with gr.Row():
             with gr.Column(scale=4):
                 models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
-                                            value=default_s3_path,visible=False)
+                                            value=default_s3_path,visible=True)
             with gr.Column(scale=1):
-                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket',visible=False)
+                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket',visible=True)
             with gr.Column(scale=1):
                 reload_models_btn = gr.Button(value='Reload all models', elem_id='id_reload_all_models')
 
