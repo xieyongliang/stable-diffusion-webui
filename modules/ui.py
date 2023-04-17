@@ -590,8 +590,9 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
-    def refresh_checkpoints(sagemaker_endpoint):
-        refresh_method(sagemaker_endpoint)
+    def refresh_checkpoints(sagemaker_endpoint,request:gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(sagemaker_endpoint,username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
         for k, v in args.items():
@@ -757,9 +758,9 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
         with gr.Row():
             with gr.Column(scale=3):
-                images_s3_path = gr.Textbox(label="Input S3 path of images",value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
             with gr.Column(scale=1):
-                show_user_only = gr.Checkbox(label="Show current user's images only", value=True)
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=False)
             with gr.Column(scale=1):
                 cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
             with gr.Column(scale=1):
@@ -919,9 +920,9 @@ def create_ui():
         with gr.Row():
             with gr.Column(scale=4):
                 models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
-                                            value=default_s3_path)
+                                            value=default_s3_path,visible=False)
             with gr.Column(scale=1):
-                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket')
+                set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket',visible=False)
             with gr.Column(scale=1):
                 reload_models_btn = gr.Button(value='Reload all models', elem_id='id_reload_all_models')
 
@@ -2325,7 +2326,7 @@ def create_ui():
                                 print(e)
                     shared.refresh_sagemaker_endpoints(username)
                     shared.refresh_sd_models(username)
-                    shared.refresh_checkpoints(shared.opts.sagemaker_endpoint)
+                    shared.refresh_checkpoints(shared.opts.sagemaker_endpoint,username)
                     additional_components = [gr.update(value=username), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
             else:
                 additional_components = [gr.update(value=username), gr.update(), gr.update(), gr.update()]
