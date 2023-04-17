@@ -213,8 +213,8 @@ function restart_reload(){
 }
 
 function login(username) {
-    var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[6];
-    var setting=gradioApp().querySelector('#tabs').querySelectorAll('button')[7];
+    var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];
+    var setting=gradioApp().querySelector('#tabs').querySelectorAll('button')[6];
 
     if(username=='admin'){
         user.style.display='block'
