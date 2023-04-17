@@ -858,5 +858,7 @@
     "Submit":"确定",
     "columns width":"每行图片列数",
     "Show current user's images only":"只显示当前用户图片集",
+    "Don't load other user's models":"不加载其他用户目录模型",
+    "Merge":"合并",
     "--------": "--------"
 }

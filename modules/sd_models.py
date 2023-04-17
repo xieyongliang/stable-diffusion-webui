@@ -57,7 +57,7 @@ def checkpoint_tiles():
     return sorted([x.title for x in checkpoints_list.values()], key = alphanumeric_key)
 
 
-def list_models(sagemaker_endpoint=None):
+def list_models(sagemaker_endpoint=None,username=''):
     global checkpoints_list
 
     checkpoints_list.clear()
@@ -90,11 +90,19 @@ def list_models(sagemaker_endpoint=None):
                 model_list = json.loads(response.text)
 
                 for model in model_list:
+    
                     h = model['hash']
                     filename = model['filename']
                     title = model['title']
                     short_model_name = model['model_name']
                     config = model['config']
+
+                    ##filter by username . e.g title: river/jp-style-girl-3_200_lora.safetensors
+                    # dir = title.split('/')
+                    # if len(dir) > 1:
+                    #     dir_user = dir[0]
+                    #     if dir_user != username:
+                    #         continue
 
                     if 'sd_model_checkpoint' not in shared.opts.data:
                         shared.opts.data['sd_model_checkpoint'] = title
