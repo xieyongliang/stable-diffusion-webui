@@ -239,6 +239,7 @@ def get_models(path, extensions):
     return models
 
 def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+    print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
     src = s3_folder + '/' + file
     dist =  os.path.join(local_folder, file)
     os.makedirs(os.path.dirname(dist), exist_ok=True)
