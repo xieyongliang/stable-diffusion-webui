@@ -569,7 +569,6 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
     def refresh_sagemaker_endpoints(request : gr.Request):
         username = shared.get_webui_username(request)
-
         refresh_method(username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
@@ -580,8 +579,17 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
     def refresh_sd_models(request: gr.Request):
         username = shared.get_webui_username(request)
-
         refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_lora_models(sagemaker_endpoint,request:gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(sagemaker_endpoint,username)
         args = refreshed_args() if callable(refreshed_args) else refreshed_args
 
         for k, v in args.items():
@@ -615,6 +623,12 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
     elif elem_id == 'refresh_sd_model_checkpoint':
         refresh_button.click(
             fn=refresh_checkpoints,
+            inputs=[shared.sagemaker_endpoint_component],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_lora':
+        refresh_button.click(
+            fn=refresh_lora_models,
             inputs=[shared.sagemaker_endpoint_component],
             outputs=[refresh_component]
         )

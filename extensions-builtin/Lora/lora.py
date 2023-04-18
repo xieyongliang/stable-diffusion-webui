@@ -6,6 +6,9 @@ from typing import Union
 
 from modules import shared, devices, sd_models, errors
 
+import requests
+import json
+
 metadata_tags_order = {"ss_sd_model_name": 1, "ss_resolution": 2, "ss_clip_skip": 3, "ss_num_train_images": 10, "ss_tag_frequency": 20}
 
 re_digits = re.compile(r"\d+")
@@ -337,23 +340,39 @@ def lora_MultiheadAttention_load_state_dict(self, *args, **kwargs):
     return torch.nn.MultiheadAttention_load_state_dict_before_lora(self, *args, **kwargs)
 
 
-def list_available_loras():
+def list_available_loras(sagemaker_endpoint=None, username=None):
     available_loras.clear()
 
-    os.makedirs(shared.cmd_opts.lora_dir, exist_ok=True)
+    if shared.cmd_opts.pureui:
+        print(sagemaker_endpoint)
+        print(username)
+        if sagemaker_endpoint:
+            api_endpoint = os.environ['api_endpoint']
+            params = {'module': 'Lora', 'endpoint_name': sagemaker_endpoint}
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
 
-    candidates = \
-        glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.pt'), recursive=True) + \
-        glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.safetensors'), recursive=True) + \
-        glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.ckpt'), recursive=True)
+            if response.status_code == 200:
+                items = json.loads(response.text)
+                for item in items:
+                    name = os.path.splitext(item['model_name'])[0]
 
-    for filename in sorted(candidates, key=str.lower):
-        if os.path.isdir(filename):
-            continue
+                    title = item['title']
+                    available_loras[name] = title
+    else:
+        os.makedirs(shared.cmd_opts.lora_dir, exist_ok=True)
 
-        name = os.path.splitext(os.path.basename(filename))[0]
+        candidates = \
+            glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.pt'), recursive=True) + \
+            glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.safetensors'), recursive=True) + \
+            glob.glob(os.path.join(shared.cmd_opts.lora_dir, '**/*.ckpt'), recursive=True)
 
-        available_loras[name] = LoraOnDisk(name, filename)
+        for filename in sorted(candidates, key=str.lower):
+            if os.path.isdir(filename):
+                continue
+
+            name = os.path.splitext(os.path.basename(filename))[0]
+
+            available_loras[name] = LoraOnDisk(name, filename)
 
 
 available_loras = {}
