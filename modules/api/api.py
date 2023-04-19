@@ -802,6 +802,8 @@ class Api:
         return bucket, key
 
     def download_s3files(self, s3uri, path):
+        global cache
+
         pos = s3uri.find('/', 5)
         bucket = s3uri[5 : pos]
         key = s3uri[pos + 1 : ]
