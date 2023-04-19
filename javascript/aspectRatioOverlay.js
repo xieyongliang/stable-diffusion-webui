@@ -12,7 +12,7 @@ function dimensionChange(e, is_width, is_height){
 		currentHeight = e.target.value*1.0
 	}
 
-	var inImg2img   = Boolean(gradioApp().querySelector("button.rounded-t-lg.border-gray-200"))
+	var inImg2img = gradioApp().querySelector("#tab_img2img").style.display == "block";
 
 	if(!inImg2img){
 		return;
@@ -21,11 +21,16 @@ function dimensionChange(e, is_width, is_height){
 	var targetElement = null;
 
     var tabIndex = get_tab_index('mode_img2img')
-	if(tabIndex == 0){
-		targetElement = gradioApp().querySelector('div[data-testid=image] img');
-	} else if(tabIndex == 1){
+	if(tabIndex == 0){ // img2img
+		targetElement = gradioApp().querySelector('#img2img_image div[data-testid=image] img');
+	} else if(tabIndex == 1){ //Sketch
+		targetElement = gradioApp().querySelector('#img2img_sketch div[data-testid=image] img');
+	} else if(tabIndex == 2){ // Inpaint
 		targetElement = gradioApp().querySelector('#img2maskimg div[data-testid=image] img');
+	} else if(tabIndex == 3){ // Inpaint sketch
+		targetElement = gradioApp().querySelector('#inpaint_sketch div[data-testid=image] img');
 	}
+
 
 	if(targetElement){
 
@@ -33,7 +38,7 @@ function dimensionChange(e, is_width, is_height){
 		if(!arPreviewRect){
 		    arPreviewRect = document.createElement('div')
 		    arPreviewRect.id = "imageARPreview";
-		    gradioApp().getRootNode().appendChild(arPreviewRect)
+		    gradioApp().appendChild(arPreviewRect)
 		}
 
 
@@ -86,23 +91,26 @@ onUiUpdate(function(){
 	if(arPreviewRect){
 		arPreviewRect.style.display = 'none';
 	}
-	var inImg2img   = Boolean(gradioApp().querySelector("button.rounded-t-lg.border-gray-200"))
-	if(inImg2img){
-		let inputs = gradioApp().querySelectorAll('input');
-		inputs.forEach(function(e){
-		    var is_width = e.parentElement.id == "img2img_width"
-		    var is_height = e.parentElement.id == "img2img_height"
+    var tabImg2img = gradioApp().querySelector("#tab_img2img");
+    if (tabImg2img) {
+        var inImg2img = tabImg2img.style.display == "block";
+        if(inImg2img){
+            let inputs = gradioApp().querySelectorAll('input');
+            inputs.forEach(function(e){
+                var is_width = e.parentElement.id == "img2img_width"
+                var is_height = e.parentElement.id == "img2img_height"
 
-			if((is_width || is_height) && !e.classList.contains('scrollwatch')){
-				e.addEventListener('input', function(e){dimensionChange(e, is_width, is_height)} )
-				e.classList.add('scrollwatch')
-			}
-			if(is_width){
-				currentWidth = e.value*1.0
-			}
-			if(is_height){
-				currentHeight = e.value*1.0
-			}
-		})
-	}
+                if((is_width || is_height) && !e.classList.contains('scrollwatch')){
+                    e.addEventListener('input', function(e){dimensionChange(e, is_width, is_height)} )
+                    e.classList.add('scrollwatch')
+                }
+                if(is_width){
+                    currentWidth = e.value*1.0
+                }
+                if(is_height){
+                    currentHeight = e.value*1.0
+                }
+            })
+        }
+    }
 });
