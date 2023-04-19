@@ -33,7 +33,6 @@ import asyncio
 from typing import Union
 import traceback
 from modules.sd_vae import reload_vae_weights, refresh_vae_list
-from modules.hypernetworks import hypernetwork
 from modules.paths_internal import script_path
 import uuid
 import os
@@ -758,8 +757,7 @@ class Api:
         hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
         self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
-        hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)
-        hypernetwork.apply_strength()
+        shared.reload_hypernetworks()
 
         try:
             if req.task == 'text-to-image':
