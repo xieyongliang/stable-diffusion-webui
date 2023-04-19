@@ -240,6 +240,9 @@ def get_models(path, extensions):
 
 def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
     print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
+    if file == '' or None:
+        print('Debug log:file is empty, return')
+        return True
     src = s3_folder + '/' + file
     dist =  os.path.join(local_folder, file)
     os.makedirs(os.path.dirname(dist), exist_ok=True)
@@ -315,8 +318,9 @@ def list_s3_objects(s3_client,bucket_name, prefix=''):
         # loop through objects in page
         if 'Contents' in page:
             for obj in page['Contents']:
-                # add object to list
-                objects.append(obj)
+                _, ext = os.path.splitext(obj['Key'].lstrip('/'))
+                if ext in ['.pt', '.pth', '.ckpt', '.safetensors','.yaml']:
+                    objects.append(obj)
         # if there are more pages to fetch, continue
         if 'NextContinuationToken' in page:
             page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix,
@@ -351,7 +355,7 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
         else:
             fnames_dict[root] = [filename]
     tmp_s3_files = {}
-    for i, obj in enumerate (s3_objects):
+    for obj in s3_objects:
         etag = obj['ETag'].strip('"').strip("'")   
         size = obj['Size']/(1024**3)
         filename = obj['Key'].replace(s3_folder, '').lstrip('/')
