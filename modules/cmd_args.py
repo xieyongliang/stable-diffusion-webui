@@ -107,3 +107,5 @@ parser.add_argument('--sd-models-s3uri', default='', type=str, help='SD Models S
 parser.add_argument('--db-models-s3uri', default='', type=str, help='DB Models S3Uri')
 parser.add_argument('--lora-models-s3uri', default='', type=str, help='Lora Models S3Uri')
 parser.add_argument('--dreambooth-config-id', default='', type=str, help='Dreambooth config ID')
+parser.add_argument('--embeddings-s3uri', default='', type=str, help='Embedding S3Uri')
+parser.add_argument('--hypernetwork-s3uri', default='', type=str, help='Hypernetwork S3Uri')
