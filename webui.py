@@ -75,7 +75,10 @@ if cmd_opts.train:
 else:
     import requests
     cache = dict()
-    s3_client = boto3.client('s3')
+    region_name = boto3.session.Session().region_name
+    s3_client = boto3.client('s3', region_name=region_name)
+    endpointUrl = s3_client.meta.endpoint_url
+    s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
     s3_resource= boto3.resource('s3')
 
 startup_timer.record("other imports")
