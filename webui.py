@@ -64,7 +64,10 @@ if not cmd_opts.api:
 
 import requests
 cache = dict()
-s3_client = boto3.client('s3')
+region_name = boto3.session.Session().region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
 s3_resource= boto3.resource('s3')
 
 def s3_download(s3uri, path):
@@ -239,6 +242,10 @@ def get_models(path, extensions):
     return models
 
 def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+    print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
+    if file == '' or None:
+        print('Debug log:file is empty, return')
+        return True
     src = s3_folder + '/' + file
     dist =  os.path.join(local_folder, file)
     os.makedirs(os.path.dirname(dist), exist_ok=True)
@@ -314,8 +321,9 @@ def list_s3_objects(s3_client,bucket_name, prefix=''):
         # loop through objects in page
         if 'Contents' in page:
             for obj in page['Contents']:
-                # add object to list
-                objects.append(obj)
+                _, ext = os.path.splitext(obj['Key'].lstrip('/'))
+                if ext in ['.pt', '.pth', '.ckpt', '.safetensors','.yaml']:
+                    objects.append(obj)
         # if there are more pages to fetch, continue
         if 'NextContinuationToken' in page:
             page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix,
@@ -350,7 +358,7 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
         else:
             fnames_dict[root] = [filename]
     tmp_s3_files = {}
-    for i, obj in enumerate (s3_objects):
+    for obj in s3_objects:
         etag = obj['ETag'].strip('"').strip("'")   
         size = obj['Size']/(1024**3)
         filename = obj['Key'].replace(s3_folder, '').lstrip('/')
@@ -477,7 +485,6 @@ def register_models(models_dir,mode):
     elif mode == 'lora':
         register_lora_models(models_dir)
 
-
 def register_lora_models(lora_models_dir):
     print ('---register_lora_models()----')
     if 'endpoint_name' in os.environ:
@@ -565,11 +572,13 @@ def webui():
             http_models = json.loads(payload).get('http_models', None)
         else:
             huggingface_models = os.environ.get('huggingface_models', None)
+            huggingface_models = json.loads(huggingface_models) if huggingface_models else None
             s3_models = os.environ.get('s3_models', None)
+            s3_models = json.loads(s3_models) if s3_models else None
             http_models = os.environ.get('http_models', None)
+            http_models = json.loads(http_models) if http_models else None
 
         if huggingface_models:
-            huggingface_models = json.loads(huggingface_models)
             for huggingface_model in huggingface_models:
                 repo_id = huggingface_model['repo_id']
                 filename = huggingface_model['filename']
@@ -583,14 +592,12 @@ def webui():
                 )
 
         if s3_models:
-            s3_models = json.loads(s3_models)
             for s3_model in s3_models:
                 uri = s3_model['uri']
                 name = s3_model['name']
                 s3_download(uri, f'/tmp/models/{name}')
 
         if http_models:
-            http_models = json.loads(http_models)
             for http_model in http_models:
                 uri = http_model['uri']
                 filename = http_model['filename']
@@ -615,7 +622,7 @@ def webui():
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
 
-         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
         initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
         sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
         sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
@@ -716,15 +723,12 @@ def upload_s3files(s3uri, file_path_with_pattern):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
-    s3_resource = boto3.resource('s3')
-    s3_bucket = s3_resource.Bucket(bucket)
-
     try:
         for file_path in glob.glob(file_path_with_pattern):
             file_name = os.path.basename(file_path)
             __s3file = f'{key}{file_name}'
             print(file_path, __s3file)
-            s3_bucket.upload_file(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
     except ClientError as e:
         print(e)
         return False
@@ -735,9 +739,6 @@ def upload_s3folder(s3uri, file_path):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
-    s3_resource = boto3.resource('s3')
-    s3_bucket = s3_resource.Bucket(bucket)
-
     try:
         for path, _, files in os.walk(file_path):
             for file in files:
@@ -745,7 +746,7 @@ def upload_s3folder(s3uri, file_path):
                 __s3file = f'{key}{dest_path}/{file}'
                 __local_file = os.path.join(path, file)
                 print(__local_file, __s3file)
-                s3_bucket.upload_file(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
     except Exception as e:
         print(e)
 
