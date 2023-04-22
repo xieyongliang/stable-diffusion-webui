@@ -64,7 +64,10 @@ if not cmd_opts.api:
 
 import requests
 cache = dict()
-s3_client = boto3.client('s3')
+region_name = boto3.session.Session().region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
 s3_resource= boto3.resource('s3')
 
 def s3_download(s3uri, path):
@@ -482,7 +485,6 @@ def register_models(models_dir,mode):
     elif mode == 'lora':
         register_lora_models(models_dir)
 
-
 def register_lora_models(lora_models_dir):
     print ('---register_lora_models()----')
     if 'endpoint_name' in os.environ:
@@ -620,7 +622,7 @@ def webui():
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
 
-         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
         initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
         sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
         sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
@@ -721,15 +723,12 @@ def upload_s3files(s3uri, file_path_with_pattern):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
-    s3_resource = boto3.resource('s3')
-    s3_bucket = s3_resource.Bucket(bucket)
-
     try:
         for file_path in glob.glob(file_path_with_pattern):
             file_name = os.path.basename(file_path)
             __s3file = f'{key}{file_name}'
             print(file_path, __s3file)
-            s3_bucket.upload_file(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
     except ClientError as e:
         print(e)
         return False
@@ -740,9 +739,6 @@ def upload_s3folder(s3uri, file_path):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
-    s3_resource = boto3.resource('s3')
-    s3_bucket = s3_resource.Bucket(bucket)
-
     try:
         for path, _, files in os.walk(file_path):
             for file in files:
@@ -750,7 +746,7 @@ def upload_s3folder(s3uri, file_path):
                 __s3file = f'{key}{dest_path}/{file}'
                 __local_file = os.path.join(path, file)
                 print(__local_file, __s3file)
-                s3_bucket.upload_file(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
     except Exception as e:
         print(e)
 
