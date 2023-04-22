@@ -43,6 +43,12 @@ import modules.hypernetworks.ui
 from modules.generation_parameters_copypaste import image_from_url_text
 from modules.sd_models import get_sd_model_checkpoint_from_title
 import requests
+
+region_name = boto3.session.Session().region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+
 training_instance_types = [
     'ml.p2.xlarge',
     'ml.p2.8xlarge',
@@ -96,13 +102,12 @@ def save_images_to_s3(full_fillnames,timestamp,username):
         bucket_name= bucket_name[:-1]
     if bucket_name == '':
         return 'Error, please configure a S3 bucket at settings page first'
-    s3_bucket = s3_resource.Bucket(bucket_name)
     folder_name = f"output-images/{username}/{sagemaker_endpoint}/{timestamp}"
     try:
         for i, fname in enumerate(full_fillnames):
             filename = fname.split('/')[-1]
             object_name = f"{folder_name}/{filename}"
-            s3_bucket.upload_file(fname,object_name)
+            s3_client.upload_file(fname, bucket_name, object_name)
             print (f'upload file [{i}]:{filename} to s3://{bucket_name}/{object_name}')
     except ClientError as e:
         print(e)
@@ -1632,13 +1637,12 @@ def create_ui():
                         bucket_name= bucket_name[:-1]
                     if bucket_name == '':
                         return 'Error, please configure a S3 bucket at settings page first'
-                    s3_bucket = s3_resource.Bucket(bucket_name.replace('s3://',''))
                     folder_name = f"train-images/{username}/{timestamp}"
                     try:
                         for i, img in enumerate(imgs):
                             filename = img.name.split('/')[-1]
                             object_name = f"{folder_name}/{filename}"
-                            s3_bucket.upload_file(img.name,object_name)
+                            s3_client.upload_file(img.name, bucket_name.replace('s3://',''), object_name)
                     except ClientError as e:
                         print(e)
                         return e
