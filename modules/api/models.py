@@ -296,10 +296,14 @@ class InvocationsRequest(BaseModel):
     model: Optional[str]
     vae: Optional[str]
     quality: Optional[int]
+    options: Optional[str]
     txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
     img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
     extras_single_payload: Optional[ExtrasSingleImageRequest]
     extras_batch_payload: Optional[ExtrasBatchImagesRequest]
+
+class InvocationsErrorResponse(BaseModel):
+    error: str = Field(title="Invocation error", description="Error response from invocation.")
 
 class PingResponse(BaseModel):
     status: str
