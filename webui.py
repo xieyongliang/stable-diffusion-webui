@@ -78,7 +78,7 @@ else:
     region_name = boto3.session.Session().region_name
     s3_client = boto3.client('s3', region_name=region_name)
     endpointUrl = s3_client.meta.endpoint_url
-    s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+    s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name, config=boto3.session.Config(s3={'addressing_style': 'virtual'}, signature_version='s3v4'))
     s3_resource= boto3.resource('s3')
 
 startup_timer.record("other imports")
@@ -664,7 +664,7 @@ else:
             s3_client.download_file(bucket, key, os.path.join(path, filename))
             cache[key] = response['ETag']
 
-            json.dump(cache, open('cache', 'w'))
+        json.dump(cache, open('cache', 'w'))
 
     def http_download(httpuri, path):
         with requests.get(httpuri, stream=True) as r:
