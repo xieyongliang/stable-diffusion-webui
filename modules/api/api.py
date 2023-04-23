@@ -764,28 +764,30 @@ class Api:
                 options = json.lods(req.options)
                 for key in options:
                     shared.opts.data[key] = options[key]
-                if req.task == 'text-to-image':
-                    self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
-                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                    response = self.text2imgapi(req.txt2img_payload)
-                    response.images = self.post_invocations(response.images, quality)
-                    return response
-                elif req.task == 'image-to-image':
-                    self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
-                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                    response = self.img2imgapi(req.img2img_payload)
-                    response.images = self.post_invocations(response.images, quality)
-                    return response
-                elif req.task == 'extras-single-image':
-                    response = self.extras_single_image_api(req.extras_single_payload)
-                    response.image = self.post_invocations([response.image], quality)[0]
-                    return response
-                elif req.task == 'extras-batch-images':
-                    response = self.extras_batch_images_api(req.extras_batch_payload)
-                    response.images = self.post_invocations(response.images, quality)
-                    return response
-                else:
-                    return InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+
+            if req.task == 'text-to-image':
+                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                response = self.text2imgapi(req.txt2img_payload)
+                response.images = self.post_invocations(response.images, quality)
+                return response
+            elif req.task == 'image-to-image':
+                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                response = self.img2imgapi(req.img2img_payload)
+                response.images = self.post_invocations(response.images, quality)
+                return response
+            elif req.task == 'extras-single-image':
+                response = self.extras_single_image_api(req.extras_single_payload)
+                response.image = self.post_invocations([response.image], quality)[0]
+                return response
+            elif req.task == 'extras-batch-images':
+                response = self.extras_batch_images_api(req.extras_batch_payload)
+                response.images = self.post_invocations(response.images, quality)
+                return response
+            else:
+                return InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+
         except Exception as e:
             traceback.print_exc()
             return InvocationsErrorResponse(error = str(e))
