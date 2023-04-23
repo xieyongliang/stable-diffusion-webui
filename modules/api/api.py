@@ -761,7 +761,7 @@ class Api:
             shared.reload_hypernetworks()
 
             if req.options != None:
-                options = json.lods(req.options)
+                options = json.loads(req.options)
                 for key in options:
                     shared.opts.data[key] = options[key]
 
