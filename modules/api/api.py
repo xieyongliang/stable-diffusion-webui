@@ -757,8 +757,9 @@ class Api:
             embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
             hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
-            self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
-            shared.reload_hypernetworks()
+            if hypernetwork_s3uri !='':
+                self.download_s3files(hypernetwork_s3uri, os.path.join(script_path, shared.cmd_opts.hypernetwork_dir))
+                shared.reload_hypernetworks()
 
             if req.options != None:
                 options = json.loads(req.options)
@@ -766,14 +767,16 @@ class Api:
                     shared.opts.data[key] = options[key]
 
             if req.task == 'text-to-image':
-                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
-                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                if embeddings_s3uri != '':
+                    self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
                 response.images = self.post_invocations(response.images, quality)
                 return response
             elif req.task == 'image-to-image':
-                self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
-                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                if embeddings_s3uri != '':
+                    self.download_s3files(embeddings_s3uri, os.path.join(script_path, shared.cmd_opts.embeddings_dir))
+                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
                 response.images = self.post_invocations(response.images, quality)
                 return response
