@@ -114,6 +114,7 @@ parser.add_argument('--username', default='', type=str, help='Username')
 parser.add_argument('--api-endpoint', default='', type=str, help='API Endpoint')
 parser.add_argument('--dreambooth-config-id', default='', type=str, help='Dreambooth config ID')
 parser.add_argument('--model-name', default='', type=str, help='Model name')
+parser.add_argument('--region-name', default='', type=str, help='Region name')
 
 script_loading.preload_extensions(extensions.extensions_dir, parser)
 script_loading.preload_extensions(extensions.extensions_builtin_dir, parser)
@@ -285,11 +286,9 @@ interrogator = modules.interrogate.InterrogateModels("interrogate")
 
 face_restorers = []
 
-def get_default_sagemaker_bucket(default_region = 'us-west-2'):
-    session = boto3.Session()
-    region_name = session.region_name if session.region_name else default_region
-    sts_client = session.client('sts')
-    account_id = sts_client.get_caller_identity()['Account']
+def get_default_sagemaker_bucket():
+    region_name = boto3.Session().region_name
+    account_id = boto3.Session().client('sts').get_caller_identity()['Account']
     return f"s3://sagemaker-{region_name}-{account_id}"
 
 def realesrgan_models_names():

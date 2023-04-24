@@ -64,7 +64,7 @@ if not cmd_opts.api:
 
 import requests
 cache = dict()
-region_name = boto3.session.Session().region_name
+region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
 s3_client = boto3.client('s3', region_name=region_name)
 endpointUrl = s3_client.meta.endpoint_url
 s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
@@ -77,23 +77,18 @@ def s3_download(s3uri, path):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
-    s3_bucket = s3_resource.Bucket(bucket)
-    objs = list(s3_bucket.objects.filter(Prefix=key))
-
     if os.path.isfile('cache'):
         cache = json.load(open('cache', 'r'))
 
-    for obj in objs:
-        response = s3_client.head_object(
-            Bucket = bucket,
-            Key =  obj.key
-        )
-        obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
-        if obj_key not in  cache or cache[obj_key] != response['ETag']:
-            filename = obj.key[obj.key.rfind('/') + 1 : ]
+    response = s3_client.head_object(
+        Bucket=bucket,
+        Key=key
+    )
+    if key not in  cache or cache[key] != response['ETag']:
+        filename = key[key.rfind('/') + 1 : ]
 
-            s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
-            cache[obj_key] = response['ETag']
+        s3_client.download_file(bucket, key, os.path.join(path, filename))
+        cache[key] = response['ETag']
 
     json.dump(cache, open('cache', 'w'))
 
