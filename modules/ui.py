@@ -746,10 +746,8 @@ def create_ui():
     interfaces = []
 
     ##add River
-    session = boto3.Session()
-    s3 = session.client('s3')
     def list_objects(bucket,prefix=''):
-        response = s3.list_objects(Bucket=bucket, Prefix=prefix)
+        response = s3_client.list_objects(Bucket=bucket, Prefix=prefix)
         objects = response['Contents'] if response.get('Contents') else []
         return [obj['Key'] for obj in objects]
 
@@ -764,7 +762,7 @@ def create_ui():
         image_url = []
         for object_key in objects:
             if object_key.endswith('.jpg') or object_key.endswith('.jpeg') or object_key.endswith('.png'):
-                image_url.append([s3.generate_presigned_url('get_object', Params={
+                image_url.append([s3_client.generate_presigned_url('get_object', Params={
                     'Bucket': bucket, 'Key': object_key}, ExpiresIn=3600),object_key.split('/')[-1]])
         image_tags = ""
         for image,key in image_url:
