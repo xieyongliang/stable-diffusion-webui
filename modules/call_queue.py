@@ -406,8 +406,9 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 images = []
                 for image in processed['images']:
                     images.append(Image.open(io.BytesIO(base64.b64decode(image))))
-            info = json.loads(processed['html_info'])
-            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
+            info = processed['html_info']
+
+            return images, "", info
 
     def f(username, *args, **kwargs):
         infer_type = os.environ.get('infer_type', 'async')
