@@ -293,6 +293,7 @@ class ScriptsList(BaseModel):
 
 class InvocationsRequest(BaseModel):
     task: str
+    id: Optional[str]
     model: Optional[str]
     vae: Optional[str]
     quality: Optional[int]
