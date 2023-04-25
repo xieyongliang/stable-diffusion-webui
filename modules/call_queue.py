@@ -37,6 +37,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         if isinstance(image, bytes):
             encoded_string = base64.b64encode(image)
         else:
+            image = image.convert('RGB')
             image.tobytes("hex", "rgb")
             image_bytes = io.BytesIO()
             image.save(image_bytes, format='JPEG')
