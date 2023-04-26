@@ -4,7 +4,7 @@ import json
 import os
 import sys
 import time
-
+import threading
 from PIL import Image
 import gradio as gr
 import tqdm
@@ -17,6 +17,54 @@ from modules import localization, script_loading, errors, ui_components, shared_
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir
 
 demo = None
+
+models_s3_bucket = None
+s3_folder_sd = None
+s3_folder_cn = None
+s3_folder_lora = None
+syncLock = threading.Lock()
+tmp_models_dir = '/tmp/models'
+tmp_cache_dir = '/tmp/model_sync_cache'
+class ModelsRef:
+    def __init__(self):
+        self.models_ref = {}
+
+    def get_models_ref_dict(self):
+        return self.models_ref
+    
+    def add_models_ref(self, model_name):
+        if model_name in self.models_ref:
+            self.models_ref[model_name] += 1
+        else:
+            self.models_ref[model_name] = 0
+
+    def remove_model_ref(self,model_name):
+        if self.models_ref.get(model_name):
+            del self.models_ref[model_name]
+
+    def get_models_ref(self, model_name):
+        return self.models_ref.get(model_name)
+    
+    def get_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+    
+    def pop_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            del self.models_ref[least_ref_model]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+        
+sd_models_Ref = ModelsRef()
+cn_models_Ref = ModelsRef()
+lora_models_Ref = ModelsRef()
 
 parser = cmd_args.parser
 

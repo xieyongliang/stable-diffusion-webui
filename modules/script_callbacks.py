@@ -93,6 +93,7 @@ callback_map = dict(
     callbacks_infotext_pasted=[],
     callbacks_script_unloaded=[],
     callbacks_before_ui=[],
+    callbacks_update_cn_models=[]
 )
 
 
@@ -224,6 +225,12 @@ def before_ui_callback():
         except Exception:
             report_exception(c, 'before_ui')
 
+def update_cn_models_callback():
+    for c in callback_map['callbacks_update_cn_models']:
+        try:
+            c.callback()
+        except Exception:
+            report_exception(c, 'callbacks_update_cn_models')
 
 def add_callback(callbacks, fun):
     stack = [x for x in inspect.stack() if x.filename != __file__]
@@ -247,6 +254,8 @@ def remove_callbacks_for_function(callback_func):
         for callback_to_remove in [cb for cb in callback_list if cb.callback == callback_func]:
             callback_list.remove(callback_to_remove)
 
+def on_update_cn_models(callback):
+    add_callback(callback_map['callbacks_update_cn_models'], callback)
 
 def on_app_started(callback):
     """register a function to be called when the webui started, the gradio `Block` component and
