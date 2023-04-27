@@ -37,11 +37,6 @@ from modules.paths_internal import script_path
 import uuid
 import os
 import json
-import boto3
-cache = dict()
-s3_client = boto3.client('s3')
-s3_resource= boto3.resource('s3')
-generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
 
 def upscaler_to_index(name: str):
     try:
@@ -710,8 +705,8 @@ class Api:
         return MemoryResponse(ram = ram, cuda = cuda)
 
     def post_invocations(self, b64images, quality):
-        if generated_images_s3uri:
-            bucket, key = self.get_bucket_and_key(generated_images_s3uri)
+        if shared.generated_images_s3uri:
+            bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
             images = []
             for b64image in b64images:
                 image = decode_base64_to_image(b64image).convert('RGB')
@@ -726,7 +721,7 @@ class Api:
                     image.save(output, format='PNG', quality=95)
 
                 image_id = str(uuid.uuid4())
-                s3_client.put_object(
+                shared.s3_client.put_object(
                     Body=output.getvalue(),
                     Bucket=bucket,
                     Key=f'{key}/{image_id}.png'
@@ -759,7 +754,7 @@ class Api:
             hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
             if hypernetwork_s3uri !='':
-                self.download_s3files(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
+                shared.download_s3files(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
                 shared.reload_hypernetworks()
 
             if req.options != None:
@@ -769,14 +764,14 @@ class Api:
 
             if req.task == 'text-to-image':
                 if embeddings_s3uri != '':
-                    self.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                    shared.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
                 response.images = self.post_invocations(response.images, quality)
                 return response
             elif req.task == 'image-to-image':
                 if embeddings_s3uri != '':
-                    self.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                    shared.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
                 response.images = self.post_invocations(response.images, quality)
@@ -803,38 +798,3 @@ class Api:
     def launch(self, server_name, port):
         self.app.include_router(self.router)
         uvicorn.run(self.app, host=server_name, port=port)
-
-    def get_bucket_and_key(self, s3uri):
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-        return bucket, key
-
-    def download_s3files(self, s3uri, path):
-        global cache
-
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-
-        s3_bucket = s3_resource.Bucket(bucket)
-        objs = list(s3_bucket.objects.filter(Prefix=key))
-
-        if os.path.isfile('cache'):
-            cache = json.load(open('cache', 'r'))
-
-        for obj in objs:
-            if obj.key == key:
-                continue
-            response = s3_client.head_object(
-                Bucket = bucket,
-                Key =  obj.key
-            )
-            obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
-            if obj_key not in cache or cache[obj_key] != response['ETag']:
-                filename = obj.key[obj.key.rfind('/') + 1 : ]
-
-                s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
-                cache[obj_key] = response['ETag']
-
-        json.dump(cache, open('cache', 'w'))

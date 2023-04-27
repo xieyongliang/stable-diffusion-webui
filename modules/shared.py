@@ -657,3 +657,49 @@ def html(filename):
             return file.read()
 
     return ""
+
+import boto3
+import requests
+
+cache = dict()
+region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+s3_resource= boto3.resource('s3')
+generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def s3_download(s3uri, path):
+    global cache
+
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    if os.path.isfile('cache'):
+        cache = json.load(open('cache', 'r'))
+
+    response = s3_client.head_object(
+        Bucket=bucket,
+        Key=key
+    )
+    if key not in  cache or cache[key] != response['ETag']:
+        filename = key[key.rfind('/') + 1 : ]
+
+        s3_client.download_file(bucket, key, os.path.join(path, filename))
+        cache[key] = response['ETag']
+
+    json.dump(cache, open('cache', 'w'))
+
+def http_download(httpuri, path):
+    with requests.get(httpuri, stream=True) as r:
+        r.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
