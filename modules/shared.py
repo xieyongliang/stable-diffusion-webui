@@ -678,6 +678,9 @@ def get_bucket_and_key(s3uri):
 def s3_download(s3uri, path):
     global cache
 
+    print('---path---', path)
+    os.system(f'ls -l {os.path.dirname(path)}')
+
     pos = s3uri.find('/', 5)
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
