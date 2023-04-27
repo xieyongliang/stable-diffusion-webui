@@ -404,6 +404,7 @@ class Api:
             img2imgreq.init_images = None
             img2imgreq.mask = None
 
+        populate.mask = img2imgreq.mask
         return ImageToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
 
     def extras_single_image_api(self, req: ExtrasSingleImageRequest):
