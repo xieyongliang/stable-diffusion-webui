@@ -685,18 +685,31 @@ def s3_download(s3uri, path):
     bucket = s3uri[5 : pos]
     key = s3uri[pos + 1 : ]
 
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=key, Prefix=key)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=key,
+                                                ContinuationToken=page['NextContinuationToken'])
+
     if os.path.isfile('cache'):
         cache = json.load(open('cache', 'r'))
 
-    response = s3_client.head_object(
-        Bucket=bucket,
-        Key=key
-    )
-    if key not in  cache or cache[key] != response['ETag']:
-        filename = key[key.rfind('/') + 1 : ]
+    for obj in objects:
+        response = s3_client.head_object(
+            Bucket = bucket,
+            Key =  obj.key
+        )
+        obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
+        if obj_key not in cache or cache[obj_key] != response['ETag']:
+            filename = obj.key[obj.key.rfind('/') + 1 : ]
 
-        s3_client.download_file(bucket, key, os.path.join(path, filename))
-        cache[key] = response['ETag']
+            s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
+            cache[obj_key] = response['ETag']
 
     json.dump(cache, open('cache', 'w'))
 
