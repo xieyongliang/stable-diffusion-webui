@@ -109,3 +109,4 @@ parser.add_argument('--lora-models-s3uri', default='', type=str, help='Lora Mode
 parser.add_argument('--dreambooth-config-id', default='', type=str, help='Dreambooth config ID')
 parser.add_argument('--embeddings-s3uri', default='', type=str, help='Embedding S3Uri')
 parser.add_argument('--hypernetwork-s3uri', default='', type=str, help='Hypernetwork S3Uri')
+parser.add_argument('--region-name', default='', type=str, help='Region name')
