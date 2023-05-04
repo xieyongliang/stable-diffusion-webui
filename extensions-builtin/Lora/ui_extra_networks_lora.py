@@ -1,6 +1,7 @@
 import json
 import os
 import lora
+import gradio as gr
 
 from modules import shared, ui_extra_networks
 
@@ -9,8 +10,9 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
     def __init__(self):
         super().__init__('Lora')
 
-    def refresh(self):
-        lora.list_available_loras()
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
+        username = shared.get_webui_username(request)
+        lora.list_available_loras(sagemaker_endpoint, username)
 
     def list_items(self):
         for name, lora_on_disk in lora.available_loras.items():
@@ -28,4 +30,3 @@ class ExtraNetworksPageLora(ui_extra_networks.ExtraNetworksPage):
 
     def allowed_directories_for_previews(self):
         return [shared.cmd_opts.lora_dir]
-

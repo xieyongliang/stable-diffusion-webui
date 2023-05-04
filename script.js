@@ -12,11 +12,15 @@ function get_uiCurrentTabContent() {
 }
 
 uiUpdateCallbacks = []
+uiLoadedCallbacks = []
 uiTabChangeCallbacks = []
 let uiCurrentTab = null
 
 function onUiUpdate(callback){
     uiUpdateCallbacks.push(callback)
+}
+function onUiLoaded(callback){
+    uiLoadedCallbacks.push(callback)
 }
 function onUiTabChange(callback){
     uiTabChangeCallbacks.push(callback)
@@ -33,8 +37,15 @@ function executeCallbacks(queue, m) {
     queue.forEach(function(x){runCallback(x, m)})
 }
 
+var executedOnLoaded = false;
+
 document.addEventListener("DOMContentLoaded", function() {
     var mutationObserver = new MutationObserver(function(m){
+        if(!executedOnLoaded && gradioApp().querySelector('#txt2img_prompt')){
+            executedOnLoaded = true;
+            executeCallbacks(uiLoadedCallbacks);
+        }
+
         executeCallbacks(uiUpdateCallbacks, m);
         const newTab = get_uiCurrentTab();
         if ( newTab && ( newTab !== uiCurrentTab ) ) {

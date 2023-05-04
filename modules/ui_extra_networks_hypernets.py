@@ -1,5 +1,6 @@
 import json
 import os
+import gradio as gr
 
 from modules import shared, ui_extra_networks
 
@@ -8,8 +9,8 @@ class ExtraNetworksPageHypernetworks(ui_extra_networks.ExtraNetworksPage):
     def __init__(self):
         super().__init__('Hypernetworks')
 
-    def refresh(self):
-        shared.reload_hypernetworks()
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
+        shared.reload_hypernetworks(request)
 
     def list_items(self):
         for name, path in shared.hypernetworks.items():
@@ -27,4 +28,3 @@ class ExtraNetworksPageHypernetworks(ui_extra_networks.ExtraNetworksPage):
 
     def allowed_directories_for_previews(self):
         return [shared.cmd_opts.hypernetwork_dir]
-

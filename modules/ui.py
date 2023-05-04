@@ -22,6 +22,7 @@ from PIL import Image, PngImagePlugin
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call
 
 from modules import sd_hijack, sd_models, localization, script_callbacks, ui_extensions, deepbooru
+from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML
 from modules.paths import script_path
 
 from modules.shared import opts, cmd_opts, restricted_opts,get_default_sagemaker_bucket
@@ -139,6 +140,7 @@ folder_symbol = '\U0001f4c2'  # 📂
 refresh_symbol = '\U0001f504'  # 🔄
 save_style_symbol = '\U0001f4be'  # 💾
 apply_style_symbol = '\U0001f4cb'  # 📋
+extra_networks_symbol = '\U0001F3B4'  # 🎴
 
 def text_to_hyperlink_html(url):
     text= f'<p><a target="_blank" href="{url}">{url}</a></p>'
@@ -454,10 +456,11 @@ def create_toprow(is_img2img):
                         )
 
         with gr.Column(scale=1, elem_id="roll_col"):
-            roll = gr.Button(value=art_symbol, elem_id="roll", visible=len(shared.artist_db.artists) > 0)
-            paste = gr.Button(value=paste_symbol, elem_id="paste")
-            save_style = gr.Button(value=save_style_symbol, elem_id="style_create", visible=False)
-            prompt_style_apply = gr.Button(value=apply_style_symbol, elem_id="style_apply", visible=False)
+            roll = ToolButton(value=art_symbol, elem_id="roll", visible=len(shared.artist_db.artists) > 0)
+            paste = ToolButton(value=paste_symbol, elem_id="paste")
+            save_style = ToolButton(value=save_style_symbol, elem_id="style_create", visible=False)
+            prompt_style_apply = ToolButton(value=apply_style_symbol, elem_id="style_apply", visible=False)
+            extra_networks_button = ToolButton(value=extra_networks_symbol, elem_id=f"{id_part}_extra_networks")
 
             token_counter = gr.HTML(value="<span></span>", elem_id=f"{id_part}_token_counter")
             token_button = gr.Button(visible=False, elem_id=f"{id_part}_token_button")
@@ -491,12 +494,14 @@ def create_toprow(is_img2img):
                 with gr.Column(scale=1, elem_id="style_pos_col"):
                     prompt_style = gr.Dropdown(label="Style 1", elem_id=f"{id_part}_style_index", choices=[k for k, v in shared.prompt_styles.styles.items()], value=next(iter(shared.prompt_styles.styles.keys())))
                     prompt_style.save_to_config = True
+                    prompt_style.style(container=False)
 
                 with gr.Column(scale=1, elem_id="style_neg_col"):
                     prompt_style2 = gr.Dropdown(label="Style 2", elem_id=f"{id_part}_style2_index", choices=[k for k, v in shared.prompt_styles.styles.items()], value=next(iter(shared.prompt_styles.styles.keys())))
                     prompt_style2.save_to_config = True
+                    prompt_style2.style(container=False)
 
-    return prompt, roll, prompt_style, negative_prompt, prompt_style2, submit, button_interrogate, button_deepbooru, prompt_style_apply, save_style, paste, token_counter, token_button
+    return prompt, roll, prompt_style, negative_prompt, prompt_style2, submit, button_interrogate, button_deepbooru, prompt_style_apply, save_style, paste, extra_networks_button, token_counter, token_button
 
 
 def setup_progressbar(progressbar, preview, id_part, textinfo=None):
@@ -858,6 +863,8 @@ def create_ui():
         if key == 'sd_model_checkpoint':
             shared.sd_model_checkpoint_component = res
 
+        if key == 'sd_hypernetwork':
+            shared.sd_hypernetwork_component = res
         return res
 
     components = []
@@ -980,7 +987,6 @@ def create_ui():
                     previous_section = item.section
 
                     elem_id, text = item.section
-                    print(text)
                     gr.HTML(elem_id="settings_header_text_{}".format(elem_id), value='<h1 class="gr-button-lg">{}</h1>'.format(text))
 
                 if k in quicksettings_names and not shared.cmd_opts.freeze_settings:
@@ -1084,8 +1090,12 @@ def create_ui():
             column.__exit__()
 
     with gr.Blocks(analytics_enabled=False) as txt2img_interface:
-        txt2img_prompt, roll, txt2img_prompt_style, txt2img_negative_prompt, txt2img_prompt_style2, submit, _, _, txt2img_prompt_style_apply, txt2img_save_style, txt2img_paste, token_counter, token_button = create_toprow(is_img2img=False)
+        txt2img_prompt, roll, txt2img_prompt_style, txt2img_negative_prompt, txt2img_prompt_style2, submit, _, _, txt2img_prompt_style_apply, txt2img_save_style, txt2img_paste, extra_networks_button, token_counter, token_button = create_toprow(is_img2img=False)
         txt_prompt_img = gr.File(label="", elem_id="txt2img_prompt_image", file_count="single", type="bytes", visible=False)
+
+        with FormRow(variant='compact', elem_id="txt2img_extra_networks", visible=False) as extra_networks:
+            from modules import ui_extra_networks
+            extra_networks_ui = ui_extra_networks.create_ui(extra_networks, extra_networks_button, 'txt2img')
 
         with gr.Row(elem_id='txt2img_progress_row'):
             with gr.Column(scale=1):
@@ -1233,11 +1243,13 @@ def create_ui():
 
             token_button.click(fn=wrap_queued_call(update_token_counter), inputs=[txt2img_prompt, steps], outputs=[token_counter])
 
+            ui_extra_networks.setup_ui(extra_networks_ui, txt2img_gallery)
+
     modules.scripts.scripts_current = modules.scripts.scripts_img2img
     modules.scripts.scripts_img2img.initialize_scripts(is_img2img=True)
 
     with gr.Blocks(analytics_enabled=False) as img2img_interface:
-        img2img_prompt, roll, img2img_prompt_style, img2img_negative_prompt, img2img_prompt_style2, submit, img2img_interrogate, img2img_deepbooru, img2img_prompt_style_apply, img2img_save_style, img2img_paste, token_counter, token_button = create_toprow(is_img2img=True)
+        img2img_prompt, roll, img2img_prompt_style, img2img_negative_prompt, img2img_prompt_style2, submit, img2img_interrogate, img2img_deepbooru, img2img_prompt_style_apply, img2img_save_style, img2img_paste, extra_networks_button, token_counter, token_button = create_toprow(is_img2img=True)
 
         with gr.Row(elem_id='img2img_progress_row'):
             img2img_prompt_img = gr.File(label="", elem_id="img2img_prompt_image", file_count="single", type="bytes", visible=False)
@@ -1249,6 +1261,10 @@ def create_ui():
                 progressbar = gr.HTML(elem_id="img2img_progressbar")
                 img2img_preview = gr.Image(elem_id='img2img_preview', visible=False)
                 setup_progressbar(progressbar, img2img_preview, 'img2img')
+
+        with FormRow(variant='compact', elem_id="img2img_extra_networks", visible=False) as extra_networks:
+            from modules import ui_extra_networks
+            extra_networks_ui_img2img = ui_extra_networks.create_ui(extra_networks, extra_networks_button, 'img2img')
 
         with gr.Row().style(equal_height=False):
             with gr.Column(variant='panel'):
@@ -1455,6 +1471,8 @@ def create_ui():
                 )
 
             token_button.click(fn=update_token_counter, inputs=[img2img_prompt, steps], outputs=[token_counter])
+
+            ui_extra_networks.setup_ui(extra_networks_ui_img2img, img2img_gallery)
 
             img2img_paste_fields = [
                 (img2img_prompt, "Prompt"),
@@ -2297,6 +2315,8 @@ def create_ui():
                 for cookie in cookies:
                     if cookie.startswith('access-token'):
                         access_token = cookie[len('access-token=') : ]
+                        if access_token.startswith('unsecure='):
+                            access_token = access_token[len('unsecure=') : ]
                         tokens.pop(access_token)
                         break
 
@@ -2349,8 +2369,7 @@ def create_ui():
                     items = []
                     for item in json.loads(response.text):
                         items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_available_sagemaker_endpoints(item)])
-
-                    additional_components = [gr.update(value=username), gr.update(value=items if items != [] else None), gr.update(), gr.update()]
+                    additional_components = [gr.update(value=f'<h1>{username}</h1>'), gr.update(value=items if items != [] else None), gr.update(), gr.update()]
                 else:
                     for item in json.loads(response.text):
                         if item['username'] == username:
@@ -2362,7 +2381,7 @@ def create_ui():
                     shared.refresh_sagemaker_endpoints(username)
                     shared.refresh_sd_models(username)
                     shared.refresh_checkpoints(shared.opts.sagemaker_endpoint,username)
-                    additional_components = [gr.update(value=username), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
+                    additional_components = [gr.update(value=f'<h1>{username}</h1>'), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
             else:
                 additional_components = [gr.update(value=username), gr.update(), gr.update(), gr.update()]
 

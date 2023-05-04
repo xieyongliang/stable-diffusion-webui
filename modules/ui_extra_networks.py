@@ -12,6 +12,8 @@ import html
 
 from modules.generation_parameters_copypaste import image_from_url_text
 
+import gradio as gr
+
 extra_pages = []
 allowed_dirs = set()
 
@@ -65,7 +67,7 @@ class ExtraNetworksPage:
         self.allow_negative_prompt = False
         self.metadata = {}
 
-    def refresh(self):
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
         pass
 
     def link_preview(self, filename):
@@ -81,7 +83,7 @@ class ExtraNetworksPage:
 
         return ""
 
-    def create_html(self, tabname):
+    def create_html(self, tabname, request: gr.Request = None):
         view = shared.opts.extra_networks_default_view
         items_html = ''
 
@@ -117,7 +119,7 @@ class ExtraNetworksPage:
             if metadata:
                 self.metadata[item["name"]] = metadata
 
-            items_html += self.create_html_for_item(item, tabname)
+            items_html += self.create_html_for_item(item, tabname, request)
 
         if items_html == '':
             dirs = "".join([f"<li>{x}</li>" for x in self.allowed_directories_for_previews()])
@@ -142,7 +144,7 @@ class ExtraNetworksPage:
     def allowed_directories_for_previews(self):
         return []
 
-    def create_html_for_item(self, item, tabname):
+    def create_html_for_item(self, item, tabname, request: gr.Request = None):
         preview = item.get("preview", None)
 
         onclick = item.get("onclick", None)
@@ -156,6 +158,13 @@ class ExtraNetworksPage:
         metadata = item.get("metadata")
         if metadata:
             metadata_button = f"<div class='metadata-button' title='Show metadata' onclick='extraNetworksRequestMetadata(event, {json.dumps(self.name)}, {json.dumps(item['name'])})'></div>"
+
+        local_preview = item["local_preview"]
+        if request:
+            username = shared.get_webui_username(request)
+            basename, fullname = os.path.split(local_preview)
+            filename, ext = os.path.splitext(fullname)
+            local_preview = f"{basename}/{username}/{filename}.{shared.opts.samples_format}"
 
         args = {
             "style": f"'{height}{width}{background_image}'",
@@ -259,16 +268,17 @@ def create_ui(container, button, tabname):
     state_visible = gr.State(value=False)
     button.click(fn=toggle_visibility, inputs=[state_visible], outputs=[state_visible, container, button])
 
-    def refresh():
+    def refresh(sagemaker_endpoint, request: gr.Request):
         res = []
 
         for pg in ui.stored_extra_pages:
-            pg.refresh()
-            res.append(pg.create_html(ui.tabname))
+            pg.refresh(sagemaker_endpoint, request)
+            res.append(pg.create_html(ui.tabname, request))
 
+        res.append(gr.update(choices = [x for x in shared.hypernetworks]))
         return res
 
-    button_refresh.click(fn=refresh, inputs=[], outputs=ui.pages)
+    button_refresh.click(fn=refresh, inputs=[shared.sagemaker_endpoint_component], outputs=ui.pages + [shared.sd_hypernetwork_component])
 
     return ui
 
@@ -281,10 +291,10 @@ def path_is_parent(parent_path, child_path):
 
 
 def setup_ui(ui, gallery):
-    def save_preview(index, images, filename):
+    def save_preview(index, images, filename, request: gr.Request):
         if len(images) == 0:
             print("There is no image in gallery to save as a preview.")
-            return [page.create_html(ui.tabname) for page in ui.stored_extra_pages]
+            return [page.create_html(ui.tabname, request) for page in ui.stored_extra_pages]
 
         index = int(index)
         index = 0 if index < 0 else index
@@ -302,6 +312,8 @@ def setup_ui(ui, gallery):
 
         assert is_allowed, f'writing to {filename} is not allowed'
 
+        os.makedirs(os.path.split(filename)[0], exist_ok=True)
+
         if geninfo:
             pnginfo_data = PngImagePlugin.PngInfo()
             pnginfo_data.add_text('parameters', geninfo)
@@ -309,7 +321,7 @@ def setup_ui(ui, gallery):
         else:
             image.save(filename)
 
-        return [page.create_html(ui.tabname) for page in ui.stored_extra_pages]
+        return [page.create_html(ui.tabname, request) for page in ui.stored_extra_pages]
 
     ui.button_save_preview.click(
         fn=save_preview,
@@ -317,4 +329,3 @@ def setup_ui(ui, gallery):
         inputs=[ui.preview_target_filename, gallery, ui.preview_target_filename],
         outputs=[*ui.pages]
     )
-

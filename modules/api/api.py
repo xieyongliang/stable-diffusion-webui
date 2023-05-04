@@ -4,7 +4,7 @@ import time
 import uvicorn
 from threading import Lock
 from io import BytesIO
-from gradio.processing_utils import decode_base64_to_file
+from gradio_client import utils as client_utils
 from fastapi import APIRouter, Depends, FastAPI, HTTPException
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from secrets import compare_digest
@@ -240,7 +240,7 @@ class Api:
         reqDict = setUpscalers(req)
 
         def prepareFiles(file):
-            file = decode_base64_to_file(file.data, file_path=file.name)
+            file = client_utils.decode_base64_to_file(file.data, file_path=file.name)
             file.orig_name = file.name
             return file
 
@@ -386,8 +386,6 @@ class Api:
             self.cache = json.load(open('cache', 'r'))
 
         for obj in objs:
-            if obj.key == key:
-                continue
             response = self.s3_client.head_object(
                 Bucket = bucket,
                 Key =  obj.key

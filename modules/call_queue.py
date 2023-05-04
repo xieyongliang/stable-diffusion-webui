@@ -73,10 +73,12 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
         httpuri = text['payload'][0]['httpuri']
         response = requests.get(url=httpuri)
-        processed = json.loads(response.text)
-        print(f"Time taken: {time.time() - start}s")
-
-        return processed
+        try:
+            processed = json.loads(response.text)
+            print(f"Time taken: {time.time() - start}s")
+            return processed
+        except Exception:
+            print(response.text)
 
     def sagemaker_inference(task, infer_type, username, sagemaker_endpoint, *args, **kwargs):
         if task == 'text-to-image' or task == 'image-to-image':
@@ -438,14 +440,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
 def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
     def f(request: gr.Request, *args, extra_outputs_array=extra_outputs, **kwargs):
-        tokens = shared.demo.server_app.tokens
-        cookies = shared.get_cookies(request)
-        access_token = None
-        for cookie in cookies:
-            if cookie.startswith('access-token'):
-                access_token = cookie[len('access-token=') : ]
-                break
-        username = tokens[access_token]
+        username = shared.get_webui_username(request)
 
         run_memmon = shared.opts.memmon_poll_rate > 0 and not shared.mem_mon.disabled and add_stats
         if run_memmon:

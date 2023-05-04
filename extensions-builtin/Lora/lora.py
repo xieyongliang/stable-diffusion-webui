@@ -81,21 +81,24 @@ class LoraOnDisk:
         self.filename = filename
         self.metadata = {}
 
-        _, ext = os.path.splitext(filename)
-        if ext.lower() == ".safetensors":
-            try:
-                self.metadata = sd_models.read_metadata_from_safetensors(filename)
-            except Exception as e:
-                errors.display(e, f"reading lora {filename}")
+        if shared.cmd_opts.pureui:
+            self.ssmd_cover_images = None
+        else:
+            _, ext = os.path.splitext(filename)
+            if ext.lower() == ".safetensors":
+                try:
+                    self.metadata = sd_models.read_metadata_from_safetensors(filename)
+                except Exception as e:
+                    errors.display(e, f"reading lora {filename}")
 
-        if self.metadata:
-            m = {}
-            for k, v in sorted(self.metadata.items(), key=lambda x: metadata_tags_order.get(x[0], 999)):
-                m[k] = v
+            if self.metadata:
+                m = {}
+                for k, v in sorted(self.metadata.items(), key=lambda x: metadata_tags_order.get(x[0], 999)):
+                    m[k] = v
 
-            self.metadata = m
+                self.metadata = m
 
-        self.ssmd_cover_images = self.metadata.pop('ssmd_cover_images', None)  # those are cover images and they are too big to display in UI as text
+            self.ssmd_cover_images = self.metadata.pop('ssmd_cover_images', None)  # those are cover images and they are too big to display in UI as text
 
 
 class LoraModule:
@@ -344,8 +347,6 @@ def list_available_loras(sagemaker_endpoint=None, username=None):
     available_loras.clear()
 
     if shared.cmd_opts.pureui:
-        print(sagemaker_endpoint)
-        print(username)
         if sagemaker_endpoint:
             api_endpoint = os.environ['api_endpoint']
             params = {'module': 'Lora', 'endpoint_name': sagemaker_endpoint}
@@ -354,10 +355,9 @@ def list_available_loras(sagemaker_endpoint=None, username=None):
             if response.status_code == 200:
                 items = json.loads(response.text)
                 for item in items:
+                    filename = item['model_name']
                     name = os.path.splitext(item['model_name'])[0]
-
-                    title = item['title']
-                    available_loras[name] = title
+                    available_loras[name] = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}')
     else:
         os.makedirs(shared.cmd_opts.lora_dir, exist_ok=True)
 
