@@ -702,13 +702,13 @@ def s3_download(s3uri, path):
     for obj in objects:
         response = s3_client.head_object(
             Bucket = bucket,
-            Key =  obj.key
+            Key =  obj['Key']
         )
-        obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
+        obj_key = 's3://{0}/{1}'.format(bucket, obj['Key'])
         if obj_key not in cache or cache[obj_key] != response['ETag']:
-            filename = obj.key[obj.key.rfind('/') + 1 : ]
+            filename = obj['Key'][obj['Key'].rfind('/') + 1 : ]
 
-            s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
+            s3_client.download_file(bucket, obj['Key'], os.path.join(path, filename))
             cache[obj_key] = response['ETag']
 
     json.dump(cache, open('cache', 'w'))
