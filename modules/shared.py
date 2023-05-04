@@ -687,7 +687,7 @@ def s3_download(s3uri, path):
 
     objects = []
     paginator = s3_client.get_paginator('list_objects_v2')
-    page_iterator = paginator.paginate(Bucket=key, Prefix=key)
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
     for page in page_iterator:
         if 'Contents' in page:
             for obj in page['Contents']:
