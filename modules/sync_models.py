@@ -6,7 +6,7 @@ import modules.script_callbacks as script_callbacks
 from modules.shared import syncLock
 
 FREESPACE = 20
-def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+def check_space_s3_download(s3_client, bucket_name, s3_folder, local_folder, file, size, mode):
     print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
     if file == '' or None:
         print('Debug log:file is empty, return')
@@ -38,7 +38,7 @@ def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,si
     else:
         return False
 
-def free_local_disk(local_folder,size,mode):
+def free_local_disk(local_folder, size,mode):
     disk_usage = psutil.disk_usage('/tmp')
     freespace = disk_usage.free/(1024**3)
     if freespace - size >= FREESPACE:
@@ -75,7 +75,7 @@ def free_local_disk(local_folder,size,mode):
         print(f"Remove file: {oldest_file} now left space:{freespace}") 
         filename = os.path.basename(oldest_file)
 
-def list_s3_objects(s3_client,bucket_name, prefix=''):
+def list_s3_objects(s3_client, bucket_name, prefix=''):
     objects = []
     paginator = s3_client.get_paginator('list_objects_v2')
     page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
@@ -142,9 +142,7 @@ def initial_s3_download(s3_client, s3_folder, local_folder,cache_dir,mode):
     with open(s3_file_name, "w") as f:
         json.dump(s3_files, f)
     
-
-
-def sync_s3_folder(local_folder,cache_dir,mode):
+def sync_s3_folder(local_folder, cache_dir,mode):
     s3 = boto3.client('s3')
     def sync(mode):
         # print (f'sync:{mode}')
@@ -221,7 +219,6 @@ def sync_s3_folder(local_folder,cache_dir,mode):
                 script_callbacks.update_cn_models_callback()
             elif mode == 'lora':
                 print('Nothing To do')
-
 
     # Create a thread function to keep syncing with the S3 folder
     def sync_thread(mode):  

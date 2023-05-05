@@ -308,10 +308,10 @@ def webui():
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
-        initial_s3_download(s3_client,shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
-        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
-        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
-        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
+        initial_s3_download(shared.s3_client, shared.s3_folder_sd, sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(sd_models_tmp_dir, cache_dir, 'sd')
+        sync_s3_folder(cn_models_tmp_dir, cache_dir, 'cn')
+        sync_s3_folder(lora_models_tmp_dir, cache_dir, 'lora')
     initialize()
 
     while 1:
