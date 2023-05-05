@@ -796,7 +796,6 @@ class Api:
             return InvocationsErrorResponse(error = str(e))
 
     def ping(self):
-        # print('-------ping------')
         return {'status': 'Healthy'}
 
     def launch(self, server_name, port):
