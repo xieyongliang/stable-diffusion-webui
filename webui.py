@@ -73,15 +73,6 @@ if cmd_opts.train:
     from extensions.sd_dreambooth_extension.scripts.dreambooth import performance_wizard, training_wizard
     from extensions.sd_dreambooth_extension.dreambooth.db_concept import Concept
     from modules import paths
-    import glob
-else:
-    import requests
-    cache = dict()
-    region_name = boto3.session.Session().region_name
-    s3_client = boto3.client('s3', region_name=region_name)
-    endpointUrl = s3_client.meta.endpoint_url
-    s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
-    s3_resource= boto3.resource('s3')
 
 startup_timer.record("other imports")
 
@@ -260,8 +251,8 @@ def webui():
     if launch_api:
         models_config_s3uri = os.environ.get('models_config_s3uri', None)
         if models_config_s3uri:
-            bucket, key = get_bucket_and_key(models_config_s3uri)
-            s3_object = s3_client.get_object(Bucket=bucket, Key=key)
+            bucket, key = shared.get_bucket_and_key(models_config_s3uri)
+            s3_object = shared.s3_client.get_object(Bucket=bucket, Key=key)
             bytes = s3_object["Body"].read()
             payload = bytes.decode('utf8')
             huggingface_models = json.loads(payload).get('huggingface_models', None)
@@ -292,14 +283,14 @@ def webui():
             for s3_model in s3_models:
                 uri = s3_model['uri']
                 name = s3_model['name']
-                s3_download(uri, f'/tmp/models/{name}')
+                shared.s3_download(uri, f'/tmp/models/{name}')
 
         if http_models:
             for http_model in http_models:
                 uri = http_model['uri']
                 filename = http_model['filename']
                 name = http_model['name']
-                http_download(uri, f'/tmp/models/{name}/{filename}')
+                shared.http_download(uri, f'/tmp/models/{name}/{filename}')
 
         print(os.system('df -h'))
         sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
@@ -424,44 +415,6 @@ def webui():
         startup_timer.record("initialize extra networks")
 
 if cmd_opts.train:
-    def upload_s3files(s3uri, file_path_with_pattern):
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-
-        s3_resource = boto3.resource('s3')
-        s3_bucket = s3_resource.Bucket(bucket)
-
-        try:
-            for file_path in glob.glob(file_path_with_pattern):
-                file_name = os.path.basename(file_path)
-                __s3file = f'{key}{file_name}'
-                print(file_path, __s3file)
-                s3_bucket.upload_file(file_path, __s3file)
-        except ClientError as e:
-            print(e)
-            return False
-        return True
-
-    def upload_s3folder(s3uri, file_path):
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-
-        s3_resource = boto3.resource('s3')
-        s3_bucket = s3_resource.Bucket(bucket)
-
-        try:
-            for path, _, files in os.walk(file_path):
-                for file in files:
-                    dest_path = path.replace(file_path,"")
-                    __s3file = f'{key}{dest_path}/{file}'
-                    __local_file = os.path.join(path, file)
-                    print(__local_file, __s3file)
-                    s3_bucket.upload_file(__local_file, __s3file)
-        except Exception as e:
-            print(e)
-
     def train():
         initialize()
 
@@ -615,34 +568,33 @@ if cmd_opts.train:
 
         try:
             print('Uploading SD Models...')
-            upload_s3files(
+            shared.upload_s3files(
                 sd_models_s3uri,
                 os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
             )
             if db_save_safetensors:
-                upload_s3files(
+                shared.upload_s3files(
                     sd_models_s3uri,
                     os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.safetensors')
                 )
             else:
-                upload_s3files(
+                shared.upload_s3files(
                     sd_models_s3uri,
                     os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.ckpt')
                 )
             print('Uploading DB Models...')
-            upload_s3folder(
+            shared.upload_s3folder(
                 f'{db_models_s3uri}{db_model_name}',
                 os.path.join(db_model_dir, db_model_name)
             )
             if db_config.use_lora:
                 print('Uploading Lora Models...')
-                upload_s3files(
+                shared.upload_s3files(
                     lora_models_s3uri,
                     os.path.join(lora_model_dir, f'{db_model_name}_*.pt')
                 )
             os.makedirs(os.path.dirname("/opt/ml/model/"), exist_ok=True)
             os.makedirs(os.path.dirname("/opt/ml/model/Stable-diffusion/"), exist_ok=True)
-            os.makedirs(os.path.dirname("/opt/ml/model/ControlNet/"), exist_ok=True)
             train_steps=int(db_config.revision)
             model_file_basename = f'{db_model_name}_{train_steps}_lora' if db_config.use_lora else f'{db_model_name}_{train_steps}'
             f1=os.path.join(sd_models_dir, db_model_name, f'{model_file_basename}.yaml')
@@ -659,45 +611,6 @@ if cmd_opts.train:
         except Exception as e:
             traceback.print_exc()
             print(e)
-else:
-    def get_bucket_and_key(s3uri):
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-        return bucket, key
-
-    def s3_download(s3uri, path):
-        global cache
-
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-
-        if os.path.isfile('cache'):
-            cache = json.load(open('cache', 'r'))
-
-        response = s3_client.head_object(
-            Bucket=bucket,
-            Key=key
-        )
-        if key not in  cache or cache[key] != response['ETag']:
-            filename = key[key.rfind('/') + 1 : ]
-
-            s3_client.download_file(bucket, key, os.path.join(path, filename))
-            cache[key] = response['ETag']
-
-        json.dump(cache, open('cache', 'w'))
-
-    def http_download(httpuri, path):
-        try:
-            with requests.get(httpuri, stream=True) as r:
-                r.raise_for_status()
-                with open(path, 'wb') as f:
-                    for chunk in r.iter_content(chunk_size=8192):
-                        f.write(chunk)
-        except Exception as e:
-            print(f'http_download Exception:{e}')
-
 
 if __name__ == "__main__":
     if cmd_opts.train:
