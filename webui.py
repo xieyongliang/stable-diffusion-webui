@@ -63,6 +63,8 @@ import boto3
 import json
 import shutil
 import traceback
+from modules.sync_models import initial_s3_download,sync_s3_folder
+
 
 if cmd_opts.train:
     from botocore.exceptions import ClientError
@@ -290,6 +292,26 @@ def webui():
                 name = http_model['name']
                 shared.http_download(uri, f'/tmp/models/{name}/{filename}')
 
+        print(os.system('df -h'))
+        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
+        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
+        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        cache_dir = f"{shared.tmp_cache_dir}/"
+        session = boto3.Session()
+        region_name = session.region_name
+        sts_client = session.client('sts')
+        account_id = sts_client.get_caller_identity()['Account']
+        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+        if not shared.models_s3_bucket:
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        initial_s3_download(s3_client,shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
+        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
     initialize()
 
     while 1:
