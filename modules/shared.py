@@ -15,6 +15,8 @@ import modules.styles
 import modules.devices as devices
 from modules import localization, script_loading, errors, ui_components, shared_items, cmd_args
 from modules.paths_internal import models_path, script_path, data_path, sd_configs_path, sd_default_config, sd_model_file, default_sd_model_file, extensions_dir, extensions_builtin_dir
+from botocore.exceptions import ClientError
+import glob
 
 demo = None
 
@@ -719,3 +721,35 @@ def http_download(httpuri, path):
         with open(path, 'wb') as f:
             for chunk in r.iter_content(chunk_size=8192):
                 f.write(chunk)
+
+def upload_s3files(s3uri, file_path_with_pattern):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for file_path in glob.glob(file_path_with_pattern):
+            file_name = os.path.basename(file_path)
+            __s3file = f'{key}{file_name}'
+            print(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
+    except ClientError as e:
+        print(e)
+        return False
+    return True
+
+def upload_s3folder(s3uri, file_path):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for path, _, files in os.walk(file_path):
+            for file in files:
+                dest_path = path.replace(file_path,"")
+                __s3file = f'{key}{dest_path}/{file}'
+                __local_file = os.path.join(path, file)
+                print(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
+    except Exception as e:
+        print(e)
