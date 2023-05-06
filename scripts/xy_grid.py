@@ -19,6 +19,9 @@ import modules.sd_samplers
 import modules.sd_models
 import re
 
+fill_values_symbol = "\U0001f4d2"  # 📒
+
+from modules.ui_components import ToolButton
 
 def apply_field(field):
     def fun(p, x, xs):
@@ -143,9 +146,21 @@ def str_permutations(x):
     """dummy function for specifying it in AxisOption's type when you want to get a list of permutations"""
     return x
 
-AxisOption = namedtuple("AxisOption", ["label", "type", "apply", "format_value", "confirm"])
-AxisOptionImg2Img = namedtuple("AxisOptionImg2Img", ["label", "type", "apply", "format_value", "confirm"])
+class AxisOption:
+    def __init__(self, label, type, apply, format_value=format_value_add_label, confirm=None, cost=0.0, choices=None):
+        self.label = label
+        self.type = type
+        self.apply = apply
+        self.format_value = format_value
+        self.confirm = confirm
+        self.cost = cost
+        self.choices = choices
 
+
+class AxisOptionImg2Img(AxisOption):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.is_img2img = True
 
 axis_options = [
     AxisOption("Nothing", str, do_nothing, format_nothing, None),
@@ -157,7 +172,7 @@ axis_options = [
     AxisOption("Prompt S/R", str, apply_prompt, format_value, None),
     AxisOption("Prompt order", str_permutations, apply_order, format_value_join_list, None),
     AxisOption("Sampler", str, apply_sampler, format_value, confirm_samplers),
-    AxisOption("Checkpoint name", str, apply_checkpoint, format_value, confirm_checkpoints),
+    AxisOption("Checkpoint name", str, apply_checkpoint, format_value=format_value, confirm=confirm_checkpoints, cost=1.0, choices=lambda: list(modules.sd_models.checkpoints_list)),
     AxisOption("Hypernetwork", str, apply_hypernetwork, format_value, confirm_hypernetworks),
     AxisOption("Hypernet str.", float, apply_hypernetwork_strength, format_value_add_label, None),
     AxisOption("Sigma Churn", float, apply_field("s_churn"), format_value_add_label, None),
@@ -250,19 +265,34 @@ class Script(scripts.Script):
         return "X/Y plot"
 
     def ui(self, is_img2img):
-        current_axis_options = [x for x in axis_options if type(x) == AxisOption or type(x) == AxisOptionImg2Img and is_img2img]
+        self.current_axis_options = [x for x in axis_options if type(x) == AxisOption or type(x) == AxisOptionImg2Img and is_img2img]
 
         with gr.Row():
-            x_type = gr.Dropdown(label="X type", choices=[x.label for x in current_axis_options], value=current_axis_options[1].label, type="index", elem_id="x_type")
+            x_type = gr.Dropdown(label="X type", choices=[x.label for x in self.current_axis_options], value=self.current_axis_options[1].label, type="index", elem_id="x_type")
             x_values = gr.Textbox(label="X values", lines=1)
+            fill_x_button = ToolButton(value=fill_values_symbol, elem_id="xy_grid_fill_x_tool_button", visible=False)
 
         with gr.Row():
-            y_type = gr.Dropdown(label="Y type", choices=[x.label for x in current_axis_options], value=current_axis_options[0].label, type="index", elem_id="y_type")
+            y_type = gr.Dropdown(label="Y type", choices=[x.label for x in self.current_axis_options], value=self.current_axis_options[0].label, type="index", elem_id="y_type")
             y_values = gr.Textbox(label="Y values", lines=1)
+            fill_y_button = ToolButton(value=fill_values_symbol, elem_id="xy_grid_fill_y_tool_button", visible=False)
         
         draw_legend = gr.Checkbox(label='Draw legend', value=True)
         include_lone_images = gr.Checkbox(label='Include Separate Images', value=False)
         no_fixed_seeds = gr.Checkbox(label='Keep -1 for seeds', value=False)
+
+        def fill(x_type):
+            axis = self.current_axis_options[x_type]
+            return ", ".join(axis.choices()) if axis.choices else gr.update()
+
+        fill_x_button.click(fn=fill, inputs=[x_type], outputs=[x_values])
+        fill_y_button.click(fn=fill, inputs=[y_type], outputs=[y_values])
+
+        def select_axis(x_type):
+            return gr.Button.update(visible=self.current_axis_options[x_type].choices is not None)
+
+        x_type.change(fn=select_axis, inputs=[x_type], outputs=[fill_x_button])
+        y_type.change(fn=select_axis, inputs=[y_type], outputs=[fill_y_button])
 
         return [x_type, x_values, y_type, y_values, draw_legend, include_lone_images, no_fixed_seeds]
 
