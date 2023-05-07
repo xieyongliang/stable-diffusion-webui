@@ -202,8 +202,6 @@ def load_scripts():
         finally:
             sys.path = syspath
             current_basedir = paths.script_path
-    print('scripts_data',scripts_data)
-
 
 def wrap_call(func, filename, funcname, *args, default=None, **kwargs):
     try:
