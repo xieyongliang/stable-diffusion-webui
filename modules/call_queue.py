@@ -64,11 +64,19 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 return None
 
             response = requests.get(url=f'{shared.api_endpoint}/s3', params = params)
-            text = json.loads(response.text)
-
-            if text['count'] > 0:
-                break
+            if response.status_code == 200:
+                try:
+                    text = json.loads(response.text)
+                    if text['count'] > 0:
+                        break
+                    else:
+                        time.sleep(1)
+                except:
+                    print(response.text)
+                    time.sleep(1)
             else:
+                print(response.status_code)
+                print(response.text)
                 time.sleep(1)
 
         httpuri = text['payload'][0]['httpuri']

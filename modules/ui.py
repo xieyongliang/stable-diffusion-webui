@@ -555,8 +555,7 @@ def apply_setting(key, value):
     return value
 
 
-def update_generation_info(args):
-    generation_info, html_info, img_index = args
+def update_generation_info(generation_info, html_info, img_index):
     try:
         generation_info = json.loads(generation_info)
         if img_index < 0 or img_index >= len(generation_info["infotexts"]):
