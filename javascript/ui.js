@@ -7,12 +7,24 @@ function set_theme(theme){
     }
 }
 
+function all_gallery_buttons() {
+    var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem')[0].querySelectorAll('.thumbnail-item.thumbnail-small');
+    var visibleGalleryButtons = [];
+    allGalleryButtons.forEach(function(elem) {
+        if (elem.parentElement.offsetParent) {
+            visibleGalleryButtons.push(elem);
+        }
+    })
+    console.log(1, allGalleryButtons, visibleGalleryButtons);
+    return visibleGalleryButtons;
+}
+
 function selected_gallery_index(){
-    var buttons = gradioApp().querySelectorAll('[style="display: block;"].tabitem div[id$=_gallery] .gallery-item')
-    var button = gradioApp().querySelector('[style="display: block;"].tabitem div[id$=_gallery] .gallery-item.\\!ring-2')
+    var buttons = all_gallery_buttons();
 
     var result = -1
-    buttons.forEach(function(v, i){ if(v==button) { result = i } })
+
+    buttons.forEach(function(v, i){ if(v.classList.contains('selected')) { result = i } })
 
     return result
 }
