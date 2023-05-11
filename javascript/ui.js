@@ -121,13 +121,20 @@ function create_submit_args(args){
     return res
 }
 
+function showSubmitButtons(tabname, show){
+    gradioApp().getElementById(tabname+'_interrupt').style.display = show ? "none" : "block"
+    gradioApp().getElementById(tabname+'_skip').style.display = show ? "none" : "block"
+}
+
 function submit(){
+    showSubmitButtons('txt2img')
     requestProgress('txt2img')
 
     return create_submit_args(arguments)
 }
 
 function submit_img2img(){
+    showSubmitButtons('img2img')
     requestProgress('img2img')
 
     res = create_submit_args(arguments)

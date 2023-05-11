@@ -105,12 +105,14 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                         script_arg = {}
                         for key in args[i].__dict__:
                             if key == 'image':
-                                script_arg[key] = {}
                                 if args[i].__dict__[key]:
+                                    script_arg[key] = {}
                                     if 'image' in args[i].__dict__[key]:
                                         script_arg[key]['image'] = encode_image_to_base64(Image.fromarray(args[i].__dict__[key]['image']))
                                     if 'mask' in args[i].__dict__[key]:
                                         script_arg[key]['mask'] = encode_image_to_base64(Image.fromarray(args[i].__dict__[key]['mask']))
+                                else:
+                                    script_arg[key] = None
                             else:
                                 script_arg[key] = args[i].__dict__[key]
                         script_args.append(script_arg)
@@ -232,6 +234,8 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                                         script_arg[key]['image'] = encode_image_to_base64(Image.fromarray(args[i].__dict__[key]['image']))
                                     if 'mask' in args[i].__dict__[key]:
                                         script_arg[key]['mask'] = encode_image_to_base64(Image.fromarray(args[i].__dict__[key]['mask']))
+                                else:
+                                    script_arg[key] = None
                             else:
                                 script_arg[key] = args[i].__dict__[key]
                         script_args.append(script_arg)
