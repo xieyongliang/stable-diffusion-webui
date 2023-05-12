@@ -15,7 +15,6 @@ function all_gallery_buttons() {
             visibleGalleryButtons.push(elem);
         }
     })
-    console.log(1, allGalleryButtons, visibleGalleryButtons);
     return visibleGalleryButtons;
 }
 
@@ -154,8 +153,6 @@ function ask_for_style_name(_, prompt_text, negative_prompt_text) {
 
 opts = {}
 function apply_settings(jsdata){
-    console.log(jsdata)
-
     opts = JSON.parse(jsdata)
 
     return jsdata

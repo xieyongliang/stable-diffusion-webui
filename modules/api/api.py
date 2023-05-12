@@ -157,7 +157,7 @@ class Api:
             "sd_model": shared.sd_model,
             "sampler_name": validate_sampler_name(txt2imgreq.sampler_name or txt2imgreq.sampler_index),
             "do_not_save_samples": True,
-            "do_not_save_grid": True
+            "do_not_save_grid": False
             }
         )
         if populate.sampler_name:
@@ -191,7 +191,7 @@ class Api:
             "sd_model": shared.sd_model,
             "sampler_name": validate_sampler_name(img2imgreq.sampler_name or img2imgreq.sampler_index),
             "do_not_save_samples": True,
-            "do_not_save_grid": True,
+            "do_not_save_grid": False,
             "mask": mask
             }
         )
