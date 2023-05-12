@@ -170,7 +170,7 @@ def save_files(username,js_data, images, do_make_zip, index):
     data = json.loads(js_data)
 
     p = MyObject(data)
-    path = opts.outdir_save
+    path = opts.outdir_save +'/'+username
     save_to_dirs = opts.use_save_to_dirs_for_ui
     extension: str = opts.samples_format
     start_index = 0
@@ -180,9 +180,9 @@ def save_files(username,js_data, images, do_make_zip, index):
         images = [images[index]]
         start_index = index
 
-    os.makedirs(opts.outdir_save, exist_ok=True)
+    os.makedirs(opts.outdir_save+'/'+username, exist_ok=True)
 
-    with open(os.path.join(opts.outdir_save, "log.csv"), "w", encoding="utf8", newline='') as file:
+    with open(os.path.join(opts.outdir_save+'/'+username, "log.csv"), "w", encoding="utf8", newline='') as file:
         at_start = file.tell() == 0
         writer = csv.writer(file)
         if at_start:
@@ -208,7 +208,7 @@ def save_files(username,js_data, images, do_make_zip, index):
         writer.writerow([data["prompt"], data["seed"], data["width"], data["height"], data["sampler_name"], data["cfg_scale"], data["steps"], filenames[0], data["negative_prompt"]])
     
     timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
-    logfile = os.path.join(opts.outdir_save, "log.csv")
+    logfile = os.path.join(opts.outdir_save+'/'+username, "log.csv")
     s3folder = save_images_to_s3(fullfns+[logfile],timestamp,username)
     # Make Zip
     if do_make_zip:
@@ -747,6 +747,8 @@ def create_ui():
     modules.scripts.scripts_current = modules.scripts.scripts_txt2img
     modules.scripts.scripts_txt2img.initialize_scripts(is_img2img=False)
 
+    # print(modules.scripts.scripts_data)
+
     interfaces = []
 
     ##add River
@@ -812,15 +814,25 @@ def create_ui():
             inputs=[image],
             outputs=[html, generation_info, html2],
         )
+    
+    script_callbacks.ui_settings_callback()
 
     ui_tabs = script_callbacks.ui_tabs_callback()
+    
     dreambooth_tab = None
-
-    for ui_tab in ui_tabs:
-        if ui_tab[2] != 'dreambooth_interface':
-            interfaces += [ui_tab]
-        else:
+    images_history_ui_tab = None
+    # for ui_tab in ui_tabs: 
+    #     if ui_tab[2] != 'dreambooth_interface' :
+    #         interfaces += [ui_tab]
+    #     else:
+    #         dreambooth_tab = ui_tab[0]
+    for ui_tab in ui_tabs: 
+        if ui_tab[2] == 'dreambooth_interface':
             dreambooth_tab = ui_tab[0]
+        elif ui_tab[2] == 'images_history':
+            images_history_ui_tab = ui_tab
+        else:
+            interfaces += [ui_tab]
 
 
     def create_setting_component(key, is_quicksettings=False):
@@ -869,7 +881,7 @@ def create_ui():
     components = []
     global component_dict
 
-    script_callbacks.ui_settings_callback()
+   
     opts.reorder()
 
     def run_settings(username, *args):
@@ -2249,7 +2261,6 @@ def create_ui():
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
             (pnginfo_interface, "PNG Info", "pnginfo"),
-            # (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
             (train_interface, "Train", "ti"),
             (user_interface, "User", "user")
         ]
@@ -2259,7 +2270,6 @@ def create_ui():
             (img2img_interface, "img2img", "img2img"),
             (extras_interface, "Extras", "extras"),
             (pnginfo_interface, "PNG Info", "pnginfo"),
-            # (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
             (train_interface, "Train", "ti"),
         ]
 
@@ -2281,8 +2291,9 @@ def create_ui():
 
 #    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
+    interfaces += [images_history_ui_tab]
     interfaces +=  [(modelmerger_interface,"Checkpoint Merger", "modelmerger")]
-    interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
+    # interfaces += [(imagesviewer_interface,"Images Viewer","imagesviewer")]
 
     extensions_interface = ui_extensions.create_ui()
     interfaces += [(extensions_interface, "Extensions", "extensions")]
