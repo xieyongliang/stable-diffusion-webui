@@ -559,6 +559,7 @@ def sync_images_from_s3():
     bucket_name = get_default_sagemaker_bucket().replace('s3://','')
     # Create an empty file if not exist
     cache_dir = opts.outdir_txt2img_samples.split('/')[0]
+    os.makedirs(cache_dir, exist_ok=True)
     cache_file_name = os.path.join(cache_dir,'cache_image_files_index.json')
     if os.path.isfile(cache_file_name) == False:
         with open(cache_file_name, "w") as f:
@@ -579,7 +580,7 @@ def sync_images_from_s3():
                 etag = obj.e_tag.replace('"','')
                 if caches.get(etag): 
                     continue
-                print(f'download:{new_obj_key}')
+                # print(f'download:{new_obj_key}')
                 if len(new_obj_key) >=3 : ## {username}/{task}/{image}
                     task_name = new_obj_key[1]
                     if task_name == 'text-to-image':
@@ -695,17 +696,15 @@ def webui():
         sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
 
     ## end
-
     initialize()
-    sync_images_from_s3()
-
     while 1:
         if shared.opts.clean_temp_dir_at_start:
             ui_tempdir.cleanup_tmpdr()
 
         modules.script_callbacks.before_ui_callback()
         shared.demo = modules.ui.create_ui()
-
+        if cmd_opts.pureui:
+            sync_images_from_s3()
         app, local_url, share_url = shared.demo.queue(concurrency_count=5, max_size=20).launch(
             share=cmd_opts.share,
             server_name=server_name,
@@ -783,6 +782,8 @@ def webui():
 
         extra_networks.initialize()
         extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
+    
+
 
 
 def upload_s3files(s3uri, file_path_with_pattern):
