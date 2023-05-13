@@ -101,6 +101,35 @@ def encode_pil_to_base64(image):
 
     return base64.b64encode(bytes_data)
 
+def export_pil_to_bytes(image):
+    with io.BytesIO() as output_bytes:
+
+        if opts.samples_format.lower() == 'png':
+            use_metadata = False
+            metadata = PngImagePlugin.PngInfo()
+            for key, value in image.info.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    metadata.add_text(key, value)
+                    use_metadata = True
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=opts.jpeg_quality)
+
+        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
+            parameters = image.info.get('parameters', None)
+            exif_bytes = piexif.dump({
+                "Exif": { piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode") }
+            })
+            if opts.samples_format.lower() in ("jpg", "jpeg"):
+                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=opts.jpeg_quality)
+            else:
+                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=opts.jpeg_quality)
+
+        else:
+            raise HTTPException(status_code=500, detail="Invalid image format")
+
+        bytes_data = output_bytes.getvalue()
+
+    return bytes_data
+
 def api_middleware(app: FastAPI):
     rich_available = True
     try:
@@ -709,22 +738,13 @@ class Api:
             bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
             images = []
             for b64image in b64images:
-                image = decode_base64_to_image(b64image).convert('RGB')
-                output = io.BytesIO()
-
-                try:
-                    if not quality:
-                        quality = 95
-
-                    image.save(output, format='PNG', quality=quality)
-                except Exception:
-                    image.save(output, format='PNG', quality=95)
-
-                image_id = str(uuid.uuid4())
-                shared.s3_client.put_object(
-                    Body=output.getvalue(),
+                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
+                image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
+                suffix = opts.samples_format.lower()
+                self.s3_client.put_object(
+                    Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}/{image_id}.png'
+                    Key=f'{key}{image_id}.{suffix}'
                 )
                 images.append(f's3://{bucket}/{key}/{image_id}.png')
             return images
