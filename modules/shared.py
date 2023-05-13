@@ -26,6 +26,7 @@ s3_folder_sd = None
 s3_folder_cn = None
 s3_folder_lora = None
 syncLock = threading.Lock()
+sync_images_lock = threading.Lock()
 tmp_models_dir = '/tmp/models'
 tmp_cache_dir = '/tmp/model_sync_cache'
 #end 

@@ -268,7 +268,6 @@ class ScriptRunner:
             inputs += controls
             inputs_alwayson += [script.alwayson for _ in controls]
             script.args_to = len(inputs)
-            print('---script---', script, script.args_from, script.args_to)
 
         for script in self.alwayson_scripts:
             with gr.Group() as group:
@@ -321,7 +320,6 @@ class ScriptRunner:
             return None
 
         script_args = args[script.args_from:script.args_to]
-        print('---script-run---', *args, script, script.args_from, script.args_to, script_args)
         processed = script.run(p, *script_args)
 
         shared.total_tqdm.clear()

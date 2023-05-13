@@ -39,7 +39,7 @@ import modules.script_callbacks
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts, opts, sd_model,syncLock,de_register_model
+from modules.shared import cmd_opts, opts, sd_model,syncLock,sync_images_lock,de_register_model,get_default_sagemaker_bucket
 import modules.hypernetworks.hypernetwork
 import boto3
 import threading
@@ -69,6 +69,8 @@ s3_client = boto3.client('s3', region_name=region_name)
 endpointUrl = s3_client.meta.endpoint_url
 s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
 s3_resource= boto3.resource('s3')
+s3_image_path_prefix = 'stable-diffusion-webui/generated/'
+
 
 def s3_download(s3uri, path):
     global cache
@@ -552,6 +554,76 @@ def register_cn_models(cn_models_dir):
             response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
             print(response)
 
+def sync_images_from_s3():
+    s3 = boto3.resource('s3')
+    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    # Create an empty file if not exist
+    cache_dir = opts.outdir_txt2img_samples.split('/')[0]
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file_name = os.path.join(cache_dir,'cache_image_files_index.json')
+    if os.path.isfile(cache_file_name) == False:
+        with open(cache_file_name, "w") as f:
+            cache_files = {}
+            json.dump(cache_files, f) 
+
+
+    def download_images_for_ui(bucket_name):
+        bucket = s3.Bucket(bucket_name)
+        caches = {}
+        with open(cache_file_name, "r") as f:
+            _cache = json.load(f)  
+            caches = _cache.copy()
+
+        for obj in bucket.objects.all():
+            if obj.key.startswith(s3_image_path_prefix):
+                new_obj_key = obj.key.replace(s3_image_path_prefix,'').split('/')
+                etag = obj.e_tag.replace('"','')
+                if caches.get(etag): 
+                    continue
+                # print(f'download:{new_obj_key}')
+                if len(new_obj_key) >=3 : ## {username}/{task}/{image}
+                    task_name = new_obj_key[1]
+                    if task_name == 'text-to-image':
+                        dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    elif task_name == 'image-to-image':
+                        dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0],new_obj_key[1])             
+                    elif task_name == 'extras-single-image':
+                        dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])            
+                    elif task_name == 'extras-batch-images':
+                        dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])  
+                    else:
+                        dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    os.makedirs(dir_name, exist_ok=True)
+                    bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
+                elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
+                    os.makedirs(dir_name, exist_ok=True)
+                    bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[1]))
+                else: ## {image} default save to txt_img
+                    dir_name = os.path.join(opts.outdir_txt2img_samples) 
+                    os.makedirs(dir_name, exist_ok=True)
+                    bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[0]))
+                caches[etag] = 1
+
+        with open(cache_file_name, "w") as f:
+                    json.dump(caches, f) 
+
+    
+    # Create a thread function to keep syncing with the S3 folder
+    def sync_thread(bucket_name):  
+        while True:
+            sync_images_lock.acquire()
+            download_images_for_ui(bucket_name)
+            sync_images_lock.release()
+            time.sleep(10)
+    thread = threading.Thread(target=sync_thread,args=(bucket_name,))
+    thread.start()
+    print (f'{bucket_name} images sync thread start ')
+                        
+
+
+
+
 def webui():
     launch_api = cmd_opts.api
 
@@ -624,16 +696,15 @@ def webui():
         sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
 
     ## end
-
     initialize()
-
     while 1:
         if shared.opts.clean_temp_dir_at_start:
             ui_tempdir.cleanup_tmpdr()
 
         modules.script_callbacks.before_ui_callback()
         shared.demo = modules.ui.create_ui()
-
+        if cmd_opts.pureui:
+            sync_images_from_s3()
         app, local_url, share_url = shared.demo.queue(concurrency_count=5, max_size=20).launch(
             share=cmd_opts.share,
             server_name=server_name,
@@ -711,6 +782,8 @@ def webui():
 
         extra_networks.initialize()
         extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
+    
+
 
 
 def upload_s3files(s3uri, file_path_with_pattern):
