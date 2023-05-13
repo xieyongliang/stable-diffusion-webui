@@ -31,6 +31,7 @@ import piexif.helper
 import numpy as np
 import uuid
 import modules.sd_vae
+from datetime import datetime
 
 def upscaler_to_index(name: str):
     try:
@@ -101,6 +102,35 @@ def encode_pil_to_base64(image):
 def encode_np_to_base64(image):
     pil = Image.fromarray(image)
     return encode_pil_to_base64(pil)
+
+def export_pil_to_bytes(image):
+    with io.BytesIO() as output_bytes:
+
+        if opts.samples_format.lower() == 'png':
+            use_metadata = False
+            metadata = PngImagePlugin.PngInfo()
+            for key, value in image.info.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    metadata.add_text(key, value)
+                    use_metadata = True
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=opts.jpeg_quality)
+
+        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
+            parameters = image.info.get('parameters', None)
+            exif_bytes = piexif.dump({
+                "Exif": { piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode") }
+            })
+            if opts.samples_format.lower() in ("jpg", "jpeg"):
+                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=opts.jpeg_quality)
+            else:
+                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=opts.jpeg_quality)
+
+        else:
+            raise HTTPException(status_code=500, detail="Invalid image format")
+
+        bytes_data = output_bytes.getvalue()
+
+    return bytes_data
 
 class Api:
     def __init__(self, app: FastAPI, queue_lock: Lock):
@@ -406,14 +436,13 @@ class Api:
             generated_images_s3uri = f'{generated_images_s3uri}{username}/{task}/'
             bucket, key = self.get_bucket_and_key(generated_images_s3uri)
             for b64image in b64images:
-                image = decode_base64_to_image(b64image).convert('RGB')
-                output = io.BytesIO()
-                image.save(output, format='JPEG')
-                image_id = str(uuid.uuid4())
+                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
+                image_id = datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
+                suffix = opts.samples_format.lower()
                 self.s3_client.put_object(
-                    Body=output.getvalue(),
+                    Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}{image_id}.jpg'
+                    Key=f'{key}{image_id}.{suffix}'
                 )
 
     def invocations(self, req: InvocationsRequest):
