@@ -138,7 +138,7 @@ function modalKeyHandler(event) {
 
 function showGalleryImage() {
     setTimeout(function() {
-        fullImg_preview = gradioApp().querySelectorAll('img.w-full.object-contain')
+        fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > div > img')
 
         if (fullImg_preview != null) {
             fullImg_preview.forEach(function function_name(e) {
@@ -196,7 +196,7 @@ function galleryImageHandler(e) {
 }
 
 onUiUpdate(function() {
-    fullImg_preview = gradioApp().querySelectorAll('img.w-full')
+    fullImg_preview = gradioApp().querySelectorAll('.gradio-gallery > div > img')
     if (fullImg_preview != null) {
         fullImg_preview.forEach(galleryImageHandler);
     }

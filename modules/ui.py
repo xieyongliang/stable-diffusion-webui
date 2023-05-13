@@ -675,7 +675,7 @@ Requested path was: {f}
 
     with gr.Column(variant='panel'):
             with gr.Group():
-                result_gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery").style(grid=4)
+                result_gallery = gr.Gallery(label='Output', show_label=False, elem_id=f"{tabname}_gallery", elem_classes="gradio-gallery").style(grid=4)
 
             generation_info = None
             with gr.Column():
