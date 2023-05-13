@@ -190,9 +190,7 @@ function modalTileImageToggle(event) {
 }
 
 function galleryImageHandler(e) {
-    if (e && e.parentElement.tagName == 'BUTTON') {
-        e.onclick = showGalleryImage;
-    }
+    e.onclick = showGalleryImage;
 }
 
 onUiUpdate(function() {
