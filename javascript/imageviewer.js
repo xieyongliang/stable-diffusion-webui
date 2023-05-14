@@ -50,29 +50,18 @@ function updateOnBackgroundChange() {
 }
 
 function modalImageSwitch(offset) {
-    var allgalleryButtons = gradioApp().querySelectorAll(".gallery-item.transition-all")
+    var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem')[0].querySelectorAll('.thumbnail-item.thumbnail-small');
     var galleryButtons = []
-    allgalleryButtons.forEach(function(elem) {
+    allGalleryButtons.forEach(function(elem) {
         if (elem.parentElement.offsetParent) {
             galleryButtons.push(elem);
         }
     })
 
     if (galleryButtons.length > 1) {
-        var allcurrentButtons = gradioApp().querySelectorAll(".gallery-item.transition-all.\\!ring-2")
-        var currentButton = null
-        allcurrentButtons.forEach(function(elem) {
-            if (elem.parentElement.offsetParent) {
-                currentButton = elem;
-            }
-        })
-
         var result = -1
-        galleryButtons.forEach(function(v, i) {
-            if (v == currentButton) {
-                result = i
-            }
-        })
+
+        allGalleryButtons.forEach(function(v, i){ if(v.classList.contains('selected')) { result = i } })
 
         if (result != -1) {
             nextButton = galleryButtons[negmod((result + offset), galleryButtons.length)]
