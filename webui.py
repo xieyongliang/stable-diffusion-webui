@@ -71,36 +71,6 @@ s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name
 s3_resource= boto3.resource('s3')
 s3_image_path_prefix = 'stable-diffusion-webui/generated/'
 
-
-def s3_download(s3uri, path):
-    global cache
-
-    pos = s3uri.find('/', 5)
-    bucket = s3uri[5 : pos]
-    key = s3uri[pos + 1 : ]
-
-    if os.path.isfile('cache'):
-        cache = json.load(open('cache', 'r'))
-
-    response = s3_client.head_object(
-        Bucket=bucket,
-        Key=key
-    )
-    if key not in  cache or cache[key] != response['ETag']:
-        filename = key[key.rfind('/') + 1 : ]
-
-        s3_client.download_file(bucket, key, os.path.join(path, filename))
-        cache[key] = response['ETag']
-
-    json.dump(cache, open('cache', 'w'))
-
-def http_download(httpuri, path):
-    with requests.get(httpuri, stream=True) as r:
-        r.raise_for_status()
-        with open(path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-
 if cmd_opts.server_name:
     server_name = cmd_opts.server_name
 else:
@@ -191,7 +161,6 @@ def wait_on_server(demo=None):
             demo.close()
             time.sleep(0.5)
             break
-
 
 def api_only():
     initialize()
@@ -327,7 +296,6 @@ def list_s3_objects(s3_client,bucket_name, prefix=''):
                                                 ContinuationToken=page['NextContinuationToken'])
     return objects
 
-
 def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
     # Create tmp folders 
     os.makedirs(os.path.dirname(local_folder), exist_ok=True)
@@ -378,8 +346,6 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
     # save the lastest one
     with open(s3_file_name, "w") as f:
         json.dump(s3_files, f)
-    
-
 
 def sync_s3_folder(local_folder,cache_dir,mode):
     s3 = boto3.client('s3')
@@ -555,74 +521,17 @@ def register_cn_models(cn_models_dir):
             print(response)
 
 def sync_images_from_s3():
-    s3 = boto3.resource('s3')
-    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
-    # Create an empty file if not exist
-    cache_dir = opts.outdir_txt2img_samples.split('/')[0]
-    os.makedirs(cache_dir, exist_ok=True)
-    cache_file_name = os.path.join(cache_dir,'cache_image_files_index.json')
-    if os.path.isfile(cache_file_name) == False:
-        with open(cache_file_name, "w") as f:
-            cache_files = {}
-            json.dump(cache_files, f) 
-
-
-    def download_images_for_ui(bucket_name):
-        bucket = s3.Bucket(bucket_name)
-        caches = {}
-        with open(cache_file_name, "r") as f:
-            _cache = json.load(f)  
-            caches = _cache.copy()
-
-        for obj in bucket.objects.all():
-            if obj.key.startswith(s3_image_path_prefix):
-                new_obj_key = obj.key.replace(s3_image_path_prefix,'').split('/')
-                etag = obj.e_tag.replace('"','')
-                if caches.get(etag): 
-                    continue
-                # print(f'download:{new_obj_key}')
-                if len(new_obj_key) >=3 : ## {username}/{task}/{image}
-                    task_name = new_obj_key[1]
-                    if task_name == 'text-to-image':
-                        dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
-                    elif task_name == 'image-to-image':
-                        dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0],new_obj_key[1])             
-                    elif task_name == 'extras-single-image':
-                        dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])            
-                    elif task_name == 'extras-batch-images':
-                        dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])  
-                    else:
-                        dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
-                    os.makedirs(dir_name, exist_ok=True)
-                    bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
-                elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
-                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
-                    os.makedirs(dir_name, exist_ok=True)
-                    bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[1]))
-                else: ## {image} default save to txt_img
-                    dir_name = os.path.join(opts.outdir_txt2img_samples) 
-                    os.makedirs(dir_name, exist_ok=True)
-                    bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[0]))
-                caches[etag] = 1
-
-        with open(cache_file_name, "w") as f:
-                    json.dump(caches, f) 
-
-    
     # Create a thread function to keep syncing with the S3 folder
+    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
     def sync_thread(bucket_name):  
         while True:
             sync_images_lock.acquire()
-            download_images_for_ui(bucket_name)
+            shared.download_images_for_ui(bucket_name)
             sync_images_lock.release()
             time.sleep(10)
     thread = threading.Thread(target=sync_thread,args=(bucket_name,))
     thread.start()
     print (f'{bucket_name} images sync thread start ')
-                        
-
-
-
 
 def webui():
     launch_api = cmd_opts.api
@@ -662,14 +571,14 @@ def webui():
             for s3_model in s3_models:
                 uri = s3_model['uri']
                 name = s3_model['name']
-                s3_download(uri, f'/tmp/models/{name}')
+                shared.s3_download(uri, f'/tmp/models/{name}')
 
         if http_models:
             for http_model in http_models:
                 uri = http_model['uri']
                 filename = http_model['filename']
                 name = http_model['name']
-                http_download(uri, f'/tmp/models/{name}/{filename}')
+                shared.http_download(uri, f'/tmp/models/{name}/{filename}')
 
     ## auto reload new models from s3 add by River
     if not cmd_opts.pureui and not cmd_opts.train:
@@ -782,41 +691,6 @@ def webui():
 
         extra_networks.initialize()
         extra_networks.register_extra_network(extra_networks_hypernet.ExtraNetworkHypernet())
-    
-
-
-
-def upload_s3files(s3uri, file_path_with_pattern):
-    pos = s3uri.find('/', 5)
-    bucket = s3uri[5 : pos]
-    key = s3uri[pos + 1 : ]
-
-    try:
-        for file_path in glob.glob(file_path_with_pattern):
-            file_name = os.path.basename(file_path)
-            __s3file = f'{key}{file_name}'
-            print(file_path, __s3file)
-            s3_client.upload_file(file_path, bucket, __s3file)
-    except ClientError as e:
-        print(e)
-        return False
-    return True
-
-def upload_s3folder(s3uri, file_path):
-    pos = s3uri.find('/', 5)
-    bucket = s3uri[5 : pos]
-    key = s3uri[pos + 1 : ]
-
-    try:
-        for path, _, files in os.walk(file_path):
-            for file in files:
-                dest_path = path.replace(file_path,"")
-                __s3file = f'{key}{dest_path}/{file}'
-                __local_file = os.path.join(path, file)
-                print(__local_file, __s3file)
-                s3_client.upload_file(__local_file, bucket, __s3file)
-    except Exception as e:
-        print(e)
 
 if cmd_opts.train:
     def train():
@@ -833,7 +707,7 @@ if cmd_opts.train:
                     )
                     if filename in ['v2-1_768-ema-pruned.ckpt', '']:
                         name = os.path.splitext(filename)[0]
-                        http_download(
+                        shared.http_download(
                             'https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/v2-inference-v.yaml',
                             f'/opt/ml/input/data/models/{name}.yaml'
                         )
@@ -952,7 +826,10 @@ if cmd_opts.train:
                 *txt2img_preview_params
             )
             try:
-                upload_s3files(embeddings_s3uri, os.path.join(cmd_opts.embeddings_dir, '{0}.pt'.format(train_embedding_name)))
+                shared.upload_s3files(
+                    embeddings_s3uri, 
+                    os.path.join(cmd_opts.embeddings_dir, '{0}.pt'.format(train_embedding_name))
+                )
             except Exception as e:
                 traceback.print_exc()
                 print(e)
@@ -1061,7 +938,10 @@ if cmd_opts.train:
                 *txt2img_preview_params
             )
             try:
-                upload_s3files(hypernetwork_s3uri, os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name)))
+                shared.upload_s3files(
+                    hypernetwork_s3uri, 
+                    os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name))
+                )
             except Exception as e:
                 traceback.print_exc()
                 print(e)
@@ -1222,28 +1102,28 @@ if cmd_opts.train:
             try:
                 print('Uploading SD Models...')
                 if db_config.v2:
-                    upload_s3files(
+                    shared.upload_s3files(
                         f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.yaml')
                     )
                 if db_config.save_safetensors:
-                    upload_s3files(
+                    shared.upload_s3files(
                         f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.safetensors')
                     )
                 else:
-                    upload_s3files(
+                    shared.upload_s3files(
                         f'{sd_models_s3uri}{username}/',
                         os.path.join(sd_models_dir, db_model_name, f'{db_model_name}_*.ckpt')
                     )
                 print('Uploading DB Models...')
-                upload_s3folder(
+                shared.upload_s3folder(
                     f'{db_models_s3uri}{username}/{db_model_name}',
                     os.path.join(db_model_dir, db_model_name)
                 )
                 if db_config.use_lora:
                     print('Uploading Lora Models...')
-                    upload_s3files(
+                    shared.upload_s3files(
                         f'{lora_models_s3uri}{username}/',
                         os.path.join(lora_model_dir, f'{db_model_name}_*.pt')
                     )

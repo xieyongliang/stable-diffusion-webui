@@ -18,6 +18,7 @@ from modules import localization, sd_vae, extensions, script_loading
 from modules.paths import models_path, script_path, sd_path
 import requests
 import boto3
+from botocore.exceptions import ClientError
 
 demo = None
 #Add by River
@@ -916,3 +917,150 @@ huggingface_models = [
         'filename': 'sd-v1-4-full-ema.ckpt',          
     },
 ]
+
+cache = dict()
+region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+s3_resource= boto3.resource('s3')
+generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def s3_download(s3uri, path):
+    global cache
+
+    print('---path---', path)
+    os.system(f'ls -l {os.path.dirname(path)}')
+
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=key,
+                                                ContinuationToken=page['NextContinuationToken'])
+
+    if os.path.isfile('cache'):
+        cache = json.load(open('cache', 'r'))
+
+    for obj in objects:
+        if obj['Key'] == key:
+            continue
+        response = s3_client.head_object(
+            Bucket = bucket,
+            Key =  obj['Key']
+        )
+        obj_key = 's3://{0}/{1}'.format(bucket, obj['Key'])
+        if obj_key not in cache or cache[obj_key] != response['ETag']:
+            filename = obj['Key'][obj['Key'].rfind('/') + 1 : ]
+
+            s3_client.download_file(bucket, obj['Key'], os.path.join(path, filename))
+            cache[obj_key] = response['ETag']
+
+    json.dump(cache, open('cache', 'w'))
+
+def http_download(httpuri, path):
+    with requests.get(httpuri, stream=True) as r:
+        r.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+def upload_s3files(s3uri, file_path_with_pattern):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for file_path in glob.glob(file_path_with_pattern):
+            file_name = os.path.basename(file_path)
+            __s3file = f'{key}{file_name}'
+            print(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
+    except ClientError as e:
+        print(e)
+        return False
+    return True
+
+def upload_s3folder(s3uri, file_path):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for path, _, files in os.walk(file_path):
+            for file in files:
+                dest_path = path.replace(file_path,"")
+                __s3file = f'{key}{dest_path}/{file}'
+                __local_file = os.path.join(path, file)
+                print(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
+    except Exception as e:
+        print(e)
+
+s3_resource = boto3.resource('s3')
+s3_image_path_prefix = 'stable-diffusion-webui/generated/'
+
+def download_images_for_ui(bucket_name):
+    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    # Create an empty file if not exist
+    cache_dir = opts.outdir_txt2img_samples.split('/')[0]
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file_name = os.path.join(cache_dir,'cache_image_files_index.json')
+    if os.path.isfile(cache_file_name) == False:
+        with open(cache_file_name, "w") as f:
+            cache_files = {}
+            json.dump(cache_files, f)
+
+    bucket = s3_resource.Bucket(bucket_name)
+    caches = {}
+    with open(cache_file_name, "r") as f:
+        _cache = json.load(f)  
+        caches = _cache.copy()
+
+    for obj in bucket.objects.all():
+        if obj.key.startswith(s3_image_path_prefix):
+            new_obj_key = obj.key.replace(s3_image_path_prefix,'').split('/')
+            etag = obj.e_tag.replace('"','')
+            if caches.get(etag): 
+                continue
+            # print(f'download:{new_obj_key}')
+            if len(new_obj_key) >=3 : ## {username}/{task}/{image}
+                task_name = new_obj_key[1]
+                if task_name == 'text-to-image':
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                elif task_name == 'image-to-image':
+                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0],new_obj_key[1])             
+                elif task_name == 'extras-single-image':
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])            
+                elif task_name == 'extras-batch-images':
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])  
+                else:
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
+            elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
+                dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[1]))
+            else: ## {image} default save to txt_img
+                dir_name = os.path.join(opts.outdir_txt2img_samples) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[0]))
+            caches[etag] = 1
+
+    with open(cache_file_name, "w") as f:
+                json.dump(caches, f) 

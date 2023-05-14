@@ -404,31 +404,6 @@ class Api:
     def get_artists(self):
         return [{"name":x[0], "score":x[1], "category":x[2]} for x in shared.artist_db.artists]
 
-    def download_s3files(self, s3uri, path):
-        pos = s3uri.find('/', 5)
-        bucket = s3uri[5 : pos]
-        key = s3uri[pos + 1 : ]
-
-        s3_bucket = self.s3_resource.Bucket(bucket)
-        objs = list(s3_bucket.objects.filter(Prefix=key))
-
-        if os.path.isfile('cache'):
-            self.cache = json.load(open('cache', 'r'))
-
-        for obj in objs:
-            response = self.s3_client.head_object(
-                Bucket = bucket,
-                Key =  obj.key
-            )
-            obj_key = 's3://{0}/{1}'.format(bucket, obj.key)
-            if obj_key not in self.cache or self.cache[obj_key] != response['ETag']:
-                filename = obj.key[obj.key.rfind('/') + 1 : ]
-
-                self.s3_client.download_file(bucket, obj.key, os.path.join(path, filename))
-                self.cache[obj_key] = response['ETag']
-
-        json.dump(self.cache, open('cache', 'w'))
-
     def post_invocations(self, username, b64images,task):
         generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
 
@@ -476,7 +451,7 @@ class Api:
                     except Exception as e:
                         print(e)
 
-                self.download_s3files(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
+                shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
                 hypernetworks.hypernetwork.load_hypernetwork(shared.opts.sd_hypernetwork)
                 hypernetworks.hypernetwork.apply_strength()
             ##add sd model usage stats by River
@@ -484,14 +459,14 @@ class Api:
             shared.sd_models_Ref.add_models_ref(shared.opts.data['sd_model_checkpoint'])
             ##end 
             if req.task == 'text-to-image':
-                self.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
                 self.post_invocations(username, response.images,req.task)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'image-to-image':
-                self.download_s3files(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
                 self.post_invocations(username, response.images,req.task)
