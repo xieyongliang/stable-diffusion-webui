@@ -7,6 +7,7 @@ import tqdm
 import html
 import datetime
 import csv
+import safetensors.torch
 
 from PIL import Image, PngImagePlugin
 
