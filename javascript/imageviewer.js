@@ -32,25 +32,26 @@ function negmod(n, m) {
 function updateOnBackgroundChange() {
     const modalImage = gradioApp().getElementById("modalImage")
     if (modalImage && modalImage.offsetParent) {
-        let allcurrentButtons = gradioApp().querySelectorAll(".gallery-item.transition-all.\\!ring-2")
-        let currentButton = null
-        allcurrentButtons.forEach(function(elem) {
-            if (elem.parentElement.offsetParent) {
-                currentButton = elem;
-            }
-        })
+        var buttons = all_gallery_buttons();
+        var result = -1;
+        buttons.forEach(function(v, i){ if(v.classList.contains('selected')) { result = i } })
 
-        if (currentButton?.children?.length > 0 && modalImage.src != currentButton.children[0].src) {
-            modalImage.src = currentButton.children[0].src;
-            if (modalImage.style.display === 'none') {
-                modal.style.setProperty('background-image', `url(${modalImage.src})`)
+        if (result >= 0 && result <button.length) {
+            let currentButton = button[result];
+            if (currentButton?.children?.length > 0 && modalImage.src != currentButton.children[0].src) {
+                modalImage.src = currentButton.children[0].src;
+                if (modalImage.style.display === 'none') {
+                    modal.style.setProperty('background-image', `url(${modalImage.src})`)
+                }
             }
         }
     }
 }
 
 function modalImageSwitch(offset) {
-    var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem')[0].querySelectorAll('.thumbnail-item.thumbnail-small');
+    var tabs = gradioApp().querySelector('#tabs').querySelectorAll('button')
+    var index = tabs[0].className.indexOf('selected') != -1 ? 0 : 1
+    var allGalleryButtons = gradioApp().querySelectorAll('[style="display: block;"].tabitem')[index].querySelectorAll('.thumbnail-item.thumbnail-small');
     var galleryButtons = []
     allGalleryButtons.forEach(function(elem) {
         if (elem.parentElement.offsetParent) {
