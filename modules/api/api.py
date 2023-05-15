@@ -408,6 +408,8 @@ class Api:
         if generated_images_s3uri:
             generated_images_s3uri = f'{generated_images_s3uri}{username}/{task}/'
             bucket, key = self.get_bucket_and_key(generated_images_s3uri)
+            if key.endswith('/'):
+                key = key[ : -1]
             for b64image in b64images:
                 bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
                 image_id = datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
@@ -415,7 +417,7 @@ class Api:
                 shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}{image_id}.{suffix}'
+                    Key=f'{key}/{image_id}.{suffix}'
                 )
 
     def invocations(self, req: InvocationsRequest):
