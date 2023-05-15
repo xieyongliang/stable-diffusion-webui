@@ -744,7 +744,7 @@ class Api:
                 shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}{image_id}.{suffix}'
+                    Key=f'{key}/{image_id}.{suffix}'
                 )
                 images.append(f's3://{bucket}/{key}/{image_id}.png')
             return images
