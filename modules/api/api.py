@@ -167,8 +167,6 @@ class Api:
         self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[TextToImageResponse, ImageToImageResponse, ExtrasSingleImageResponse, ExtrasBatchImagesResponse, List[SDModelItem]])
         self.app.add_api_route("/ping", self.ping, methods=["GET"], response_model=PingResponse)
         self.cache = dict()
-        self.s3_client = boto3.client('s3')
-        self.s3_resource= boto3.resource('s3')
 
     def add_api_route(self, path: str, endpoint, **kwargs):
         if shared.cmd_opts.api_auth:
@@ -414,7 +412,7 @@ class Api:
                 bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
                 image_id = datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
                 suffix = opts.samples_format.lower()
-                self.s3_client.put_object(
+                shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
                     Key=f'{key}{image_id}.{suffix}'
