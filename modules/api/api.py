@@ -736,6 +736,8 @@ class Api:
     def post_invocations(self, b64images, quality):
         if shared.generated_images_s3uri:
             bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
+            if key.endswith('/'):
+                key = key[ : -1]
             images = []
             for b64image in b64images:
                 bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
@@ -744,9 +746,9 @@ class Api:
                 shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}{image_id}.{suffix}'
+                    Key=f'{key}/{image_id}.{suffix}'
                 )
-                images.append(f's3://{bucket}/{key}/{image_id}.png')
+                images.append(f's3://{bucket}/{key}/{image_id}.{suffix}')
             return images
         else:
             return b64images
