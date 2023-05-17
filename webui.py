@@ -230,6 +230,8 @@ def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,si
                 shared.cn_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
             elif mode == 'lora':
                 shared.lora_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            elif mode == 'vae':
+                shared.vae_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
             print(f'download_file success:from {bucket_name}/{src} to {dist}')
         except Exception as e:
             print(f'download_file error: from {bucket_name}/{src} to {dist}')
@@ -251,6 +253,8 @@ def free_local_disk(local_folder,size,mode):
         models_Ref = shared.cn_models_Ref
     elif mode == 'lora':
         models_Ref = shared.lora_models_Ref
+    elif mode == 'vae':
+        models_Ref = shared.vae_models_Ref
     model_name,ref_cnt  = models_Ref.get_least_ref_model()
     print (f'shared.{mode}_models_Ref:{models_Ref.get_models_ref_dict()} -- model_name:{model_name}')
     if model_name and ref_cnt:
@@ -357,6 +361,8 @@ def sync_s3_folder(local_folder,cache_dir,mode):
             s3_folder = shared.s3_folder_cn 
         elif mode == 'lora':
             s3_folder = shared.s3_folder_lora
+        elif mode == 'vae':
+            s3_folder = shared.s3_folder_vae
         else: 
             s3_folder = ''
         # Check and Create tmp folders 
@@ -425,7 +431,11 @@ def sync_s3_folder(local_folder,cache_dir,mode):
             elif mode == 'cn':
                 modules.script_callbacks.update_cn_models_callback()
             elif mode == 'lora':
-                print('To do: update lora??')
+                print('update lora')
+            elif mode == 'vae':
+                modules.sd_vae.refresh_vae_list()
+
+                
 
 
     # Create a thread function to keep syncing with the S3 folder
@@ -447,6 +457,32 @@ def register_models(models_dir,mode):
         register_cn_models(models_dir)
     elif mode == 'lora':
         register_lora_models(models_dir)
+    elif mode == 'vae':
+        register_vae_models(models_dir)
+
+
+def register_vae_models(vae_models_dir):
+    print ('---register_vae_models()- to be impletemented---')
+    if 'endpoint_name' in os.environ:
+        items = []
+        params = {
+            'module': 'Vae'
+        }
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in get_models(vae_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(vae_models_dir, file))
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
 
 def register_lora_models(lora_models_dir):
     print ('---register_lora_models()----')
@@ -586,6 +622,7 @@ def webui():
         sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
         cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
         lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        vae_models_tmp_dir = f"{shared.tmp_models_dir}/Vae/"
         cache_dir = f"{shared.tmp_cache_dir}/"
         session = boto3.Session()
         region_name = session.region_name
@@ -597,12 +634,16 @@ def webui():
             shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+            shared.s3_folder_vae = "stable-diffusion-webui/models/Vae"
+
 
         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
         initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(vae_models_tmp_dir,cache_dir,'vae')
         sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
         sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
         sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
+
 
     ## end
     initialize()
@@ -657,9 +698,17 @@ def webui():
             lora_models_dir = os.path.join(shared.models_path, "Lora")
             if cmd_lora_models_path is not None:
                 lora_models_dir = cmd_lora_models_path
+
+            cmd_vae_models_path = cmd_opts.vae_path
+            lora_models_dir = os.path.join(shared.models_path, "Vae")
+            if cmd_vae_models_path is not None:
+                vae_models_dir = cmd_vae_models_path
+
             register_sd_models(sd_models_dir)
             register_cn_models(cn_models_dir)
             register_lora_models(lora_models_dir)
+            register_vae_models(vae_models_dir)
+
 
         ui_extra_networks.add_pages_to_demo(app)
 
@@ -1131,6 +1180,7 @@ if cmd_opts.train:
                 os.makedirs(os.path.dirname("/opt/ml/model/"), exist_ok=True)
                 os.makedirs(os.path.dirname("/opt/ml/model/Stable-diffusion/"), exist_ok=True)
                 os.makedirs(os.path.dirname("/opt/ml/model/ControlNet/"), exist_ok=True)
+                
                 train_steps=int(db_config.revision)
                 model_file_basename = f'{db_model_name}_{train_steps}_lora' if db_config.use_lora else f'{db_model_name}_{train_steps}'
                 if db_config.v2:

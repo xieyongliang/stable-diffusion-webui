@@ -26,6 +26,7 @@ models_s3_bucket = None
 s3_folder_sd = None
 s3_folder_cn = None
 s3_folder_lora = None
+s3_folder_vae = None
 syncLock = threading.Lock()
 sync_images_lock = threading.Lock()
 tmp_models_dir = '/tmp/models'
@@ -377,6 +378,8 @@ class ModelsRef:
 sd_models_Ref = ModelsRef()
 cn_models_Ref = ModelsRef()
 lora_models_Ref = ModelsRef()
+vae_models_Ref = ModelsRef()
+
 
 def de_register_model(model_name,mode):
     models_Ref = sd_models_Ref
@@ -386,6 +389,8 @@ def de_register_model(model_name,mode):
         models_Ref = cn_models_Ref
     elif mode == 'lora':
         models_Ref = lora_models_Ref
+    elif mode == 'vae':
+        models_Ref = vae_models_Ref
     models_Ref.remove_model_ref(model_name)
     print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
     if 'endpoint_name' in os.environ:
