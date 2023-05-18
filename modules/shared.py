@@ -957,7 +957,7 @@ def s3_download(s3uri, path):
         cache = json.load(open('cache', 'r'))
 
     for obj in objects:
-        if obj['Key'] == key:
+        if obj['Size'] == 0:
             continue
         response = s3_client.head_object(
             Bucket = bucket,
