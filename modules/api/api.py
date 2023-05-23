@@ -768,7 +768,7 @@ class Api:
             cuda = { 'error': f'{err}' }
         return MemoryResponse(ram = ram, cuda = cuda)
 
-    def post_invocations(self,task_id,seedList, b64images, quality):
+    def post_invocations(self,task_id,seedList, b64images, save_url):
         upload_success = True
         image_path_list = list()
 
@@ -805,7 +805,7 @@ class Api:
         }
         print(payload)
 
-        response = requests.post(url=shared.UPLOAD_BACKEND_CALLBACK_URL, data=payload)
+        response = requests.post(url= save_url, data=payload)
         try:
             print(response.text)
             json_obj = json.loads(response.text)
@@ -851,22 +851,22 @@ class Api:
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, shared.UPLOAD_BACKEND_CALLBACK_URL)
                 return response
             elif req.task == 'image-to-image':
                 if embeddings_s3uri != '':
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, shared.UPLOAD_BACKEND_CALLBACK_URL)
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                response.image = self.post_invocations(response.task_id,response.seedList,[response.image], quality)[0]
+                response.image = self.post_invocations(response.task_id,response.seedList,[response.image], shared.UPLOAD_UPSCALER_CALLBACK_URL)[0]
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, shared.UPLOAD_UPSCALER_CALLBACK_URL)
                 return response
             else:
                 return InvocationsErrorResponse(error = f'Invalid task - {req.task}')

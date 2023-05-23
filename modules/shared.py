@@ -803,3 +803,18 @@ def upload_s3folder(s3uri, file_path):
                 s3_client.upload_file(__local_file, bucket, __s3file)
     except Exception as e:
         print(e)
+        
+BACKEND_URL = 'https://painting.glutinoust.com'
+
+# COS related
+COS_APP_ID = '1251215091'
+COS_SECRET_ID = 'AKIDIZr39L6k7RckohOuPxWuBKDqNp691qRr'
+COS_SECRET_KEY = 'HI8j9MMUVWacXwCJFwQk5NTTM555vfMw'
+COS_BUCKET_NAME = 'painting-1251215091'
+COS_REGION = 'ap-shanghai'
+COS_IMGAE_BASE_URL = f'https://{COS_BUCKET_NAME}.cos.{COS_REGION}.myqcloud.com'
+
+UPLOAD_BACKEND_CALLBACK_URL = f'{BACKEND_URL}/api/index/getTaskResult'
+UPLOAD_UPSCALER_CALLBACK_URL = f'{BACKEND_URL}/api/index/updateLargeImgstatus'
+
+CELERY_TASK_TIMEOUT = 45
