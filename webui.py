@@ -726,7 +726,7 @@ if cmd_opts.train:
         username = cmd_opts.username
 
         default_options = opts.data
-        if username != '':
+        if username != '' and train_task in ['embedding', 'hypernetwork']:
             inputs = {
                 'action': 'get',
                 'username': username
