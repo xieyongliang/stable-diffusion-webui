@@ -38,6 +38,18 @@ import uuid
 import os
 import json
 
+import requests
+import random
+import string
+import hashlib
+from qcloud_cos import CosConfig
+from qcloud_cos import CosS3Client
+
+cos_config = CosConfig(Region=shared.COS_REGION, SecretId=shared.COS_SECRET_ID,
+                       SecretKey=shared.COS_SECRET_KEY, Token=None, Scheme='https')
+cos_client = CosS3Client(cos_config)
+
+
 def upscaler_to_index(name: str):
     try:
         return [x.name.lower() for x in shared.sd_upscalers].index(name.lower())
@@ -301,7 +313,7 @@ class Api:
                         ui_default_values.append(elem.value)
                     script_args[script.args_from:script.args_to] = ui_default_values
         return script_args
-
+    
     def init_script_args(self, request, default_script_args, selectable_scripts, selectable_idx, script_runner):
         script_args = default_script_args.copy()
         # position 0 in script_arg is the idx+1 of the selectable script that is going to be run when using scripts.scripts_*2img.run()
@@ -323,6 +335,18 @@ class Api:
                     script_args[alwayson_script.args_from:alwayson_script.args_to] = request.alwayson_scripts[alwayson_script_name]["args"]
         return script_args
 
+
+    def genImageFileName(self):
+        random_key = "".join([random.choice(string.ascii_letters + string.digits) for _ in range(64)])
+        time_now = datetime.now()
+        time_now_str = time_now.strftime("%Y%m%d%H%M%S%f")
+        time_now_date = time_now.strftime("%Y_%m_%d")
+        hash_origin = random_key + time_now_str
+        md5 = hashlib.md5(hash_origin.encode('ascii')).hexdigest()
+        file_name = f'api/{time_now_date}/{time_now_str}_{md5}.png'
+        return file_name
+    
+    
     def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
         script_runner = scripts.scripts_txt2img
         if not script_runner.scripts:
@@ -356,18 +380,22 @@ class Api:
             p.outpath_grids = opts.outdir_txt2img_grids
             p.outpath_samples = opts.outdir_txt2img_samples
 
+            seedList = list()
             shared.state.begin()
-            if selectable_scripts != None:
-                p.script_args = script_args
-                processed = scripts.scripts_txt2img.run(p, *p.script_args) # Need to pass args as list here
-            else:
-                p.script_args = tuple(script_args) # Need to pass args as tuple here
+            for i in range(p.image_num):
+                p.seed = int(random.randrange(4294967294))
+                seedList.append(str(p.seed))
+                if selectable_scripts != None:
+                    p.script_args = script_args
+                    processed = scripts.scripts_txt2img.run(p, *p.script_args) # Need to pass args as list here
+                else:
+                    p.script_args = tuple(script_args) # Need to pass args as tuple here
                 processed = process_images(p)
             shared.state.end()
 
         b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
 
-        return TextToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
+        return TextToImageResponse(task_id=txt2imgreq.task_id,seedList=seedList,images=b64images, parameters=vars(populate), info=processed.js())
 
     def img2imgapi(self, img2imgreq: StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images
@@ -413,12 +441,16 @@ class Api:
             p.outpath_grids = opts.outdir_img2img_grids
             p.outpath_samples = opts.outdir_img2img_samples
 
+            seedList = list()
             shared.state.begin()
-            if selectable_scripts != None:
-                p.script_args = script_args
-                processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
-            else:
-                p.script_args = tuple(script_args) # Need to pass args as tuple here
+            for i in range(p.image_num):
+                p.seed = int(random.randrange(4294967294))
+                seedList.append(str(p.seed))
+                if selectable_scripts != None:
+                    p.script_args = script_args
+                    processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
+                else:
+                    p.script_args = tuple(script_args) # Need to pass args as tuple here
                 processed = process_images(p)
             shared.state.end()
 
@@ -429,7 +461,8 @@ class Api:
             img2imgreq.mask = None
 
         populate.mask = img2imgreq.mask
-        return ImageToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
+        return ImageToImageResponse(task_id=img2imgreq.task_id,seedList=seedList,images=b64images, parameters=vars(populate), info=processed.js())
+        # return ImageToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
 
     def extras_single_image_api(self, req: ExtrasSingleImageRequest):
         reqDict = setUpscalers(req)
@@ -438,8 +471,9 @@ class Api:
 
         with self.queue_lock:
             result = postprocessing.run_extras(extras_mode=0, image_folder="", input_dir="", output_dir="", save_output=False, **reqDict)
-
-        return ExtrasSingleImageResponse(image=encode_pil_to_base64(result[0][0]), html_info=result[1])
+        image = encode_pil_to_base64(result[0][0])
+        
+        return ExtrasSingleImageResponse(task_id=req.task_id, image=image, html_info=result[1])
 
     def extras_batch_images_api(self, req: ExtrasBatchImagesRequest):
         reqDict = setUpscalers(req)
@@ -454,8 +488,9 @@ class Api:
 
         with self.queue_lock:
             result = postprocessing.run_extras(extras_mode=1, image="", input_dir="", output_dir="", save_output=False, **reqDict)
-
-        return ExtrasBatchImagesResponse(images=list(map(encode_pil_to_base64, result[0])), html_info=result[1])
+        images=list(map(encode_pil_to_base64, result[0]))
+        
+        return ExtrasBatchImagesResponse(task_id=req.task_id, images=images, html_info=result[1])
 
     def pnginfoapi(self, req: PNGInfoRequest):
         if(not req.image.strip()):
@@ -733,25 +768,52 @@ class Api:
             cuda = { 'error': f'{err}' }
         return MemoryResponse(ram = ram, cuda = cuda)
 
-    def post_invocations(self, b64images, quality):
-        if shared.generated_images_s3uri:
-            bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
-            if key.endswith('/'):
-                key = key[ : -1]
-            images = []
-            for b64image in b64images:
-                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
-                image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
-                suffix = opts.samples_format.lower()
-                shared.s3_client.put_object(
+    def post_invocations(self,task_id,seedList, b64images, quality):
+        upload_success = True
+        image_path_list = list()
+
+        images = []
+        for b64image in b64images:
+            bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
+            image_path = self.genImageFileName()
+            image_path_list.append(f'{shared.COS_IMGAE_BASE_URL}/{image_path}')
+            try:
+                response = cos_client.put_object(
+                    Bucket=shared.COS_BUCKET_NAME,
                     Body=bytes_data,
-                    Bucket=bucket,
-                    Key=f'{key}/{image_id}.{suffix}'
+                    Key=image_path,
+                    EnableMD5=False
                 )
-                images.append(f's3://{bucket}/{key}/{image_id}.{suffix}')
-            return images
+                if not ('ETag' in response and response['ETag'] != None and len(response['ETag']) > 0):
+                    upload_success = False
+            except Exception as e:
+                upload_success = False
+                traceback.print_exc()
+        if upload_success:
+            image_link = f','.join(image_path_list)
+            status = 1
         else:
-            return b64images
+            image_link = 'null'
+            status = 2
+
+        payload = {
+            'task_id': task_id,
+            'status': status,
+            'image_url': image_link,
+            'seed': ",".join(seedList),
+            'cipher': 'AiChangeTheWorld'
+        }
+        print(payload)
+
+        response = requests.post(url=shared.UPLOAD_BACKEND_CALLBACK_URL, data=payload)
+        try:
+            print(response.text)
+            json_obj = json.loads(response.text)
+            if json_obj['code'] != 200:
+                print(f'upload backend callback failed: {json_obj["msg"]}')
+        except json.JSONDecodeError:
+            print('upload backend callback decode response error')
+                
 
     def invocations(self, req: InvocationsRequest):
         print('-------invocation------')
@@ -789,22 +851,22 @@ class Api:
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                response.images = self.post_invocations(response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
                 return response
             elif req.task == 'image-to-image':
                 if embeddings_s3uri != '':
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                response.images = self.post_invocations(response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                response.image = self.post_invocations([response.image], quality)[0]
+                response.image = self.post_invocations(response.task_id,response.seedList,[response.image], quality)[0]
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                response.images = self.post_invocations(response.images, quality)
+                response.images = self.post_invocations(response.task_id,response.seedList,response.images, quality)
                 return response
             elif req.task == 'interrogate':
                 response = self.interrogateapi(req.interrogate_payload)

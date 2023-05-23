@@ -129,11 +129,15 @@ StableDiffusionImg2ImgProcessingAPI = PydanticModelGenerator(
 ).generate_model()
 
 class TextToImageResponse(BaseModel):
+    task_id : str
+    seedList : List[str]    
     images: List[str] = Field(default=None, title="Image", description="The generated image in base64 format.")
     parameters: dict
     info: str
 
 class ImageToImageResponse(BaseModel):
+    task_id : str
+    seedList : List[str] 
     images: List[str] = Field(default=None, title="Image", description="The generated image in base64 format.")
     parameters: dict
     info: str
@@ -157,9 +161,11 @@ class ExtraBaseResponse(BaseModel):
     html_info: str = Field(title="HTML info", description="A series of HTML tags containing the process info.")
 
 class ExtrasSingleImageRequest(ExtrasBaseRequest):
+    task_id : str
     image: str = Field(default="", title="Image", description="Image to work on, must be a Base64 string containing the image's data.")
 
 class ExtrasSingleImageResponse(ExtraBaseResponse):
+    task_id : str
     image: str = Field(default=None, title="Image", description="The generated image in base64 format.")
 
 class FileData(BaseModel):
@@ -167,9 +173,11 @@ class FileData(BaseModel):
     name: str = Field(title="File name")
 
 class ExtrasBatchImagesRequest(ExtrasBaseRequest):
+    task_id : str
     imageList: List[FileData] = Field(title="Images", description="List of images to work on. Must be Base64 strings")
 
 class ExtrasBatchImagesResponse(ExtraBaseResponse):
+    task_id : str
     images: List[str] = Field(title="Images", description="The generated images in base64 format.")
 
 class PNGInfoRequest(BaseModel):
