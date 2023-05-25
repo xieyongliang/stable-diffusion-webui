@@ -36,8 +36,8 @@ function updateOnBackgroundChange() {
         var result = -1;
         buttons.forEach(function(v, i){ if(v.classList.contains('selected')) { result = i } })
 
-        if (result >= 0 && result <button.length) {
-            let currentButton = button[result];
+        if (result >= 0 && result <buttons.length) {
+            let currentButton = buttons[result];
             if (currentButton?.children?.length > 0 && modalImage.src != currentButton.children[0].src) {
                 modalImage.src = currentButton.children[0].src;
                 if (modalImage.style.display === 'none') {

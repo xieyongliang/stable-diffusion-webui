@@ -754,7 +754,7 @@ if cmd_opts.train:
                         local_dir='/opt/ml/input/data/models',
                         cache_dir='/opt/ml/input/data/models'
                     )
-                    if filename in ['v2-1_768-ema-pruned.ckpt', '']:
+                    if filename in ['v2-1_768-ema-pruned.ckpt', 'v2-1_768-nonema-pruned.ckpt', '768-v-ema.ckpt', '']:
                         name = os.path.splitext(filename)[0]
                         shared.http_download(
                             'https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/v2-inference-v.yaml',
@@ -775,7 +775,7 @@ if cmd_opts.train:
         username = cmd_opts.username
 
         default_options = opts.data
-        if username != '':
+        if username != '' and train_task in ['embedding', 'hypernetwork']:
             inputs = {
                 'action': 'get',
                 'username': username

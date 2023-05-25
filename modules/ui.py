@@ -282,7 +282,10 @@ def check_progress_call(id_part):
     else:
         textinfo_result = gr_show(False)
 
-    return f"<span id='{id_part}_progress_span' style='display: none'>{time.time()}</span><p>{progressbar}</p>", preview_visibility, image, textinfo_result
+    if progress == 1:
+        return "", preview_visibility, image, textinfo_result
+    else:
+        return f"<span id='{id_part}_progress_span' style='display: none'>{time.time()}</span><p>{progressbar}</p>", preview_visibility, image, textinfo_result
 
 
 def check_progress_call_initial(id_part):
