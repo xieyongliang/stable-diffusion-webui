@@ -622,7 +622,7 @@ def webui():
         sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
         cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
         lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
-        vae_models_tmp_dir = f"{shared.tmp_models_dir}/Vae/"
+        vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
         cache_dir = f"{shared.tmp_cache_dir}/"
         session = boto3.Session()
         region_name = session.region_name
@@ -634,7 +634,7 @@ def webui():
             shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
-            shared.s3_folder_vae = "stable-diffusion-webui/models/Vae"
+            shared.s3_folder_vae = "stable-diffusion-webui/models/VAE"
 
 
         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
