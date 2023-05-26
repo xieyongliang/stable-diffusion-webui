@@ -1046,15 +1046,17 @@ def download_images_for_ui(bucket_name):
             if len(new_obj_key) >=3 : ## {username}/{task}/{image}
                 task_name = new_obj_key[1]
                 if task_name == 'text-to-image':
-                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
                 elif task_name == 'image-to-image':
-                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0],new_obj_key[1])             
+                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0])             
                 elif task_name == 'extras-single-image':
-                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])            
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])            
                 elif task_name == 'extras-batch-images':
-                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])  
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])  
+                elif task_name == 'favorites':
+                    dir_name = os.path.join(opts.outdir_save,new_obj_key[0])  
                 else:
-                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
                 os.makedirs(dir_name, exist_ok=True)
                 bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
             elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
