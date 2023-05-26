@@ -18,7 +18,7 @@ import numpy as np
 from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageChops
 
 import os
-from modules import shared
+from modules import shared, progress
 import gradio as gr
 
 queue_lock = threading.Lock()
@@ -84,6 +84,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         try:
             processed = json.loads(response.text)
             print(f"Time taken: {time.time() - start}s")
+            shared.job_count = 0
             return processed
         except Exception:
             print(response.text)
@@ -453,23 +454,43 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
     def f(username, *args, **kwargs):
         infer_type = os.environ.get('infer_type', 'async')
+        # if the first argument is a string that says "task(...)", it is treated as a job id
+        if len(args) > 0 and type(args[0]) == str and args[0][0:5] == "task(" and args[0][-1] == ")":
+            id_task = args[0]
+            progress.add_task_to_queue(id_task)
+            args = args[1:]
+        else:
+            id_task = None
+
         if cmd_opts.pureui and func == modules.txt2img.txt2img:
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-1]
+            progress.start_task(id_task)
             res = sagemaker_inference('text-to-image', infer_type, username, sagemaker_endpoint, *args, **kwargs)
+            progress.finish_task(id_task)
         elif cmd_opts.pureui and func == modules.img2img.img2img:
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-1]
+            progress.start_task(id_task)
             res = sagemaker_inference('image-to-image', infer_type, username, sagemaker_endpoint, *args, **kwargs)
+            progress.finish_task(id_task)
         elif cmd_opts.pureui and func == modules.extras.run_extras:
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-1]
+            progress.finish_task(id_task)
             res = sagemaker_inference('extras', infer_type, username, sagemaker_endpoint, *args, **kwargs)
+            progress.finish_task(id_task)
         else:
-            shared.state.begin()
             with queue_lock:
-                res = func(*args, **kwargs)
-            shared.state.end()
+                shared.state.begin()
+                progress.start_task(id_task)
+
+                try:
+                    res = func(*args, **kwargs)
+                finally:
+                    progress.finish_task(id_task)
+
+                shared.state.end()
 
         return res
 

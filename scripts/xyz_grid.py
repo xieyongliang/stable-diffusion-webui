@@ -399,13 +399,17 @@ class Script(scripts.Script):
         xz_swap_args = [x_type, x_values, z_type, z_values]
         swap_xz_axes_button.click(swap_axes, inputs=xz_swap_args, outputs=xz_swap_args)
 
-        def fill(x_type):
+        def fill(x_type, sagemaker_endpoint):
             axis = self.current_axis_options[x_type]
-            return ", ".join(axis.choices()) if axis.choices else gr.update()
+            x_opt = self.current_axis_options[x_type]
+            if x_opt.label == '[ControlNet] Model':
+                return ", ".join(axis.choices(sagemaker_endpoint)) if axis.choices else gr.update()
+            else:
+                return ", ".join(axis.choices()) if axis.choices else gr.update()
 
-        fill_x_button.click(fn=fill, inputs=[x_type], outputs=[x_values])
-        fill_y_button.click(fn=fill, inputs=[y_type], outputs=[y_values])
-        fill_z_button.click(fn=fill, inputs=[z_type], outputs=[z_values])
+        fill_x_button.click(fn=fill, inputs=[x_type, shared.sagemaker_endpoint_component], outputs=[x_values])
+        fill_y_button.click(fn=fill, inputs=[y_type, shared.sagemaker_endpoint_component], outputs=[y_values])
+        fill_z_button.click(fn=fill, inputs=[z_type, shared.sagemaker_endpoint_component], outputs=[z_values])
 
         def select_axis(x_type):
             return gr.Button.update(visible=self.current_axis_options[x_type].choices is not None)

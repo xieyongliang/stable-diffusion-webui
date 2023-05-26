@@ -132,23 +132,38 @@ function showSubmitButtons(tabname, show){
 }
 
 function submit(){
-    showSubmitButtons('txt2img')
-    requestProgress('txt2img')
+    rememberGallerySelection('txt2img_gallery')
+    showSubmitButtons('txt2img', false)
 
-    return create_submit_args(arguments)
-}
+    var id = randomId()
+    requestProgress(id, gradioApp().getElementById('txt2img_gallery_container'), gradioApp().getElementById('txt2img_gallery'), function(){
+        showSubmitButtons('txt2img', true)
 
-function submit_img2img(){
-    showSubmitButtons('img2img')
-    requestProgress('img2img')
+    })
 
-    res = create_submit_args(arguments)
+    var res = create_submit_args(arguments)
 
-    res[0] = get_tab_index('mode_img2img')
+    res[0] = id
 
     return res
 }
 
+function submit_img2img(){
+    rememberGallerySelection('img2img_gallery')
+    showSubmitButtons('img2img', false)
+
+    var id = randomId()
+    requestProgress(id, gradioApp().getElementById('img2img_gallery_container'), gradioApp().getElementById('img2img_gallery'), function(){
+        showSubmitButtons('img2img', true)
+    })
+
+    var res = create_submit_args(arguments)
+
+    res[0] = id
+    res[1] = get_tab_index('mode_img2img')
+
+    return res
+}
 
 function ask_for_style_name(_, prompt_text, negative_prompt_text) {
     name_ = prompt('Style name:')

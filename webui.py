@@ -638,10 +638,10 @@ def webui():
 
         app.add_middleware(GZipMiddleware, minimum_size=1000)
 
+        modules.progress.setup_progress_api(app)
+
         if launch_api:
             create_api(app)
-
-            
 
             cmd_sd_models_path = cmd_opts.ckpt_dir
             sd_models_dir = os.path.join(shared.models_path, "Stable-diffusion")

@@ -53,7 +53,7 @@ window.document.addEventListener('dragover', e => {
 
 window.document.addEventListener('drop', e => {
     const target = e.composedPath()[0];
-    if (target.placeholder.indexOf("Prompt") == -1) {
+    if (target.placeholder && target.placeholder.indexOf("Prompt") == -1) {
         return;
     }
     const imgWrap = target.closest('[data-testid="image"]');
