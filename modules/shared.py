@@ -26,6 +26,7 @@ models_s3_bucket = None
 s3_folder_sd = None
 s3_folder_cn = None
 s3_folder_lora = None
+s3_folder_vae = None
 syncLock = threading.Lock()
 sync_images_lock = threading.Lock()
 tmp_models_dir = '/tmp/models'
@@ -377,6 +378,8 @@ class ModelsRef:
 sd_models_Ref = ModelsRef()
 cn_models_Ref = ModelsRef()
 lora_models_Ref = ModelsRef()
+vae_models_Ref = ModelsRef()
+
 
 def de_register_model(model_name,mode):
     models_Ref = sd_models_Ref
@@ -386,6 +389,8 @@ def de_register_model(model_name,mode):
         models_Ref = cn_models_Ref
     elif mode == 'lora':
         models_Ref = lora_models_Ref
+    elif mode == 'vae':
+        models_Ref = vae_models_Ref
     models_Ref.remove_model_ref(model_name)
     print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
     if 'endpoint_name' in os.environ:
@@ -1041,15 +1046,17 @@ def download_images_for_ui(bucket_name):
             if len(new_obj_key) >=3 : ## {username}/{task}/{image}
                 task_name = new_obj_key[1]
                 if task_name == 'text-to-image':
-                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
                 elif task_name == 'image-to-image':
-                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0],new_obj_key[1])             
+                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0])             
                 elif task_name == 'extras-single-image':
-                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])            
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])            
                 elif task_name == 'extras-batch-images':
-                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0],new_obj_key[1])  
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])  
+                elif task_name == 'favorites':
+                    dir_name = os.path.join(opts.outdir_save,new_obj_key[0])  
                 else:
-                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0],new_obj_key[1]) 
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
                 os.makedirs(dir_name, exist_ok=True)
                 bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
             elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
