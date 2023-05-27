@@ -5,6 +5,8 @@ from modules import shared, devices, script_callbacks
 from modules.paths import models_path
 import glob
 
+import requests
+import json
 
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(models_path, model_dir))
@@ -60,17 +62,31 @@ def get_filename(filepath):
     return os.path.splitext(os.path.basename(filepath))[0]
 
 
-def refresh_vae_list(vae_path=vae_path, model_path=model_path):
+def refresh_vae_list(vae_path=vae_path, model_path=model_path, sagemaker_endpoint=None):
     global vae_dict, vae_list
     res = {}
-    candidates = [
-        *glob.iglob(os.path.join(model_path, '**/*.vae.ckpt'), recursive=True),
-        *glob.iglob(os.path.join(model_path, '**/*.vae.pt'), recursive=True),
-        *glob.iglob(os.path.join(vae_path, '**/*.ckpt'), recursive=True),
-        *glob.iglob(os.path.join(vae_path, '**/*.pt'), recursive=True)
-    ]
-    if shared.cmd_opts.vae_path is not None and os.path.isfile(shared.cmd_opts.vae_path):
-        candidates.append(shared.cmd_opts.vae_path)
+    if shared.cmd_opts.pureui:
+        api_endpoint = os.environ['api_endpoint']
+        candidates = []
+        if sagemaker_endpoint:
+            params = {
+                'module': 'VAE',
+                'endpoint_name': sagemaker_endpoint
+            }
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+            if response.status_code == 200:
+                model_list = json.loads(response.text)
+                for model in model_list:
+                    candidates.append(model['path'])
+    else:
+        candidates = [
+            *glob.iglob(os.path.join(model_path, '**/*.vae.ckpt'), recursive=True),
+            *glob.iglob(os.path.join(model_path, '**/*.vae.pt'), recursive=True),
+            *glob.iglob(os.path.join(vae_path, '**/*.ckpt'), recursive=True),
+            *glob.iglob(os.path.join(vae_path, '**/*.pt'), recursive=True)
+        ]
+        if shared.cmd_opts.vae_path is not None and os.path.isfile(shared.cmd_opts.vae_path):
+            candidates.append(shared.cmd_opts.vae_path)
     for filepath in candidates:
         name = get_filename(filepath)
         res[name] = filepath

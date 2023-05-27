@@ -471,10 +471,9 @@ def register_vae_models(vae_models_dir):
         api_endpoint = os.environ['api_endpoint']
         endpoint_name = os.environ['endpoint_name']
         for file in get_models(vae_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
-            hash = modules.sd_models.model_hash(os.path.join(vae_models_dir, file))
             item = {}
             item['model_name'] = os.path.basename(file)
-            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['path'] = file
             item['endpoint_name'] = endpoint_name
             items.append(item)
         inputs = {
