@@ -699,7 +699,7 @@ def webui():
                 lora_models_dir = cmd_lora_models_path
 
             cmd_vae_models_path = cmd_opts.vae_path
-            lora_models_dir = os.path.join(shared.models_path, "VAE")
+            vae_models_dir = os.path.join(shared.models_path, "VAE")
             if cmd_vae_models_path is not None:
                 vae_models_dir = cmd_vae_models_path
 
