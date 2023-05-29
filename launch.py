@@ -161,7 +161,7 @@ def prepare_enviroment():
     if '--skip-torch-cuda' in sys.argv:
         torch_command = os.environ.get('TORCH_COMMAND', "pip install torch torchvision")
     else:
-        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==1.12.1+cu113 torchvision==0.13.1+cu113 --extra-index-url https://download.pytorch.org/whl/cu113")
+        torch_command = os.environ.get('TORCH_COMMAND', "pip install torch==1.13.1+cu116 torchvision==0.14.1+cu116 --extra-index-url https://download.pytorch.org/whl/cu116")
     requirements_file = os.environ.get('REQS_FILE', "requirements_versions.txt")
     commandline_args = os.environ.get('COMMANDLINE_ARGS', "")
 
