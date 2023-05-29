@@ -349,12 +349,16 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 return [], "", ""
 
             images = []
-            for image in processed['images']:
-                images.append(Image.open(io.BytesIO(base64.b64decode(image))))
-            parameters = processed['parameters']
-            info = json.loads(processed['info'])
+            if 'error' not in processed:
+                for image in processed['images']:
+                    images.append(Image.open(io.BytesIO(base64.b64decode(image))))
+                parameters = processed['parameters']
+                info = json.loads(processed['info'])
+                print(parameters, info)
 
-            return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
+                return images, json.dumps(info), modules.ui.plaintext_to_html('\n'.join(info['infotexts']))
+            else:
+                return images, "", processed['error']
         else:
             extras_mode = args[0]
             resize_mode = args[1]
@@ -442,13 +446,17 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
             else:
                 processed = json.loads(response.text)
 
-            if task == 'extras-single-image':
-                images = [Image.open(io.BytesIO(base64.b64decode(processed['image'])))]
+            images = []
+            if 'error' not in processed:
+                if task == 'extras-single-image':
+                    images = [Image.open(io.BytesIO(base64.b64decode(processed['image'])))]
+                else:
+                    for image in processed['images']:
+                        images.append(Image.open(io.BytesIO(base64.b64decode(image))))
+                info = processed['html_info']
+                print(info)
             else:
-                images = []
-                for image in processed['images']:
-                    images.append(Image.open(io.BytesIO(base64.b64decode(image))))
-            info = processed['html_info']
+                info = processed['error']
 
             return images, "", info
 

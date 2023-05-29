@@ -164,7 +164,7 @@ class Api:
         self.add_api_route("/sdapi/v1/prompt-styles", self.get_promp_styles, methods=["GET"], response_model=List[PromptStyleItem])
         self.add_api_route("/sdapi/v1/artist-categories", self.get_artists_categories, methods=["GET"], response_model=List[str])
         self.add_api_route("/sdapi/v1/artists", self.get_artists, methods=["GET"], response_model=List[ArtistItem])
-        self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[TextToImageResponse, ImageToImageResponse, ExtrasSingleImageResponse, ExtrasBatchImagesResponse, List[SDModelItem]])
+        self.app.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[TextToImageResponse, ImageToImageResponse, ExtrasSingleImageResponse, ExtrasBatchImagesResponse, InvocationsErrorResponse, InterrogateResponse])
         self.app.add_api_route("/ping", self.ping, methods=["GET"], response_model=PingResponse)
         self.cache = dict()
 
@@ -487,10 +487,15 @@ class Api:
             elif req.task == 'set-models-bucket':
                 bucket = req.models_bucket
                 return self.set_models_bucket(bucket)
+            elif req.task == 'interrogate':
+                response = self.interrogateapi(req.interrogate_payload)
+                return response
             else:
-                raise NotImplementedError
+                return InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+
         except Exception as e:
             traceback.print_exc()
+            return InvocationsErrorResponse(error = str(e))
 
     def ping(self):
         # print('-------ping------')

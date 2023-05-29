@@ -250,6 +250,10 @@ class InvocationsRequest(BaseModel):
     img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
     extras_single_payload: Optional[ExtrasSingleImageRequest]
     extras_batch_payload: Optional[ExtrasBatchImagesRequest]
+    interrogate_payload: Optional[InterrogateRequest]
+
+class InvocationsErrorResponse(BaseModel):
+    error: str = Field(title="Invocation error", description="Error response from invocation.")
 
 class PingResponse(BaseModel):
     status: str
