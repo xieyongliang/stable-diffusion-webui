@@ -71,13 +71,16 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                         break
                     else:
                         time.sleep(1)
-                except:
+                except Exception as e:
+                    processed = {}
+                    processed['error'] = str(e)
                     print(response.text)
-                    time.sleep(1)
+                    return processed
             else:
-                print(response.status_code)
+                processed = {}
+                processed['error'] =  response.text
                 print(response.text)
-                time.sleep(1)
+                return processed
 
         httpuri = text['payload'][0]['httpuri']
         response = requests.get(url=httpuri)
