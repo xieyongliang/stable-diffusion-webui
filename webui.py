@@ -61,13 +61,6 @@ sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd_dreamboot
 if not cmd_opts.api:
     from extensions.sd_dreambooth_extension.scripts.train import train_dreambooth
 
-if not cmd_opts.api:
-    from extensions.sd_dreambooth_extension.dreambooth.db_config import DreamboothConfig
-    from extensions.sd_dreambooth_extension.scripts.dreambooth import start_training_from_config, create_model
-    from extensions.sd_dreambooth_extension.scripts.dreambooth import performance_wizard, training_wizard
-    from extensions.sd_dreambooth_extension.dreambooth.db_concept import Concept
-    from modules import paths
-
 import requests
 cache = dict()
 region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
@@ -887,7 +880,6 @@ if cmd_opts.train:
             except Exception as e:
                 traceback.print_exc()
                 print(e)
-            opts.data = default_options
         elif train_task == 'hypernetwork':
             name = train_args['hypernetwork_settings']['name']
             enable_sizes = train_args['hypernetwork_settings']['enable_sizes']
@@ -999,10 +991,8 @@ if cmd_opts.train:
             except Exception as e:
                 traceback.print_exc()
                 print(e)
-            opts.data = default_options
         elif train_task == 'dreambooth':
             train_dreambooth(api_endpoint, train_args, sd_models_s3uri, db_models_s3uri, lora_models_s3uri, username)
-            opts.data = default_options
         else:
             print('Incorrect training task')
             exit(-1)
