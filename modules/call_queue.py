@@ -488,7 +488,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         elif cmd_opts.pureui and func == modules.extras.run_extras:
             sagemaker_endpoint = args[len(args) -1]
             args = args[:-1]
-            progress.finish_task(id_task)
+            progress.start_task(id_task)
             res = sagemaker_inference('extras', infer_type, username, sagemaker_endpoint, *args, **kwargs)
             progress.finish_task(id_task)
         else:
