@@ -56,41 +56,47 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
     def handle_sagemaker_inference_async(response):
         s3uri = response.text
-        params = {'s3uri': s3uri}
-        start = time.time()
-        while True:
-            if shared.state.interrupted or shared.state.skipped:
-                shared.job_count = 0
-                return None
+        if s3uri.startswith('s3://'):
+            params = {'s3uri': s3uri}
+            start = time.time()
+            while True:
+                if shared.state.interrupted or shared.state.skipped:
+                    shared.job_count = 0
+                    return None
 
-            response = requests.get(url=f'{shared.api_endpoint}/s3', params = params)
-            if response.status_code == 200:
-                try:
-                    text = json.loads(response.text)
-                    if text['count'] > 0:
-                        break
-                    else:
-                        time.sleep(1)
-                except Exception as e:
+                response = requests.get(url=f'{shared.api_endpoint}/s3', params = params)
+                if response.status_code == 200:
+                    try:
+                        text = json.loads(response.text)
+                        if text['count'] > 0:
+                            break
+                        else:
+                            time.sleep(1)
+                    except Exception as e:
+                        processed = {}
+                        processed['error'] = str(e)
+                        print(response.text)
+                        return processed
+                else:
                     processed = {}
-                    processed['error'] = str(e)
+                    processed['error'] =  response.text
                     print(response.text)
                     return processed
-            else:
-                processed = {}
-                processed['error'] =  response.text
-                print(response.text)
-                return processed
 
-        httpuri = text['payload'][0]['httpuri']
-        response = requests.get(url=httpuri)
-        try:
-            processed = json.loads(response.text)
-            print(f"Time taken: {time.time() - start}s")
-            shared.job_count = 0
-            return processed
-        except Exception:
+            httpuri = text['payload'][0]['httpuri']
+            response = requests.get(url=httpuri)
+            try:
+                processed = json.loads(response.text)
+                print(f"Time taken: {time.time() - start}s")
+                shared.job_count = 0
+                return processed
+            except Exception:
+                print(response.text)
+        else:
+            processed = {}
+            processed['error'] = response.text
             print(response.text)
+            return processed
 
     def sagemaker_inference(task, infer_type, username, sagemaker_endpoint, *args, **kwargs):
         if task == 'text-to-image' or task == 'image-to-image':
