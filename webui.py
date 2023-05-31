@@ -61,10 +61,10 @@ import modules.hypernetworks.hypernetwork
 from huggingface_hub import hf_hub_download
 import boto3
 import json
-import shutil
-import traceback
 from modules.sync_models import initial_s3_download,sync_s3_folder
 
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd-webui-controlnet'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd_dreambooth_extension'))
 
 if cmd_opts.train:
     from extensions.sd_dreambooth_extension.scripts.train import train_dreambooth
