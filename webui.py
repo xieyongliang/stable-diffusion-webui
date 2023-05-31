@@ -419,7 +419,7 @@ if cmd_opts.train:
         db_models_s3uri = cmd_opts.db_models_s3uri
         lora_models_s3uri = cmd_opts.lora_models_s3uri
 
-        train_dreambooth("", train_args, sd_models_s3uri, db_models_s3uri, lora_models_s3uri, username)
+        train_dreambooth("", train_args, sd_models_s3uri, db_models_s3uri, lora_models_s3uri, "")
 
 if __name__ == "__main__":
     if cmd_opts.train:
