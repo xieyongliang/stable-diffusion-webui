@@ -19,6 +19,9 @@ from modules.sd_hijack_inpainting import do_inpainting_hijack
 from modules.timer import Timer
 import tomesd
 
+import requests
+import json
+
 model_dir = "Stable-diffusion"
 model_path = os.path.abspath(os.path.join(paths.models_path, model_dir))
 
@@ -62,6 +65,18 @@ class CheckpointInfo:
                 self.metadata = read_metadata_from_safetensors(filename)
             except Exception as e:
                 errors.display(e, f"reading checkpoint metadata: {filename}")
+
+    def __init__(self, name, filename, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata):
+        self.name = name
+        self.filename = filename
+        self.name_for_extra = name_for_extra
+        self.model_name = model_name
+        self.hash = hash
+        self.sha256 = sha256
+        self.shorthash = shorthash
+        self.title = title
+        self.ids = ids
+        self.metadata = metadata
 
     def register(self):
         checkpoints_list[self.title] = self
@@ -110,31 +125,97 @@ def checkpoint_tiles():
 
     return sorted([x.title for x in checkpoints_list.values()], key=alphanumeric_key)
 
+if shared.cmd_opts.pureui:
+    api_endpoint = os.environ['api_endpoint'] if 'api_endpoint' in os.environ else ''
 
-def list_models():
+    class SDModel:
+        def __init__(self, name, filename, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata, sd_model_checkpoint, sd_checkpoint_info):
+            self.name = name
+            self.filename = filename
+            self.name_for_extra =name_for_extra
+            self.model_name = model_name
+            self.hash = hash
+            self.sha256 = sha256
+            self.shorthash = shorthash
+            self.title = title
+            self.ids = json.loads(ids)
+            self.metadata = json.loads(metadata)
+            self.sd_model_checkpoint = sd_model_checkpoint
+            self.sd_checkpoint_info = sd_checkpoint_info
+
+def list_models(sagemaker_endpoint=None,username=''):
     checkpoints_list.clear()
     checkpoint_alisases.clear()
 
-    cmd_ckpt = shared.cmd_opts.ckpt
-    if shared.cmd_opts.no_download_sd_model or cmd_ckpt != shared.sd_model_file or os.path.exists(cmd_ckpt):
-        model_url = None
+    if shared.cmd_opts.pureui:
+        if sagemaker_endpoint:
+            params = {
+                'module': 'Stable-diffusion',
+                'endpoint_name': sagemaker_endpoint
+            }
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+            if response.status_code == 200:
+                model_list = json.loads(response.text)
+
+                for model in model_list:
+                    name = model['name']
+                    filename = model['filename']
+                    name_for_extra = model['name_for_extra']
+                    model_name = model['model_name']
+                    hash = model['hash']
+                    sha256 = model['sha256']
+                    shorthash = model['shorthash']
+                    title = model['title']
+                    ids = model['ids']
+                    metadata = model['metadata']
+
+                    if 'sd_model_checkpoint' not in shared.opts.data:
+                        shared.opts.data['sd_model_checkpoint'] = title
+
+                    checkpoints_list[title] = CheckpointInfo(name, filename, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata)
+            else:
+                print(response.text)
+
+            sd_model_checkpoint = shared.opts.data['sd_model_checkpoint']
+            if sd_model_checkpoint and sd_model_checkpoint in checkpoints_list:
+                sd_checkpoint_info = checkpoints_list[sd_model_checkpoint]
+                model_data.sd_model = SDModel(
+                    sd_checkpoint_info.name,
+                    sd_checkpoint_info.filename,
+                    sd_checkpoint_info.name_for_extra,
+                    sd_checkpoint_info.model_name,
+                    sd_checkpoint_info.hash,
+                    sd_checkpoint_info.sha256,
+                    sd_checkpoint_info.shorthash,
+                    sd_checkpoint_info.title,
+                    sd_checkpoint_info.ids,
+                    sd_checkpoint_info.metadata,
+                    sd_model_checkpoint,
+                    sd_checkpoint_info
+                )
+                model_data.was_loaded_at_least_once = True
+            else:
+                model_data.sd_model = None
     else:
-        model_url = "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors"
+        cmd_ckpt = shared.cmd_opts.ckpt
+        if shared.cmd_opts.no_download_sd_model or cmd_ckpt != shared.sd_model_file or os.path.exists(cmd_ckpt):
+            model_url = None
+        else:
+            model_url = "https://huggingface.co/runwayml/stable-diffusion-v1-5/resolve/main/v1-5-pruned-emaonly.safetensors"
 
-    model_list = modelloader.load_models(model_path=model_path, model_url=model_url, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt", ".safetensors"], download_name="v1-5-pruned-emaonly.safetensors", ext_blacklist=[".vae.ckpt", ".vae.safetensors"])
+        model_list = modelloader.load_models(model_path=model_path, model_url=model_url, command_path=shared.cmd_opts.ckpt_dir, ext_filter=[".ckpt", ".safetensors"], download_name="v1-5-pruned-emaonly.safetensors", ext_blacklist=[".vae.ckpt", ".vae.safetensors"])
 
-    if os.path.exists(cmd_ckpt):
-        checkpoint_info = CheckpointInfo(cmd_ckpt)
-        checkpoint_info.register()
+        if os.path.exists(cmd_ckpt):
+            checkpoint_info = CheckpointInfo(cmd_ckpt)
+            checkpoint_info.register()
 
-        shared.opts.data['sd_model_checkpoint'] = checkpoint_info.title
-    elif cmd_ckpt is not None and cmd_ckpt != shared.default_sd_model_file:
-        print(f"Checkpoint in --ckpt argument not found (Possible it was moved to {model_path}: {cmd_ckpt}", file=sys.stderr)
+            shared.opts.data['sd_model_checkpoint'] = checkpoint_info.title
+        elif cmd_ckpt is not None and cmd_ckpt != shared.default_sd_model_file:
+            print(f"Checkpoint in --ckpt argument not found (Possible it was moved to {model_path}: {cmd_ckpt}", file=sys.stderr)
 
-    for filename in sorted(model_list, key=str.lower):
-        checkpoint_info = CheckpointInfo(filename)
-        checkpoint_info.register()
-
+        for filename in sorted(model_list, key=str.lower):
+            checkpoint_info = CheckpointInfo(filename)
+            checkpoint_info.register()
 
 def get_closet_checkpoint_match(search_string):
     checkpoint_info = checkpoint_alisases.get(search_string, None)

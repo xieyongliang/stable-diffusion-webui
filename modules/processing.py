@@ -153,6 +153,22 @@ class StableDiffusionProcessing:
         self.token_merging_ratio = 0
         self.token_merging_ratio_hr = 0
 
+        self.script_args = json.loads(script_args) if script_args != None else None
+
+        if self.script_args:
+            for idx in range(len(self.script_args)):
+                if(isinstance(self.script_args[idx], dict)):
+                    for key in self.script_args[idx]:
+                        if key == 'image' or key == 'mask':
+                            if isinstance(self.script_args[idx][key], str):
+                                self.script_args[idx][key] = np.asarray(modules.api.api.decode_base64_to_image(self.script_args[idx][key]))
+                            elif key == 'image' and isinstance(self.script_args[idx][key], dict):
+                                if 'image' in self.script_args[idx][key]:
+                                    self.script_args[idx][key]['image'] = np.asarray(modules.api.api.decode_base64_to_image(self.script_args[idx][key]['image']))
+                                if 'mask' in self.script_args[idx][key]:
+                                    self.script_args[idx][key]['mask'] = np.asarray(modules.api.api.decode_base64_to_image(self.script_args[idx][key]['mask']))
+
+
         if not seed_enable_extras:
             self.subseed = -1
             self.subseed_strength = 0

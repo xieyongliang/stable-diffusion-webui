@@ -18,6 +18,11 @@ from modules.paths_internal import models_path, script_path, data_path, sd_confi
 from ldm.models.diffusion.ddpm import LatentDiffusion
 from typing import Optional
 
+import boto3
+from botocore.exceptions import ClientError
+import requests
+import glob
+
 demo = None
 
 parser = cmd_args.parser
@@ -842,3 +847,281 @@ def walk_files(path, allowed_extensions=None):
                 continue
 
             yield os.path.join(root, filename)
+
+def get_cookies(request):
+    # request.headers is of type Gradio.queue.Obj, can't be subscripted
+    # directly, so we need to retrieve its underlying dict first.
+    cookies = request.headers.__dict__['cookie'].split('; ')
+    return cookies
+
+def get_webui_username(request):
+    tokens = demo.server_app.tokens
+    cookies = request.headers.__dict__['cookie'].split('; ')
+    access_token = None
+    for cookie in cookies:
+        if cookie.startswith('access-token'):
+            access_token = cookie[len('access-token=') : ]
+            break
+    if access_token.startswith('unsecure='):
+        access_token = access_token[len('unsecure=') : ]
+    username = tokens[access_token] if access_token else None
+    return username
+
+huggingface_models = [
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2-1',
+        'filename': 'v2-1_768-ema-pruned.ckpt',
+    },
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2-1',
+        'filename': 'v2-1_768-nonema-pruned.ckpt',
+    },
+    {
+        'repo_id': 'stabilityai/stable-diffusion-2',
+        'filename': '768-v-ema.ckpt',
+    },
+    {
+        'repo_id': 'runwayml/stable-diffusion-v1-5',
+        'filename': 'v1-5-pruned-emaonly.ckpt',          
+    },
+    {
+        'repo_id': 'runwayml/stable-diffusion-v1-5',
+        'filename': 'v1-5-pruned.ckpt',          
+    },
+    {
+        'repo_id': 'CompVis/stable-diffusion-v-1-4-original',
+        'filename': 'sd-v1-4.ckpt',          
+    },
+    {
+        'repo_id': 'CompVis/stable-diffusion-v-1-4-original',
+        'filename': 'sd-v1-4-full-ema.ckpt',          
+    },
+]
+
+cache = dict()
+region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+s3_resource= boto3.resource('s3')
+generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+def get_default_sagemaker_bucket():
+    region_name = boto3.Session().region_name
+    account_id = boto3.Session().client('sts').get_caller_identity()['Account']
+    return f"s3://sagemaker-{region_name}-{account_id}"
+
+def realesrgan_models_names():
+    import modules.realesrgan_model
+    return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
+
+class ModelsRef:
+    def __init__(self):
+        self.models_ref = {}
+
+    def get_models_ref_dict(self):
+        return self.models_ref
+    
+    def add_models_ref(self, model_name):
+        if model_name in self.models_ref:
+            self.models_ref[model_name] += 1
+        else:
+            self.models_ref[model_name] = 0
+
+    def remove_model_ref(self,model_name):
+        if self.models_ref.get(model_name):
+            del self.models_ref[model_name]
+
+    def get_models_ref(self, model_name):
+        return self.models_ref.get(model_name)
+    
+    def get_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+    
+    def pop_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            del self.models_ref[least_ref_model]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+        
+sd_models_Ref = ModelsRef()
+cn_models_Ref = ModelsRef()
+lora_models_Ref = ModelsRef()
+vae_models_Ref = ModelsRef()
+
+
+def de_register_model(model_name,mode):
+    models_Ref = sd_models_Ref
+    if mode == 'sd' :
+        models_Ref = sd_models_Ref
+    elif mode == 'cn':
+        models_Ref = cn_models_Ref
+    elif mode == 'lora':
+        models_Ref = lora_models_Ref
+    elif mode == 'vae':
+        models_Ref = vae_models_Ref
+    models_Ref.remove_model_ref(model_name)
+    print (f'---de_register_{mode}_model({model_name})---models_Ref({models_Ref.get_models_ref_dict()})----')
+    if 'endpoint_name' in os.environ:
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        data = {
+            "module":mode,
+            "model_name": model_name,
+            "endpoint_name": endpoint_name
+        }  
+        response = requests.delete(url=f'{api_endpoint}/sd/models', json=data)
+        # Check if the request was successful
+        if response.status_code == requests.codes.ok:
+            print(f"{model_name} deleted successfully!")
+        else:
+            print(f"Error deleting {model_name}: ", response.text)
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def s3_download(s3uri, path):
+    global cache
+
+    print('---path---', path)
+    os.system(f'ls -l {os.path.dirname(path)}')
+
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=key,
+                                                ContinuationToken=page['NextContinuationToken'])
+
+    if os.path.isfile('cache'):
+        cache = json.load(open('cache', 'r'))
+
+    for obj in objects:
+        if obj['Size'] == 0:
+            continue
+        response = s3_client.head_object(
+            Bucket = bucket,
+            Key =  obj['Key']
+        )
+        obj_key = 's3://{0}/{1}'.format(bucket, obj['Key'])
+        if obj_key not in cache or cache[obj_key] != response['ETag']:
+            filename = obj['Key'][obj['Key'].rfind('/') + 1 : ]
+
+            s3_client.download_file(bucket, obj['Key'], os.path.join(path, filename))
+            cache[obj_key] = response['ETag']
+
+    json.dump(cache, open('cache', 'w'))
+
+def http_download(httpuri, path):
+    with requests.get(httpuri, stream=True) as r:
+        r.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+def upload_s3files(s3uri, file_path_with_pattern):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for file_path in glob.glob(file_path_with_pattern):
+            file_name = os.path.basename(file_path)
+            __s3file = f'{key}{file_name}'
+            print(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
+    except ClientError as e:
+        print(e)
+        return False
+    return True
+
+def upload_s3folder(s3uri, file_path):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for path, _, files in os.walk(file_path):
+            for file in files:
+                dest_path = path.replace(file_path,"")
+                __s3file = f'{key}{dest_path}/{file}'
+                __local_file = os.path.join(path, file)
+                print(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
+    except Exception as e:
+        print(e)
+
+s3_resource = boto3.resource('s3')
+s3_image_path_prefix = 'stable-diffusion-webui/generated/'
+
+def download_images_for_ui(bucket_name):
+    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    # Create an empty file if not exist
+    cache_dir = opts.outdir_txt2img_samples.split('/')[0]
+    os.makedirs(cache_dir, exist_ok=True)
+    cache_file_name = os.path.join(cache_dir,'cache_image_files_index.json')
+    if os.path.isfile(cache_file_name) == False:
+        with open(cache_file_name, "w") as f:
+            cache_files = {}
+            json.dump(cache_files, f)
+
+    bucket = s3_resource.Bucket(bucket_name)
+    caches = {}
+    with open(cache_file_name, "r") as f:
+        _cache = json.load(f)  
+        caches = _cache.copy()
+
+    for obj in bucket.objects.all():
+        if obj.key.startswith(s3_image_path_prefix):
+            new_obj_key = obj.key.replace(s3_image_path_prefix,'').split('/')
+            etag = obj.e_tag.replace('"','')
+            if caches.get(etag): 
+                continue
+            # print(f'download:{new_obj_key}')
+            if len(new_obj_key) >=3 : ## {username}/{task}/{image}
+                task_name = new_obj_key[1]
+                if task_name == 'text-to-image':
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
+                elif task_name == 'image-to-image':
+                    dir_name = os.path.join(opts.outdir_img2img_samples,new_obj_key[0])             
+                elif task_name == 'extras-single-image':
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])            
+                elif task_name == 'extras-batch-images':
+                    dir_name = os.path.join(opts.outdir_extras_samples,new_obj_key[0])  
+                elif task_name == 'favorites':
+                    dir_name = os.path.join(opts.outdir_save,new_obj_key[0])  
+                else:
+                    dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
+            elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
+                dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[1]))
+            else: ## {image} default save to txt_img
+                dir_name = os.path.join(opts.outdir_txt2img_samples) 
+                os.makedirs(dir_name, exist_ok=True)
+                bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[0]))
+            caches[etag] = 1
+
+    with open(cache_file_name, "w") as f:
+                json.dump(caches, f) 

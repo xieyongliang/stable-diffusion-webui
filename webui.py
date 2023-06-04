@@ -65,8 +65,24 @@ import modules.progress
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts
+from modules.shared import cmd_opts, opts, syncLock,sync_images_lock,de_register_model,get_default_sagemaker_bucket
 import modules.hypernetworks.hypernetwork
+
+from modules.paths import script_path
+from huggingface_hub import hf_hub_download
+import boto3
+import sys
+import requests
+import traceback
+import uuid
+import psutil
+import glob
+FREESPACE = 20
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd-webui-controlnet'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd_dreambooth_extension'))
+
+if not cmd_opts.api:
+    from extensions.sd_dreambooth_extension.scripts.train import train_dreambooth
 
 startup_timer.record("other imports")
 
@@ -360,6 +376,382 @@ def stop_route(request):
     shared.state.server_command = "stop"
     return Response("Stopping.")
 
+def user_auth(username, password):
+    inputs = {
+        'username': username,
+        'password': password
+    }
+    api_endpoint = os.environ['api_endpoint']
+    response = requests.post(url=f'{api_endpoint}/sd/login', json=inputs)
+    return response.status_code == 200
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def get_models(path, extensions):
+    candidates = []
+    models = []
+    for extension in extensions:
+        candidates = candidates + glob.glob(os.path.join(path, f'**/{extension}'), recursive=True)
+
+    for filename in sorted(candidates, key=str.lower):
+        if os.path.isdir(filename):
+            continue
+        models.append(filename)
+    return models
+
+def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+    print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
+    if file == '' or None:
+        print('Debug log:file is empty, return')
+        return True
+    src = s3_folder + '/' + file
+    dist =  os.path.join(local_folder, file)
+    os.makedirs(os.path.dirname(dist), exist_ok=True)
+    disk_usage = psutil.disk_usage('/tmp')
+    freespace = disk_usage.free/(1024**3)
+    print(f"Total space: {disk_usage.total/(1024**3)}, Used space: {disk_usage.used/(1024**3)}, Free space: {freespace}")
+    if freespace - size >= FREESPACE:
+        try:
+            s3_client.download_file(bucket_name, src, dist)
+            #init ref cnt to 0, when the model file first time download
+            hash = modules.sd_models.model_hash(dist)
+            if mode == 'sd' :
+                shared.sd_models_Ref.add_models_ref('{0} [{1}]'.format(file, hash))
+            elif mode == 'cn':
+                shared.cn_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            elif mode == 'lora':
+                shared.lora_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            elif mode == 'vae':
+                shared.vae_models_Ref.add_models_ref('{0} [{1}]'.format(os.path.splitext(file)[0], hash))
+            print(f'download_file success:from {bucket_name}/{src} to {dist}')
+        except Exception as e:
+            print(f'download_file error: from {bucket_name}/{src} to {dist}')
+            print(f"An error occurred: {e}") 
+            return False
+        return True
+    else:
+        return False
+
+def free_local_disk(local_folder,size,mode):
+    disk_usage = psutil.disk_usage('/tmp')
+    freespace = disk_usage.free/(1024**3)
+    if freespace - size >= FREESPACE:
+        return
+    models_Ref = None
+    if mode == 'sd' :
+        models_Ref = shared.sd_models_Ref
+    elif mode == 'cn':
+        models_Ref = shared.cn_models_Ref
+    elif mode == 'lora':
+        models_Ref = shared.lora_models_Ref
+    elif mode == 'vae':
+        models_Ref = shared.vae_models_Ref
+    model_name,ref_cnt  = models_Ref.get_least_ref_model()
+    print (f'shared.{mode}_models_Ref:{models_Ref.get_models_ref_dict()} -- model_name:{model_name}')
+    if model_name and ref_cnt:
+        filename = model_name[:model_name.rfind("[")]
+        os.remove(os.path.join(local_folder, filename))
+        disk_usage = psutil.disk_usage('/tmp')
+        freespace = disk_usage.free/(1024**3)
+        print(f"Remove file: {os.path.join(local_folder, filename)} now left space:{freespace}") 
+        de_register_model(filename,mode)
+    else:
+        zero_ref_models = set([model[:model.rfind(" [")] for model, count in models_Ref.get_models_ref_dict().items() if count == 0])
+        local_files = set(os.listdir(local_folder))
+        files = [(os.path.join(local_folder, file), os.path.getctime(os.path.join(local_folder, file))) for file in zero_ref_models.intersection(local_files)]
+        if len(files) == 0:
+            print(f"No files to remove in folder: {local_folder}, please remove some files in S3 bucket") 
+            return
+        files.sort(key=lambda x: x[1])
+        oldest_file = files[0][0]
+        os.remove(oldest_file)
+        disk_usage = psutil.disk_usage('/tmp')
+        freespace = disk_usage.free/(1024**3)
+        print(f"Remove file: {oldest_file} now left space:{freespace}") 
+        filename = os.path.basename(oldest_file)
+        de_register_model(filename,mode)
+
+def list_s3_objects(s3_client,bucket_name, prefix=''):
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                _, ext = os.path.splitext(obj['Key'].lstrip('/'))
+                if ext in ['.pt', '.pth', '.ckpt', '.safetensors','.yaml']:
+                    objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix,
+                                                ContinuationToken=page['NextContinuationToken'])
+    return objects
+
+def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
+    os.makedirs(os.path.dirname(local_folder), exist_ok=True)
+    os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+    print(f'create dir: {os.path.dirname(local_folder)}')
+    print(f'create dir: {os.path.dirname(cache_dir)}')
+    s3_file_name = os.path.join(cache_dir,f's3_files_{mode}.json')
+    if os.path.isfile(s3_file_name) == False:
+        s3_files = {}
+        with open(s3_file_name, "w") as f:
+            json.dump(s3_files, f)
+    s3 = boto3.client('s3')
+    s3_objects = list_s3_objects(s3_client=s3, bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+    fnames_dict = {}
+    for obj in s3_objects:
+        filename = obj['Key'].replace(s3_folder, '').lstrip('/')
+        root, ext = os.path.splitext(filename)
+        model = fnames_dict.get(root)
+        if model:
+            model.append(filename)
+        else:
+            fnames_dict[root] = [filename]
+    tmp_s3_files = {}
+    for obj in s3_objects:
+        etag = obj['ETag'].strip('"').strip("'")   
+        size = obj['Size']/(1024**3)
+        filename = obj['Key'].replace(s3_folder, '').lstrip('/')
+        tmp_s3_files[filename] = [etag,size]
+    
+    if mode == 'sd':
+        s3_files = {}
+        try:
+            _, file_names =  next(iter(fnames_dict.items()))
+            for fname in file_names:
+                s3_files[fname] = tmp_s3_files.get(fname)
+                check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
+                register_models(local_folder,mode)
+        except Exception as e:
+            traceback.print_stack()
+            print(e)
+
+    print(f'-----s3_files---{s3_files}')
+    with open(s3_file_name, "w") as f:
+        json.dump(s3_files, f)
+
+def sync_s3_folder(local_folder,cache_dir,mode):
+    s3 = boto3.client('s3')
+    def sync(mode):
+        if mode == 'sd':
+            s3_folder = shared.s3_folder_sd 
+        elif mode == 'cn':
+            s3_folder = shared.s3_folder_cn 
+        elif mode == 'lora':
+            s3_folder = shared.s3_folder_lora
+        elif mode == 'vae':
+            s3_folder = shared.s3_folder_vae
+        else: 
+            s3_folder = ''
+        os.makedirs(os.path.dirname(local_folder), exist_ok=True)
+        os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
+        s3_file_name = os.path.join(cache_dir,f's3_files_{mode}.json')
+        if os.path.isfile(s3_file_name) == False:
+            s3_files = {}
+            with open(s3_file_name, "w") as f:
+                json.dump(s3_files, f)
+
+        s3_objects = list_s3_objects(s3_client=s3,bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+        s3_files = {}
+        for obj in s3_objects:
+            etag = obj['ETag'].strip('"').strip("'")   
+            size = obj['Size']/(1024**3)
+            key = obj['Key'].replace(s3_folder, '').lstrip('/')
+            s3_files[key] = [etag,size]
+
+        s3_files_local = {}
+        with open(s3_file_name, "r") as f:
+            s3_files_local = json.load(f)
+        with open(s3_file_name, "w") as f:
+            json.dump(s3_files, f)
+        mod_files = set()
+        new_files = set([key for key in s3_files if key not in s3_files_local])
+        del_files = set([key for key in s3_files_local if key not in s3_files])
+        registerflag = False
+        for key in set(s3_files_local.keys()).intersection(s3_files.keys()):
+            local_etag  = s3_files_local.get(key)[0]
+            if local_etag and local_etag != s3_files[key][0]:
+                mod_files.add(key)
+        for file in del_files:
+            if os.path.isfile(os.path.join(local_folder, file)):
+                os.remove(os.path.join(local_folder, file))
+                print(f'remove file {os.path.join(local_folder, file)}')
+                de_register_model(file,mode)
+        for file in new_files.union(mod_files):
+            registerflag = True
+            retry = 3 ##retry limit times to prevent dead loop in case other folders is empty
+            while retry:
+                ret = check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, file, s3_files[file][1], mode)
+                if ret:
+                    retry = 0
+                else:
+                    free_local_disk(local_folder,s3_files[file][1],mode)
+                    retry = retry - 1
+        if registerflag:
+            register_models(local_folder,mode)
+            if mode == 'sd':
+                modules.sd_models.list_models()
+            elif mode == 'cn':
+                modules.script_callbacks.update_cn_models_callback()
+            elif mode == 'lora':
+                print('update lora')
+            elif mode == 'vae':
+                modules.sd_vae.refresh_vae_list()
+
+    def sync_thread(mode):  
+        while True:
+            syncLock.acquire()
+            sync(mode)
+            syncLock.release()
+            time.sleep(30)
+    thread = Thread(target=sync_thread,args=(mode,))
+    thread.start()
+    print (f'{mode}_sync thread start')
+    return thread
+
+def register_models(models_dir,mode):
+    if mode == 'sd':
+        register_sd_models(models_dir)
+    elif mode == 'cn':
+        register_cn_models(models_dir)
+    elif mode == 'lora':
+        register_lora_models(models_dir)
+    elif mode == 'vae':
+        register_vae_models(models_dir)
+
+def register_vae_models(vae_models_dir):
+    print ('---register_vae_models()- to be impletemented---')
+    if 'endpoint_name' in os.environ:
+        items = []
+        params = {
+            'module': 'VAE'
+        }
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in get_models(vae_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['path'] = file
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_lora_models(lora_models_dir):
+    print ('---register_lora_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        params = {
+            'module': 'Lora'
+        }
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for file in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_sd_models(sd_models_dir):
+    print ('---register_sd_models()----')
+    model_dir = "Stable-diffusion"
+    model_path = os.path.abspath(os.path.join(paths.models_path, model_dir))
+    
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        for filename in get_models(sd_models_dir, ['*.ckpt', '*.safetensors']):
+            abspath = os.path.abspath(filename)
+            if shared.cmd_opts.ckpt_dir is not None and abspath.startswith(shared.cmd_opts.ckpt_dir):
+                name = abspath.replace(shared.cmd_opts.ckpt_dir, '')
+            elif abspath.startswith(model_path):
+                name = abspath.replace(model_path, '')
+            else:
+                name = os.path.basename(filename)
+
+        if name.startswith("\\") or name.startswith("/"):
+            name = name[1:]
+
+            item = {}
+            item['name'] = name
+            item['name_for_extra'] = name_for_extra = os.path.splitext(os.path.basename(filename))[0]
+            item['model_name'] = model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
+            item['hash'] = hash = modules.sd_models.model_hash(filename)
+            item['sha256'] = sha256 = modules.hashes.sha256_from_cache(filename, f"checkpoint/{name}")
+            item['shorthash'] = shorthash = sha256[0:10] if sha256 else None
+            item['title'] = title = name if shorthash is None else f'{name} [{shorthash}]'
+            item['ids'] = [hash, model_name, title, name, f'{name} [{hash}]'] + ([shorthash, sha256, f'{name} [{shorthash}]'] if shorthash else [])
+            item['metadata'] = {}
+            _, ext = os.path.splitext(filename)
+            if ext.lower() == ".safetensors":
+                try:
+                    item['metadata'] = modules.sd_models.read_metadata_from_safetensors(filename)
+                except Exception as e:
+                    errors.display(e, f"reading checkpoint metadata: {filename}")
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        params = {
+            'module': 'Stable-diffusion'
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def register_cn_models(cn_models_dir):
+    print ('---register_cn_models()----')
+    if 'endpoint_name' in os.environ:
+        items = []
+        api_endpoint = os.environ['api_endpoint']
+        endpoint_name = os.environ['endpoint_name']
+        params = {
+            'module': 'ControlNet'
+        }
+        for file in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+            item = {}
+            item['model_name'] = os.path.basename(file)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['endpoint_name'] = endpoint_name
+            items.append(item)
+        inputs = {
+            'items': items
+        }
+        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+            print(response)
+
+def sync_images_from_s3():
+    # Create a thread function to keep syncing with the S3 folder
+    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    def sync_thread(bucket_name):  
+        while True:
+            sync_images_lock.acquire()
+            shared.download_images_for_ui(bucket_name)
+            sync_images_lock.release()
+            time.sleep(10)
+    thread = Thread(target=sync_thread,args=(bucket_name,))
+    thread.start()
+    print (f'{bucket_name} images sync thread start ')
 
 def webui():
     launch_api = cmd_opts.api
@@ -470,9 +862,267 @@ def webui():
         modules.sd_hijack.list_optimizers()
         startup_timer.record("scripts list_optimizers")
 
+if cmd_opts.train:
+    def train():
+        if cmd_opts.model_name != '':
+            for huggingface_model in shared.huggingface_models:
+                repo_id = huggingface_model['repo_id']
+                filename = huggingface_model['filename']
+                if filename == cmd_opts.model_name:
+                    hf_hub_download(
+                        repo_id=repo_id,
+                        filename=filename,
+                        local_dir='/opt/ml/input/data/models',
+                        cache_dir='/opt/ml/input/data/models'
+                    )
+                    if filename in ['v2-1_768-ema-pruned.ckpt', 'v2-1_768-nonema-pruned.ckpt', '768-v-ema.ckpt', '']:
+                        name = os.path.splitext(filename)[0]
+                        shared.http_download(
+                            'https://raw.githubusercontent.com/Stability-AI/stablediffusion/main/configs/stable-diffusion/v2-inference-v.yaml',
+                            f'/opt/ml/input/data/models/{name}.yaml'
+                        )
+
+        initialize()
+
+        train_task = cmd_opts.train_task
+        train_args = json.loads(cmd_opts.train_args)
+
+        embeddings_s3uri = cmd_opts.embeddings_s3uri
+        hypernetwork_s3uri = cmd_opts.hypernetwork_s3uri
+        sd_models_s3uri = cmd_opts.sd_models_s3uri
+        db_models_s3uri = cmd_opts.db_models_s3uri
+        lora_models_s3uri = cmd_opts.lora_models_s3uri
+        api_endpoint = cmd_opts.api_endpoint
+        username = cmd_opts.username
+
+        if username != '' and train_task in ['embedding', 'hypernetwork']:
+            inputs = {
+                'action': 'get',
+                'username': username
+            }
+            response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+            if response.status_code == 200 and response.text != '':
+                data = json.loads(response.text)
+                try:
+                    opts.data = json.loads(data['options'])
+                except Exception as e:
+                    print(e)
+                modules.sd_models.load_model()
+
+        if train_task == 'embedding':
+            name = train_args['embedding_settings']['name']
+            nvpt = train_args['embedding_settings']['nvpt']
+            overwrite_old = train_args['embedding_settings']['overwrite_old']
+            initialization_text = train_args['embedding_settings']['initialization_text']
+            modules.textual_inversion.textual_inversion.create_embedding(
+                name,
+                nvpt,
+                overwrite_old,
+                init_text=initialization_text
+            )
+            if not cmd_opts.pureui:
+                modules.sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+            process_src = '/opt/ml/input/data/images'
+            process_dst = str(uuid.uuid4())
+            process_width = train_args['images_preprocessing_settings']['process_width']
+            process_height = train_args['images_preprocessing_settings']['process_height']
+            preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+            process_flip = train_args['images_preprocessing_settings']['process_flip']
+            process_split = train_args['images_preprocessing_settings']['process_split']
+            process_caption = train_args['images_preprocessing_settings']['process_caption']    
+            process_caption_deepbooru = train_args['images_preprocessing_settings']['process_caption_deepbooru']    
+            process_split_threshold = train_args['images_preprocessing_settings']['process_split_threshold']
+            process_overlap_ratio = train_args['images_preprocessing_settings']['process_overlap_ratio']
+            process_focal_crop = train_args['images_preprocessing_settings']['process_focal_crop']
+            process_focal_crop_face_weight = train_args['images_preprocessing_settings']['process_focal_crop_face_weight']    
+            process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
+            process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            modules.textual_inversion.preprocess.preprocess(
+                process_src,
+                process_dst,
+                process_width,
+                process_height,
+                preprocess_txt_action,
+                process_flip,
+                process_split,
+                process_caption,
+                process_caption_deepbooru,
+                process_split_threshold,
+                process_overlap_ratio,
+                process_focal_crop,
+                process_focal_crop_face_weight,
+                process_focal_crop_entropy_weight,
+                process_focal_crop_edges_weight,
+                process_focal_crop_debug,
+            )
+            train_embedding_name = name
+            learn_rate = train_args['train_embedding_settings']['learn_rate']
+            batch_size = train_args['train_embedding_settings']['batch_size']
+            gradient_step = train_args['train_embedding_settings']['gradient_step']
+            data_root = process_dst
+            log_directory = 'textual_inversion'
+            training_width = train_args['train_embedding_settings']['training_width']
+            training_height = train_args['train_embedding_settings']['training_height']
+            steps = train_args['train_embedding_settings']['steps']
+            shuffle_tags = train_args['train_embedding_settings']['shuffle_tags']
+            tag_drop_out = train_args['train_embedding_settings']['tag_drop_out']
+            latent_sampling_method = train_args['train_embedding_settings']['latent_sampling_method']
+            create_image_every = train_args['train_embedding_settings']['create_image_every']
+            save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
+            template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
+            save_image_with_stored_embedding = train_args['train_embedding_settings']['save_image_with_stored_embedding']
+            preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
+            txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
+            _, filename = modules.textual_inversion.textual_inversion.train_embedding(
+                train_embedding_name,
+                learn_rate,
+                batch_size,
+                gradient_step,
+                data_root,
+                log_directory,
+                training_width,
+                training_height,
+                steps,
+                shuffle_tags,
+                tag_drop_out,
+                latent_sampling_method,
+                create_image_every,
+                save_embedding_every,
+                template_file,
+                save_image_with_stored_embedding,
+                preview_from_txt2img,
+                *txt2img_preview_params
+            )
+            try:
+                shared.upload_s3files(
+                    embeddings_s3uri, 
+                    os.path.join(cmd_opts.embeddings_dir, '{0}.pt'.format(train_embedding_name))
+                )
+            except Exception as e:
+                traceback.print_exc()
+                print(e)
+        elif train_task == 'hypernetwork':
+            name = train_args['hypernetwork_settings']['name']
+            enable_sizes = train_args['hypernetwork_settings']['enable_sizes']
+            overwrite_old = train_args['hypernetwork_settings']['overwrite_old']
+            layer_structure = train_args['hypernetwork_settings']['layer_structure'] if 'layer_structure' in train_args['hypernetwork_settings'] else None
+            activation_func = train_args['hypernetwork_settings']['activation_func'] if 'activation_func' in train_args['hypernetwork_settings'] else None
+            weight_init = train_args['hypernetwork_settings']['weight_init'] if 'weight_init' in train_args['hypernetwork_settings'] else None
+            add_layer_norm = train_args['hypernetwork_settings']['add_layer_norm'] if 'add_layer_norm' in train_args['hypernetwork_settings'] else False
+            use_dropout = train_args['hypernetwork_settings']['use_dropout'] if 'use_dropout' in train_args['hypernetwork_settings'] else False
+
+            name = "".join( x for x in name if (x.isalnum() or x in "._- "))
+
+            fn = os.path.join(cmd_opts.hypernetwork_dir, f"{name}.pt")
+            if not overwrite_old:
+                assert not os.path.exists(fn), f"file {fn} already exists"
+
+            if type(layer_structure) == str:
+                layer_structure = [float(x.strip()) for x in layer_structure.split(",")]
+
+            hypernet = modules.hypernetworks.hypernetwork.Hypernetwork(
+                name=name,
+                enable_sizes=[int(x) for x in enable_sizes],
+                layer_structure=layer_structure,
+                activation_func=activation_func,
+                weight_init=weight_init,
+                add_layer_norm=add_layer_norm,
+                use_dropout=use_dropout,
+            )
+            hypernet.save(fn)
+
+            shared.hypernetworks = modules.hypernetworks.hypernetwork.list_hypernetworks(cmd_opts.hypernetwork_dir)
+            
+            process_src = '/opt/ml/input/data/images'
+            process_dst = str(uuid.uuid4())
+            process_width = train_args['images_preprocessing_settings']['process_width']
+            process_height = train_args['images_preprocessing_settings']['process_height']
+            preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+            process_flip = train_args['images_preprocessing_settings']['process_flip']
+            process_split = train_args['images_preprocessing_settings']['process_split']
+            process_caption = train_args['images_preprocessing_settings']['process_caption']    
+            process_caption_deepbooru = train_args['images_preprocessing_settings']['process_caption_deepbooru']    
+            process_split_threshold = train_args['images_preprocessing_settings']['process_split_threshold']
+            process_overlap_ratio = train_args['images_preprocessing_settings']['process_overlap_ratio']
+            process_focal_crop = train_args['images_preprocessing_settings']['process_focal_crop']
+            process_focal_crop_face_weight = train_args['images_preprocessing_settings']['process_focal_crop_face_weight']    
+            process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
+            process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            modules.textual_inversion.preprocess.preprocess(
+                process_src,
+                process_dst,
+                process_width,
+                process_height,
+                preprocess_txt_action,
+                process_flip,
+                process_split,
+                process_caption,
+                process_caption_deepbooru,
+                process_split_threshold,
+                process_overlap_ratio,
+                process_focal_crop,
+                process_focal_crop_face_weight,
+                process_focal_crop_entropy_weight,
+                process_focal_crop_edges_weight,
+                process_focal_crop_debug,
+            )
+            train_hypernetwork_name = name
+            learn_rate = train_args['train_hypernetwork_settings']['learn_rate']
+            batch_size = train_args['train_hypernetwork_settings']['batch_size']
+            gradient_step = train_args['train_hypernetwork_settings']['gradient_step']
+            dataset_directory = process_dst
+            log_directory = 'textual_inversion'
+            training_width = train_args['train_hypernetwork_settings']['training_width']
+            training_height = train_args['train_hypernetwork_settings']['training_height']
+            steps = train_args['train_hypernetwork_settings']['steps']
+            shuffle_tags = train_args['train_hypernetwork_settings']['shuffle_tags']
+            tag_drop_out = train_args['train_hypernetwork_settings']['tag_drop_out']
+            latent_sampling_method = train_args['train_hypernetwork_settings']['latent_sampling_method']
+            create_image_every = train_args['train_hypernetwork_settings']['create_image_every']
+            save_hypernetwork_every = train_args['train_hypernetwork_settings']['save_embedding_every']
+            template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
+            save_image_with_stored_embedding = train_args['train_hypernetwork_settings']['save_image_with_stored_embedding']
+            preview_from_txt2img = train_args['train_hypernetwork_settings']['preview_from_txt2img']
+            txt2img_preview_params = train_args['train_hypernetwork_settings']['txt2img_preview_params']        
+            _, filename = modules.hypernetworks.hypernetwork.train_hypernetwork(
+                train_hypernetwork_name,
+                learn_rate,
+                batch_size,
+                gradient_step,
+                dataset_directory,
+                log_directory,
+                training_width,
+                training_height,
+                steps,
+                shuffle_tags,
+                tag_drop_out,
+                latent_sampling_method,
+                create_image_every,
+                save_hypernetwork_every,
+                template_file,
+                preview_from_txt2img,
+                *txt2img_preview_params
+            )
+            try:
+                shared.upload_s3files(
+                    hypernetwork_s3uri, 
+                    os.path.join(cmd_opts.hypernetwork_dir, '{0}.pt'.format(train_hypernetwork_name))
+                )
+            except Exception as e:
+                traceback.print_exc()
+                print(e)
+        elif train_task == 'dreambooth':
+            train_dreambooth(api_endpoint, train_args, sd_models_s3uri, db_models_s3uri, lora_models_s3uri, username)
+        else:
+            print('Incorrect training task')
+            exit(-1)
 
 if __name__ == "__main__":
-    if cmd_opts.nowebui:
+    if cmd_opts.train:
+        train()
+    elif cmd_opts.nowebui:
         api_only()
     else:
         webui()
