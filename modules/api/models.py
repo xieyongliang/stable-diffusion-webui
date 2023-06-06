@@ -293,9 +293,11 @@ class ScriptsList(BaseModel):
 
 class InvocationsRequest(BaseModel):
     task: str
-    id: Optional[str]
-    model: Optional[str]
-    vae: Optional[str]
+    id_task: Optional[str]
+    sd_model_checkpoint: Optional[str]
+    sd_vae: Optional[str]
+    uid: Optional[str]
+    save_dir: Optional[str]
     quality: Optional[int]
     options: Optional[str]
     txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
@@ -305,7 +307,9 @@ class InvocationsRequest(BaseModel):
     interrogate_payload: Optional[InterrogateRequest]
 
 class InvocationsErrorResponse(BaseModel):
-    error: str = Field(title="Invocation error", description="Error response from invocation.")
+    images: List[str] = Field(default=None, title="Image", description="The generated image in base64 format.")
+    parameters: dict
+    info: str
 
 class PingResponse(BaseModel):
     status: str

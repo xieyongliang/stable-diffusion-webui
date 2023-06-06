@@ -37,6 +37,7 @@ from modules.sd_vae import reload_vae_weights, refresh_vae_list
 import uuid
 import json
 import requests
+from datetime import date
 
 def upscaler_to_index(name: str):
     try:
@@ -765,7 +766,10 @@ class Api:
             cuda = { 'error': f'{err}' }
         return MemoryResponse(ram = ram, cuda = cuda)
 
-    def post_invocations(self, b64images, quality):
+    def post_invocations(self, save_dir, b64images, quality):
+        default_folder = date.today().strftime("%Y-%m-%d")
+        if not save_dir:
+            save_dir = default_folder
         if shared.generated_images_s3uri:
             bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
             if key.endswith('/'):
@@ -778,9 +782,9 @@ class Api:
                 shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
-                    Key=f'{key}/{image_id}.{suffix}'
+                    Key=f'{key}/{save_dir}/{image_id}.{suffix}'
                 )
-                images.append(f's3://{bucket}/{key}/{image_id}.{suffix}')
+                images.append(f's3://{bucket}/{key}/{save_dir}/{image_id}.{suffix}')
             return images
         else:
             return b64images
@@ -790,13 +794,13 @@ class Api:
         print(req)
 
         try:
-            if req.vae != None:
-                shared.opts.data['sd_vae'] = req.vae
+            if req.sd_vae != None:
+                shared.opts.data['sd_vae'] = req.sd_vae
                 refresh_vae_list()
 
-            if req.model != None:
+            if req.sd_model_checkpoint != None:
                 sd_model_checkpoint = shared.opts.sd_model_checkpoint
-                shared.opts.sd_model_checkpoint = req.model
+                shared.opts.sd_model_checkpoint = req.sd_model_checkpoint
                 with self.queue_lock:
                     reload_model_weights()
                 if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
@@ -821,32 +825,81 @@ class Api:
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                response.images = self.post_invocations(response.images, quality)
-                return response
+                response.images = self.post_invocations(req.save_dir, response.images, quality)
+                n_iter = response['parameters']['n_iter']
+                batch_size = response['parameters']['batch_size']
+                parameters = {}
+                parameters['id_task'] = req.id_task
+                parameters['status'] = 1
+                parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
+                parameters['seed'] = json.loads(json.loads(response['info']))['all_seeds']
+                parameters['error_msg'] = ''
+                parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
+                return {
+                    'images': [''],
+                    'parameters': parameters,
+                    'info': ''
+                }
             elif req.task == 'image-to-image':
                 if embeddings_s3uri != '':
                     shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                response.images = self.post_invocations(response.images, quality)
-                return response
+                response.images = self.post_invocations(req.save_dir, response.images, quality)
+                n_iter = response['parameters']['n_iter']
+                batch_size = response['parameters']['batch_size']
+                parameters = {}
+                parameters['id_task'] = req.id_task
+                parameters['status'] = 1
+                parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
+                parameters['seed'] = json.loads(json.loads(response['info']))['all_seeds']
+                parameters['error_msg'] = ''
+                parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
+                return {
+                    'images': [''],
+                    'parameters': parameters,
+                    'info': ''
+                }
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                response.image = self.post_invocations([response.image], quality)[0]
+                response.image = self.post_invocations(req.save_dir, [response.image], quality)[0]
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                response.images = self.post_invocations(response.images, quality)
+                response.images = self.post_invocations(req.save_dir, response.images, quality)
                 return response
             elif req.task == 'interrogate':
                 response = self.interrogateapi(req.interrogate_payload)
                 return response
             else:
-                return InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+                traceback.print_exc()
+                parameters = {}
+                parameters['id_task'] = req.id_task
+                parameters['status'] = 0
+                parameters['image_url'] = ''
+                parameters['seed'] = []
+                parameters['error_msg'] = f'Invalid task - {req.task}'
+                parameters['image_mask_url'] = ''
+                return {
+                    'images': [''],
+                    'parameters': parameters,
+                    'info': ''
+                }
 
         except Exception as e:
             traceback.print_exc()
-            return InvocationsErrorResponse(error = str(e))
+            parameters = {}
+            parameters['id_task'] = req.id_task
+            parameters['status'] = 0
+            parameters['image_url'] = ''
+            parameters['seed'] = []
+            parameters['error_msg'] = str(e)
+            parameters['image_mask_url'] = ''
+            return {
+                'images': [''],
+                'parameters': parameters,
+                'info': ''
+            }
 
     def ping(self):
         return {'status': 'Healthy'}
