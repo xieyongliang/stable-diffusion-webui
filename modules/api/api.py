@@ -29,14 +29,14 @@ from modules import devices
 from typing import List
 import piexif
 import piexif.helper
+
 import asyncio
 from typing import Union
 import traceback
 from modules.sd_vae import reload_vae_weights, refresh_vae_list
-from modules.paths_internal import script_path
 import uuid
-import os
 import json
+import requests
 
 def upscaler_to_index(name: str):
     try:
@@ -63,11 +63,24 @@ def setUpscalers(req: dict):
     reqDict['extras_upscaler_2'] = reqDict.pop('upscaler_2', None)
     return reqDict
 
-def decode_base64_to_image(encoding):
-    if encoding.startswith("data:image/"):
-        encoding = encoding.split(";")[1].split(",")[1]
+def decode_to_image(encoding):
+    image = None
     try:
-        image = Image.open(BytesIO(base64.b64decode(encoding)))
+        if encoding.startswith("data:image/"):
+            encoding = encoding.split(";")[1].split(",")[1]
+            image = Image.open(BytesIO(base64.b64decode(encoding)))
+        elif encoding.startswith("http://"):
+            response = requests.get(encoding)
+            if response.status_code == 200:
+                encoding = response.text
+                image = Image.open(BytesIO(response.content))
+        elif encoding.startswith("s3://"):
+            bucket, key = shared.get_bucket_and_key(encoding)
+            response = shared.s3_client.get_object(
+                Bucket=bucket,
+                Key=key
+            )
+            image = Image.open(response['Body'])
         return image
     except Exception as err:
         raise HTTPException(status_code=500, detail="Invalid encoded image")
@@ -321,6 +334,25 @@ class Api:
                 # always on script with no arg should always run so you don't really need to add them to the requests
                 if "args" in request.alwayson_scripts[alwayson_script_name]:
                     script_args[alwayson_script.args_from:alwayson_script.args_to] = request.alwayson_scripts[alwayson_script_name]["args"]
+
+        for i in range(0, len(script_args)):
+            if(isinstance(script_args[i], dict)):
+                script_arg = {}
+                for key in script_args[i]:
+                    if key == 'image' or key == 'mask':
+                        script_arg[key] = decode_to_image(Image.fromarray(script_arg[i][key]))
+                script_args.append(script_arg)
+            elif hasattr(script_args[i], '__dict__'):
+                script_arg = {}
+                for key in script_args[i].__dict__:
+                    if key == 'image':
+                        if script_args[i].__dict__[key]:
+                            script_arg[key] = {}
+                            if 'image' in script_args[i].__dict__[key]:
+                                script_arg[key]['image'] = decode_to_image(script_args[i].__dict__[key]['image'])
+                            if 'mask' in script_args[i].__dict__[key]:
+                                script_arg[key]['mask'] = decode_to_image(script_args[i].__dict__[key]['mask'])
+
         return script_args
 
     def text2imgapi(self, txt2imgreq: StableDiffusionTxt2ImgProcessingAPI):
@@ -376,7 +408,7 @@ class Api:
 
         mask = img2imgreq.mask
         if mask:
-            mask = decode_base64_to_image(mask)
+            mask = decode_to_image(mask)
 
         script_runner = scripts.scripts_img2img
         if not script_runner.scripts:
@@ -408,7 +440,7 @@ class Api:
 
         with self.queue_lock:
             p = StableDiffusionProcessingImg2Img(sd_model=shared.sd_model, **args)
-            p.init_images = [decode_base64_to_image(x) for x in init_images]
+            p.init_images = [decode_to_image(x) for x in init_images]
             p.scripts = script_runner
             p.outpath_grids = opts.outdir_img2img_grids
             p.outpath_samples = opts.outdir_img2img_samples
@@ -434,7 +466,7 @@ class Api:
     def extras_single_image_api(self, req: ExtrasSingleImageRequest):
         reqDict = setUpscalers(req)
 
-        reqDict['image'] = decode_base64_to_image(reqDict['image'])
+        reqDict['image'] = decode_to_image(reqDict['image'])
 
         with self.queue_lock:
             result = postprocessing.run_extras(extras_mode=0, image_folder="", input_dir="", output_dir="", save_output=False, **reqDict)
@@ -461,7 +493,7 @@ class Api:
         if(not req.image.strip()):
             return PNGInfoResponse(info="")
 
-        image = decode_base64_to_image(req.image.strip())
+        image = decode_to_image(req.image.strip())
         if image is None:
             return PNGInfoResponse(info="")
 
@@ -506,7 +538,7 @@ class Api:
         if image_b64 is None:
             raise HTTPException(status_code=404, detail="Image not found")
 
-        img = decode_base64_to_image(image_b64)
+        img = decode_to_image(image_b64)
         img = img.convert('RGB')
 
         # Override object param
@@ -740,7 +772,7 @@ class Api:
                 key = key[ : -1]
             images = []
             for b64image in b64images:
-                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image), quality)
+                bytes_data = export_pil_to_bytes(decode_to_image(b64image), quality)
                 image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
                 suffix = opts.samples_format.lower()
                 shared.s3_client.put_object(
