@@ -343,7 +343,7 @@ class Api:
                 script_arg = {}
                 for key in script_args[i]:
                     if key == 'image' or key == 'mask':
-                        script_arg[key] = decode_to_image(script_args[i][key])
+                        script_arg[key] = encode_pil_to_base64(decode_to_image(script_args[i][key]))
                     else:
                         script_arg[key] = script_args[i][key]
                 script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
@@ -354,9 +354,9 @@ class Api:
                     if key == 'image':
                         if script_args[i].__dict__[key]:
                             if 'image' in script_args[i].__dict__[key]:
-                                script_arg[key]['image'] = decode_to_image(script_args[i].__dict__[key]['image'])
+                                script_arg[key]['image'] = encode_pil_to_base64(decode_to_image(script_args[i].__dict__[key]['image']))
                             if 'mask' in script_args[i].__dict__[key]:
-                                script_arg[key]['mask'] = decode_to_image(script_args[i].__dict__[key]['mask'])
+                                script_arg[key]['mask'] = encode_pil_to_base64(decode_to_image(script_args[i].__dict__[key]['mask']))
                 script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
 
         return script_args
