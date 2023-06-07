@@ -749,7 +749,7 @@ def s3_download(s3uri, path):
         if os.path.isfile('cache'):
             cache = json.load(open('cache', 'r'))
     except:
-        cache = {}
+        pass
 
     for obj in objects:
         if obj['Size'] == 0:
