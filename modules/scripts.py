@@ -414,6 +414,7 @@ class ScriptRunner:
         for script in self.alwayson_scripts:
             try:
                 script_args = p.script_args[script.args_from:script.args_to]
+                print(script, script_args)
                 script.process(p, *script_args)
             except Exception:
                 print(f"Error running process: {script.filename}", file=sys.stderr)
