@@ -338,6 +338,7 @@ class Api:
                     script_args[alwayson_script.args_from:alwayson_script.args_to] = request.alwayson_scripts[alwayson_script_name]["args"]
 
         for i in range(0, len(script_args)):
+            print(script_args[i])
             if(isinstance(script_args[i], dict)):
                 script_arg = {}
                 for key in script_args[i]:
