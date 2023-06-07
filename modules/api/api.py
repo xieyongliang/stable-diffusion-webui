@@ -834,7 +834,7 @@ class Api:
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
                 parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
-                parameters['seed'] = json.loads(json.loads(response.info))['all_seeds']
+                parameters['seed'] = json.loads(response.info)['all_seeds']
                 parameters['error_msg'] = ''
                 parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
                 return {
@@ -854,7 +854,7 @@ class Api:
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
                 parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
-                parameters['seed'] = json.loads(json.loads(response.info))['all_seeds']
+                parameters['seed'] = json.loads(response.info)['all_seeds']
                 parameters['error_msg'] = ''
                 parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
                 return {
