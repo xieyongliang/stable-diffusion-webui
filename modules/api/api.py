@@ -37,6 +37,7 @@ from modules.sd_vae import reload_vae_weights, refresh_vae_list
 import uuid
 import json
 import requests
+from datetime import date
 
 def upscaler_to_index(name: str):
     try:
@@ -65,9 +66,8 @@ def setUpscalers(req: dict):
 
 def decode_to_image(encoding):
     image = None
-    print(encoding)
     try:
-        if encoding.startswith("http://"):
+        if encoding.startswith("http://") or encoding.startswith("https://"):
             response = requests.get(encoding)
             if response.status_code == 200:
                 encoding = response.text
@@ -86,6 +86,23 @@ def decode_to_image(encoding):
         return image
     except Exception as err:
         raise HTTPException(status_code=500, detail="Invalid encoded image")
+
+def decode_base64_to_image(encoding):
+    return decode_to_image(encoding)
+
+def encode_to_base64(image):
+    with io.BytesIO() as output_bytes:
+        image.save(output_bytes, format="PNG", quality=opts.jpeg_quality)
+        bytes_data = output_bytes.getvalue()
+
+    encoded_string = base64.b64encode(bytes_data)
+
+    base64_str = str(encoded_string, "utf-8")
+    mimetype = "image/png"
+    image_encoded_in_base64 = (
+        "data:" + (mimetype if mimetype is not None else "") + ";base64," + base64_str
+    )
+    return image_encoded_in_base64
 
 def encode_pil_to_base64(image):
     with io.BytesIO() as output_bytes:
@@ -342,19 +359,21 @@ class Api:
                 script_arg = {}
                 for key in script_args[i]:
                     if key == 'image' or key == 'mask':
-                        script_arg[key] = decode_to_image(Image.fromarray(script_arg[key]))
-                script_args[i] = script_arg
+                        script_arg[key] = encode_to_base64(decode_to_image(script_args[i][key]))
+                    else:
+                        script_arg[key] = script_args[i][key]
+                script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
             elif hasattr(script_args[i], '__dict__'):
                 script_arg = {}
                 for key in script_args[i].__dict__:
+                    script_arg[key] = script_args[i].__dict__[key]
                     if key == 'image':
                         if script_args[i].__dict__[key]:
-                            script_arg[key] = {}
                             if 'image' in script_args[i].__dict__[key]:
-                                script_arg[key]['image'] = decode_to_image(script_args[i].__dict__[key]['image'])
+                                script_arg[key]['image'] = encode_to_base64(decode_to_image(script_args[i].__dict__[key]['image']))
                             if 'mask' in script_args[i].__dict__[key]:
-                                script_arg[key]['mask'] = decode_to_image(script_args[i].__dict__[key]['mask'])
-                script_args[i] = script_arg
+                                script_arg[key]['mask'] = encode_to_base64(decode_to_image(script_args[i].__dict__[key]['mask']))
+                script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
 
         return script_args
 
