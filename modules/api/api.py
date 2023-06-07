@@ -343,7 +343,7 @@ class Api:
                 script_arg = {}
                 for key in script_args[i]:
                     if key == 'image' or key == 'mask':
-                        script_arg[key] = decode_to_image(Image.fromarray(script_args[i][key]))
+                        script_arg[key] = decode_to_image(script_args[i][key])
                 script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
             elif hasattr(script_args[i], '__dict__'):
                 script_arg = {}
@@ -835,7 +835,7 @@ class Api:
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
                 parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
-                parameters['seed'] = json.loads(response.info)['all_seeds']
+                parameters['seed'] = ','.join(str(x) for x in json.loads(response.info)['all_seeds'])
                 parameters['error_msg'] = ''
                 parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
                 return {
@@ -855,7 +855,7 @@ class Api:
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
                 parameters['image_url'] = ','.join(response.images[ : n_iter * batch_size])
-                parameters['seed'] = json.loads(response.info)['all_seeds']
+                parameters['seed'] = ','.join(str(x) for x in json.loads(response.info)['all_seeds'])
                 parameters['error_msg'] = ''
                 parameters['image_mask_url'] = ','.join(response.images[n_iter * batch_size : ])
                 return {
