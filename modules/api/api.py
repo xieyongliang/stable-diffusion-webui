@@ -67,7 +67,7 @@ def setUpscalers(req: dict):
 def decode_to_image(encoding):
     image = None
     try:
-        if encoding.startswith("http://"):
+        if encoding.startswith("http://") or encoding.startswith("https://"):
             response = requests.get(encoding)
             if response.status_code == 200:
                 encoding = response.text
