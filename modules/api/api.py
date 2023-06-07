@@ -82,6 +82,8 @@ def decode_to_image(encoding):
                 Key=key
             )
             image = Image.open(response['Body'])
+        else:
+            image = encoding
         return image
     except Exception as err:
         raise HTTPException(status_code=500, detail="Invalid encoded image")
