@@ -746,8 +746,11 @@ def s3_download(s3uri, path):
             page_iterator = paginator.paginate(Bucket=bucket, Prefix=key,
                                                 ContinuationToken=page['NextContinuationToken'])
 
-    if os.path.isfile('cache'):
-        cache = json.load(open('cache', 'r'))
+    try:
+        if os.path.isfile('cache'):
+            cache = json.load(open('cache', 'r'))
+    except:
+        pass
 
     for obj in objects:
         if obj['Size'] == 0:
