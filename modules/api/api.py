@@ -66,11 +66,9 @@ def setUpscalers(req: dict):
 
 def decode_to_image(encoding):
     image = None
+    print(encoding)
     try:
-        if encoding.startswith("data:image/"):
-            encoding = encoding.split(";")[1].split(",")[1]
-            image = Image.open(BytesIO(base64.b64decode(encoding)))
-        elif encoding.startswith("http://"):
+        if encoding.startswith("http://"):
             response = requests.get(encoding)
             if response.status_code == 200:
                 encoding = response.text
@@ -83,7 +81,9 @@ def decode_to_image(encoding):
             )
             image = Image.open(response['Body'])
         else:
-            image = encoding
+            if encoding.startswith("data:image/"):
+                encoding = encoding.split(";")[1].split(",")[1]
+            image = Image.open(BytesIO(base64.b64decode(encoding)))
         return image
     except Exception as err:
         raise HTTPException(status_code=500, detail="Invalid encoded image")
