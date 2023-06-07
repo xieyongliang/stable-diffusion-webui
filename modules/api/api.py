@@ -342,7 +342,7 @@ class Api:
                 script_arg = {}
                 for key in script_args[i]:
                     if key == 'image' or key == 'mask':
-                        script_arg[key] = decode_to_image(Image.fromarray(script_arg[key]))
+                        script_arg[key] = decode_to_image(Image.fromarray(script_args[i][key]))
                 script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
             elif hasattr(script_args[i], '__dict__'):
                 script_arg = {}
