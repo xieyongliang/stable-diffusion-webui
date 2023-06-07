@@ -828,8 +828,8 @@ class Api:
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
                 response.images = self.post_invocations(req.save_dir, response.images, quality)
-                n_iter = response['parameters']['n_iter']
-                batch_size = response['parameters']['batch_size']
+                n_iter = response.parameters['n_iter']
+                batch_size = response.parameters['batch_size']
                 parameters = {}
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
@@ -848,8 +848,8 @@ class Api:
                     sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
                 response.images = self.post_invocations(req.save_dir, response.images, quality)
-                n_iter = response['parameters']['n_iter']
-                batch_size = response['parameters']['batch_size']
+                n_iter = response.parameters['n_iter']
+                batch_size = response.parameters['batch_size']
                 parameters = {}
                 parameters['id_task'] = req.id_task
                 parameters['status'] = 1
