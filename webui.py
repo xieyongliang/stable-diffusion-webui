@@ -207,7 +207,7 @@ def get_models(path, extensions):
 
 def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
     print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
-    if file == '' or None:
+    if file == '' or file == None:
         print('Debug log:file is empty, return')
         return True
     src = s3_folder + '/' + file

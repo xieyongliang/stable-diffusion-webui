@@ -1044,6 +1044,9 @@ def download_images_for_ui(bucket_name):
                 continue
             # print(f'download:{new_obj_key}')
             if len(new_obj_key) >=3 : ## {username}/{task}/{image}
+                image_name = new_obj_key[2]
+                if image_name == '' or image_name == None:
+                    continue
                 task_name = new_obj_key[1]
                 if task_name == 'text-to-image':
                     dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
@@ -1060,10 +1063,16 @@ def download_images_for_ui(bucket_name):
                 os.makedirs(dir_name, exist_ok=True)
                 bucket.download_file(obj.key, os.path.join(dir_name,new_obj_key[2]))
             elif len(new_obj_key) ==2:  ## {username}/{image} default save to txt_img
+                image_name = new_obj_key[1]
+                if image_name == '' or image_name == None:
+                    continue
                 dir_name = os.path.join(opts.outdir_txt2img_samples,new_obj_key[0]) 
                 os.makedirs(dir_name, exist_ok=True)
                 bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[1]))
             else: ## {image} default save to txt_img
+                image_name = new_obj_key[0]
+                if image_name == '' or image_name == None:
+                    continue
                 dir_name = os.path.join(opts.outdir_txt2img_samples) 
                 os.makedirs(dir_name, exist_ok=True)
                 bucket.download_file(obj.key,os.path.join(dir_name,new_obj_key[0]))
