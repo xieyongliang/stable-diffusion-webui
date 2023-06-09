@@ -1038,12 +1038,14 @@ def download_images_for_ui(bucket_name):
 
     for obj in bucket.objects.all():
         if obj.key.startswith(s3_image_path_prefix):
+            print(f'download:{obj.key},size:{obj.size}')
+            if obj.size == 0:
+                continue
             new_obj_key = obj.key.replace(s3_image_path_prefix,'').split('/')
             etag = obj.e_tag.replace('"','')
             if caches.get(etag): 
                 continue
-            # print(f'download:{new_obj_key}')
-            if len(new_obj_key) >=3 : ## {username}/{task}/{image}
+            if len(new_obj_key) ==3 : ## {username}/{task}/{image}
                 image_name = new_obj_key[2]
                 if image_name == '' or image_name == None:
                     continue
