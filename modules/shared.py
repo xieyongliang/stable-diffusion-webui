@@ -1010,6 +1010,16 @@ def walk_files(path, allowed_extensions=None):
 
             yield os.path.join(root, filename)
 
+models_s3_bucket = None
+s3_folder_sd = None
+s3_folder_cn = None
+s3_folder_lora = None
+s3_folder_vae = None
+syncLock = threading.Lock()
+sync_images_lock = threading.Lock()
+tmp_models_dir = '/tmp/models'
+tmp_cache_dir = '/tmp/model_sync_cache'
+
 def get_cookies(request):
     # request.headers is of type Gradio.queue.Obj, can't be subscripted
     # directly, so we need to retrieve its underlying dict first.
