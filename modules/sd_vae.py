@@ -4,6 +4,8 @@ from modules import paths, shared, devices, script_callbacks, sd_models
 import glob
 from copy import deepcopy
 
+import json
+import requests
 
 vae_path = os.path.abspath(os.path.join(paths.models_path, "VAE"))
 vae_ignore_keys = {"model_ema.decay", "model_ema.num_updates"}
@@ -49,35 +51,49 @@ def get_filename(filepath):
     return os.path.basename(filepath)
 
 
-def refresh_vae_list():
+def refresh_vae_list(sagemaker_endpoint=None):
     vae_dict.clear()
 
-    paths = [
-        os.path.join(sd_models.model_path, '**/*.vae.ckpt'),
-        os.path.join(sd_models.model_path, '**/*.vae.pt'),
-        os.path.join(sd_models.model_path, '**/*.vae.safetensors'),
-        os.path.join(vae_path, '**/*.ckpt'),
-        os.path.join(vae_path, '**/*.pt'),
-        os.path.join(vae_path, '**/*.safetensors'),
-    ]
-
-    if shared.cmd_opts.ckpt_dir is not None and os.path.isdir(shared.cmd_opts.ckpt_dir):
-        paths += [
-            os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.ckpt'),
-            os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.pt'),
-            os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.safetensors'),
+    if shared.cmd_opts.pureui:
+        api_endpoint = os.environ['api_endpoint']
+        candidates = []
+        if sagemaker_endpoint:
+            params = {
+                'module': 'VAE',
+                'endpoint_name': sagemaker_endpoint
+            }
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+            if response.status_code == 200:
+                model_list = json.loads(response.text)
+                for model in model_list:
+                    candidates.append(model['path'])
+    else:
+        paths = [
+            os.path.join(sd_models.model_path, '**/*.vae.ckpt'),
+            os.path.join(sd_models.model_path, '**/*.vae.pt'),
+            os.path.join(sd_models.model_path, '**/*.vae.safetensors'),
+            os.path.join(vae_path, '**/*.ckpt'),
+            os.path.join(vae_path, '**/*.pt'),
+            os.path.join(vae_path, '**/*.safetensors'),
         ]
 
-    if shared.cmd_opts.vae_dir is not None and os.path.isdir(shared.cmd_opts.vae_dir):
-        paths += [
-            os.path.join(shared.cmd_opts.vae_dir, '**/*.ckpt'),
-            os.path.join(shared.cmd_opts.vae_dir, '**/*.pt'),
-            os.path.join(shared.cmd_opts.vae_dir, '**/*.safetensors'),
-        ]
+        if shared.cmd_opts.ckpt_dir is not None and os.path.isdir(shared.cmd_opts.ckpt_dir):
+            paths += [
+                os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.ckpt'),
+                os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.pt'),
+                os.path.join(shared.cmd_opts.ckpt_dir, '**/*.vae.safetensors'),
+            ]
 
-    candidates = []
-    for path in paths:
-        candidates += glob.iglob(path, recursive=True)
+        if shared.cmd_opts.vae_dir is not None and os.path.isdir(shared.cmd_opts.vae_dir):
+            paths += [
+                os.path.join(shared.cmd_opts.vae_dir, '**/*.ckpt'),
+                os.path.join(shared.cmd_opts.vae_dir, '**/*.pt'),
+                os.path.join(shared.cmd_opts.vae_dir, '**/*.safetensors'),
+            ]
+
+        candidates = []
+        for path in paths:
+            candidates += glob.iglob(path, recursive=True)
 
     for filepath in candidates:
         name = get_filename(filepath)

@@ -5,6 +5,9 @@ from typing import Union
 
 from modules import shared, devices, sd_models, errors, scripts, sd_hijack, hashes
 
+import requests
+import json
+
 metadata_tags_order = {"ss_sd_model_name": 1, "ss_resolution": 2, "ss_clip_skip": 3, "ss_num_train_images": 10, "ss_tag_frequency": 20}
 
 re_digits = re.compile(r"\d+")
@@ -72,17 +75,25 @@ def convert_diffusers_name_to_compvis(key, is_sd2):
 
 
 class LoraOnDisk:
-    def __init__(self, name, filename):
+    def __init__(self, name, filename, alias, hash, shorthash, metadata):
         self.name = name
         self.filename = filename
-        self.metadata = {}
-        self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
 
-        if self.is_safetensors:
-            try:
-                self.metadata = sd_models.read_metadata_from_safetensors(filename)
-            except Exception as e:
-                errors.display(e, f"reading lora {filename}")
+        if shared.cmd_opts.pureui:
+            self.ssmd_cover_images = None
+            self.alias = alias
+            self.hash = hash
+            self.shorthash = shorthash
+            self.metadata = metadata
+        else:
+            self.metadata = {}
+            self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
+
+            if self.is_safetensors:
+                try:
+                    self.metadata = sd_models.read_metadata_from_safetensors(filename)
+                except Exception as e:
+                    errors.display(e, f"reading lora {filename}")
 
         if self.metadata:
             m = {}
@@ -433,30 +444,59 @@ def lora_MultiheadAttention_load_state_dict(self, *args, **kwargs):
     return torch.nn.MultiheadAttention_load_state_dict_before_lora(self, *args, **kwargs)
 
 
-def list_available_loras():
+def list_available_loras(sagemaker_endpoint=None, username=None):
     available_loras.clear()
     available_lora_aliases.clear()
     forbidden_lora_aliases.clear()
     available_lora_hash_lookup.clear()
     forbidden_lora_aliases.update({"none": 1, "Addams": 1})
 
-    os.makedirs(shared.cmd_opts.lora_dir, exist_ok=True)
+    if shared.cmd_opts.pureui:
+        if sagemaker_endpoint:
+            api_endpoint = os.environ['api_endpoint']
+            params = {'module': 'Lora', 'endpoint_name': sagemaker_endpoint}
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
 
-    candidates = list(shared.walk_files(shared.cmd_opts.lora_dir, allowed_extensions=[".pt", ".ckpt", ".safetensors"]))
-    for filename in sorted(candidates, key=str.lower):
-        if os.path.isdir(filename):
-            continue
+            if response.status_code == 200:
+                items = json.loads(response.text)
+                for item in items:
+                    filename = item['filename']
+                    name = os.path.splitext(item['model_name'])[0]
+                    alias = item['alias']
+                    hash = item['hash']
+                    shorthash = item['shorthash']
+                    try:
+                        metadata = json.loads(item['metadata'])
+                    except:
+                        metadata = {}
 
-        name = os.path.splitext(os.path.basename(filename))[0]
-        entry = LoraOnDisk(name, filename)
+                    entry = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}', alias, hash, shorthash, metadata)
 
-        available_loras[name] = entry
+                    available_loras[name] = entry
 
-        if entry.alias in available_lora_aliases:
-            forbidden_lora_aliases[entry.alias.lower()] = 1
+                    if entry.alias in available_lora_aliases:
+                        forbidden_lora_aliases[entry.alias.lower()] = 1
 
-        available_lora_aliases[name] = entry
-        available_lora_aliases[entry.alias] = entry
+                    available_lora_aliases[name] = entry
+                    available_lora_aliases[entry.alias] = entry
+    else:
+        os.makedirs(shared.cmd_opts.lora_dir, exist_ok=True)
+
+        candidates = list(shared.walk_files(shared.cmd_opts.lora_dir, allowed_extensions=[".pt", ".ckpt", ".safetensors"]))
+        for filename in sorted(candidates, key=str.lower):
+            if os.path.isdir(filename):
+                continue
+
+            name = os.path.splitext(os.path.basename(filename))[0]
+            entry = LoraOnDisk(name, filename)
+
+            available_loras[name] = entry
+
+            if entry.alias in available_lora_aliases:
+                forbidden_lora_aliases[entry.alias.lower()] = 1
+
+            available_lora_aliases[name] = entry
+            available_lora_aliases[entry.alias] = entry
 
 
 re_lora_name = re.compile(r"(.*)\s*\([0-9a-fA-F]+\)")

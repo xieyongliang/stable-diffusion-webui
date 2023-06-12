@@ -35,6 +35,9 @@ import modules.hypernetworks.ui
 from modules.generation_parameters_copypaste import image_from_url_text
 import modules.extras
 
+import requests
+from modules.sd_models import get_sd_model_checkpoint_from_title
+
 warnings.filterwarnings("default" if opts.show_warnings else "ignore", category=UserWarning)
 
 # this is a fix for Windows users. Without it, javascript files will be served with text/html content-type and the browser will not show any UI
@@ -247,22 +250,24 @@ def connect_reuse_seed(seed: gr.Number, reuse_seed: gr.Button, generation_info: 
 
 
 def update_token_counter(text, steps):
-    try:
-        text, _ = extra_networks.parse_prompt(text)
+    if not cmd_opts.pureui:
+        try:
+            text, _ = extra_networks.parse_prompt(text)
 
-        _, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
-        prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, steps)
+            _, prompt_flat_list, _ = prompt_parser.get_multicond_prompt_list([text])
+            prompt_schedules = prompt_parser.get_learned_conditioning_prompt_schedules(prompt_flat_list, steps)
 
-    except Exception:
-        # a parsing error can happen here during typing, and we don't want to bother the user with
-        # messages related to it in console
-        prompt_schedules = [[[steps, text]]]
+        except Exception:
+            # a parsing error can happen here during typing, and we don't want to bother the user with
+            # messages related to it in console
+            prompt_schedules = [[[steps, text]]]
 
-    flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
-    prompts = [prompt_text for step, prompt_text in flat_prompts]
-    token_count, max_length = max([model_hijack.get_prompt_lengths(prompt) for prompt in prompts], key=lambda args: args[0])
-    return f"<span class='gr-box gr-text-input'>{token_count}/{max_length}</span>"
-
+        flat_prompts = reduce(lambda list1, list2: list1+list2, prompt_schedules)
+        prompts = [prompt_text for step, prompt_text in flat_prompts]
+        token_count, max_length = max([model_hijack.get_prompt_lengths(prompt) for prompt in prompts], key=lambda args: args[0])
+        return f"<span class='gr-box gr-text-input'>{token_count}/{max_length}</span>"
+    else:
+        return f"<span>N/A</span>"
 
 def create_toprow(is_img2img):
     id_part = "img2img" if is_img2img else "txt2img"
@@ -364,7 +369,9 @@ def apply_setting(key, value):
     if oldval != value and opts.data_labels[key].onchange is not None:
         opts.data_labels[key].onchange()
 
-    opts.save(shared.config_filename)
+    if not cmd_opts.pureui:
+        opts.save(shared.config_filename)
+
     return getattr(opts, key)
 
 
@@ -443,6 +450,44 @@ def create_ui():
 
     modules.scripts.scripts_current = modules.scripts.scripts_txt2img
     modules.scripts.scripts_txt2img.initialize_scripts(is_img2img=False)
+
+    interfaces = []
+
+    def image_viewer(path,cols_width,current_only,request:gr.Request):
+        if current_only:
+            username = shared.get_webui_username(request)
+            path = path+'/'+username
+        dirs = path.replace('s3://','').split('/')
+        prefix = '/'.join(dirs[1:])
+        bucket = dirs[0]
+        objects = shared.list_objects(bucket,prefix)
+        image_url = []
+        for object_key in objects:
+            if object_key.endswith('.jpg') or object_key.endswith('.jpeg') or object_key.endswith('.png'):
+                image_url.append([shared.s3_client.generate_presigned_url('get_object', Params={
+                    'Bucket': bucket, 'Key': object_key}, ExpiresIn=3600),object_key.split('/')[-1]])
+        image_tags = ""
+        for image,key in image_url:
+            image_tags += f"<div style='padding: 5px;';widget><a href='{image}' target='_blank'><img src='{image}'></a><div style='color:#7d8998'>{key}</div></div>"
+        div = f"<div style='display: grid; grid-template-columns: repeat({cols_width}, 1fr); grid-gap: 10px;border: 1px solid #e9ebed; border-radius:10px;padding: 10px;'>{image_tags}</div>"
+        return div
+
+    with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
+        with gr.Row():
+            with gr.Column(scale=3):
+                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+                dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, interactive=False,
+                                                  value = shared.get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated/{username}')
+
+            with gr.Column(scale=1):
+                show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=True,interactive=True)
+            with gr.Column(scale=1):
+                cols_width = gr.Slider(minimum=4, maximum=20, step=1, label="columns width", value=8)
+            with gr.Column(scale=1):
+                images_s3_path_btn = gr.Button(value="Submit",variant='primary')
+        with gr.Row():
+            result = gr.HTML("<div style='height:300px;border:1px solid #e9ebed;border-radius:10px;'></div>")
+        images_s3_path_btn.click(fn=image_viewer, inputs=[images_s3_path,cols_width,show_user_only], outputs=[result])
 
     with gr.Blocks(analytics_enabled=False) as txt2img_interface:
         txt2img_prompt, txt2img_prompt_styles, txt2img_negative_prompt, submit, _, _, txt2img_prompt_style_apply, txt2img_save_style, txt2img_paste, extra_networks_button, token_counter, token_button, negative_token_counter, negative_token_button, restore_progress_button = create_toprow(is_img2img=False)
@@ -1143,26 +1188,148 @@ def create_ui():
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
+
         with gr.Row().style(equal_height=False):
             gr.HTML(value="<p style='margin-bottom: 0.7em'>See <b><a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\">wiki</a></b> for detailed explanation.</p>")
 
         with gr.Row(variant="compact").style(equal_height=False):
+
+            def get_textual_inversion_template_names():
+                return sorted(textual_inversion.textual_inversion_templates)
+
             with gr.Tabs(elem_id="train_tabs"):
 
-                with gr.Tab(label="Create embedding", id="create_embedding"):
-                    new_embedding_name = gr.Textbox(label="Name", elem_id="train_new_embedding_name")
-                    initialization_text = gr.Textbox(label="Initialization text", value="*", elem_id="train_initialization_text")
-                    nvpt = gr.Slider(label="Number of vectors per token", minimum=1, maximum=75, step=1, value=1, elem_id="train_nvpt")
-                    overwrite_old_embedding = gr.Checkbox(value=False, label="Overwrite Old Embedding", elem_id="train_overwrite_old_embedding")
+                with gr.Tab(label="Upload Train Images to S3"):
+                    upload_files = gr.Files(label="Files")
+                    url_output = gr.Textbox(label="Output S3 folder")
+                    sub_btn = gr.Button(value="Upload Images",elem_id='id_upload_train_images',variant='primary')
+                    sub_btn.click(fn=shared.upload_images_to_s3, inputs=upload_files, outputs=url_output)
+
+                with gr.Tab(label="Train embedding", id="train_embedding"):
+                    gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Embedding settings</b></p>")
+
+                        new_embedding_name = gr.Textbox(label="Name", elem_id="train_new_embedding_name")
+                        initialization_text = gr.Textbox(label="Initialization text", value="*", elem_id="train_initialization_text")
+                        nvpt = gr.Slider(label="Number of vectors per token", minimum=1, maximum=75, step=1, value=1, elem_id="train_nvpt")
+                        overwrite_old_embedding = gr.Checkbox(value=False, label="Overwrite Old Embedding", elem_id="train_overwrite_old_embedding")
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
+
+                        embedding_images_s3uri = gr.Textbox(label='Images S3 URI')
+                        embedding_models_s3uri = gr.Textbox(label='Models S3 URI')
+                        embedding_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        embedding_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        embedding_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
+
+                        with gr.Row():
+                            embedding_process_keep_original_size = gr.Checkbox(label='Keep original size', elem_id="train_process_keep_original_size")
+                            embedding_process_flip = gr.Checkbox(label='Create flipped copies', elem_id="train_process_flip")
+                            embedding_process_split = gr.Checkbox(label='Split oversized images', elem_id="train_process_split")
+                            embedding_process_focal_crop = gr.Checkbox(label='Auto focal point crop', elem_id="train_process_focal_crop")
+                            embedding_process_multicrop = gr.Checkbox(label='Auto-sized crop', elem_id="train_process_multicrop")
+                            embedding_process_caption = gr.Checkbox(label='Use BLIP for caption', elem_id="train_process_caption")
+                            embedding_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True, elem_id="train_process_caption_deepbooru")
+
+                        with gr.Row(visible=False) as embedding_process_split_extra_row:
+                            embedding_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_split_threshold")
+                            embedding_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05, elem_id="train_process_overlap_ratio")
+
+                        with gr.Row(visible=False) as embedding_process_focal_crop_row:
+                            embedding_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_face_weight")
+                            embedding_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_entropy_weight")
+                            embedding_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_edges_weight")
+                            embedding_process_focal_crop_debug = gr.Checkbox(label='Create debug image', elem_id="train_process_focal_crop_debug")
+
+                        with gr.Column(visible=False) as embedding_process_multicrop_col:
+                            gr.Markdown('Each image is center-cropped with an automatically chosen width and height.')
+                            with gr.Row():
+                                embedding_process_multicrop_mindim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension lower bound", value=384, elem_id="train_process_multicrop_mindim")
+                                embedding_process_multicrop_maxdim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension upper bound", value=768, elem_id="train_process_multicrop_maxdim")
+                            with gr.Row():
+                                embedding_process_multicrop_minarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area lower bound", value=64*64, elem_id="train_process_multicrop_minarea")
+                                embedding_process_multicrop_maxarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area upper bound", value=640*640, elem_id="train_process_multicrop_maxarea")
+                            with gr.Row():
+                                embedding_process_multicrop_objective = gr.Radio(["Maximize area", "Minimize error"], value="Maximize area", label="Resizing objective", elem_id="train_process_multicrop_objective")
+                                embedding_process_multicrop_threshold = gr.Slider(minimum=0, maximum=1, step=0.01, label="Error threshold", value=0.1, elem_id="train_process_multicrop_threshold")
+
+                        embedding_process_split.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[embedding_process_split],
+                            outputs=[embedding_process_split_extra_row],
+                        )
+
+                        embedding_process_focal_crop.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[embedding_process_focal_crop],
+                            outputs=[embedding_process_focal_crop_row],
+                        )
+
+                        embedding_process_multicrop.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[embedding_process_multicrop],
+                            outputs=[embedding_process_multicrop_col],
+                        )
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
+
+                        with gr.Row():
+                            with gr.Column():
+                                embedding_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
+                            with gr.Column():
+                                embedding_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
+
+                        with FormRow():
+                            embedding_learn_rate = gr.Textbox(label='Embedding Learning rate', placeholder="Embedding Learning rate", value="0.005", elem_id="train_embedding_learn_rate")
+
+                        with FormRow():
+                            embedding_clip_grad_mode = gr.Dropdown(value="disabled", label="Gradient Clipping", choices=["disabled", "value", "norm"])
+                            embedding_clip_grad_value = gr.Textbox(placeholder="Gradient clip value", value="0.1", show_label=False)
+
+                        with FormRow():
+                            embedding_batch_size = gr.Number(label='Batch size', value=1, precision=0, elem_id="train_batch_size")
+                            embedding_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0, elem_id="train_gradient_step")
+
+                        with FormRow():
+                            embedding_template_file = gr.Dropdown(label='Prompt template', value="style_filewords.txt", elem_id="train_template_file", choices=get_textual_inversion_template_names())
+                            create_refresh_button(embedding_template_file, textual_inversion.list_textual_inversion_templates, lambda: {"choices": get_textual_inversion_template_names()}, "refrsh_train_template_file")
+
+                        embedding_training_width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="train_training_width")
+                        embedding_training_height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="train_training_height")
+                        embedding_varsize = gr.Checkbox(label="Do not resize images", value=False, elem_id="train_varsize")
+                        embedding_steps = gr.Number(label='Max steps', value=100000, precision=0, elem_id="train_steps")
+
+                        with FormRow():
+                            embedding_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_create_image_every")
+                            embedding_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_save_embedding_every")
+
+                        embedding_use_weight = gr.Checkbox(label="Use PNG alpha channel as loss weight", value=False, elem_id="use_weight")
+
+                        embedding_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True, elem_id="train_save_image_with_stored_embedding")
+                        embedding_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False, elem_id="train_preview_from_txt2img")
+
+                        embedding_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False, elem_id="train_shuffle_tags")
+                        embedding_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0, elem_id="train_tag_drop_out")
+
+                        embedding_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'], elem_id="train_latent_sampling_method")
 
                     with gr.Row():
                         with gr.Column(scale=3):
-                            gr.HTML(value="")
+                            embedding_output = gr.Label(label='Output')
+                            embedding_training_job = gr.Markdown('Job detail')
 
-                        with gr.Column():
-                            create_embedding = gr.Button(value="Create embedding", variant='primary', elem_id="train_create_embedding")
+                            with gr.Column():
+                                create_train_embedding = gr.Button(value="Train Embedding", variant='primary')
 
                 with gr.Tab(label="Create hypernetwork", id="create_hypernetwork"):
+
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Hypernetwork settings</b></p>")
+
                     new_hypernetwork_name = gr.Textbox(label="Name", elem_id="train_new_hypernetwork_name")
                     new_hypernetwork_sizes = gr.CheckboxGroup(label="Modules", value=["768", "320", "640", "1280"], choices=["768", "1024", "320", "640", "1280"], elem_id="train_new_hypernetwork_sizes")
                     new_hypernetwork_layer_structure = gr.Textbox("1, 2, 1", label="Enter hypernetwork layer structure", placeholder="1st and last digit must be 1. ex:'1, 2, 1'", elem_id="train_new_hypernetwork_layer_structure")
@@ -1173,292 +1340,580 @@ def create_ui():
                     new_hypernetwork_dropout_structure = gr.Textbox("0, 0, 0", label="Enter hypernetwork Dropout structure (or empty). Recommended : 0~0.35 incrementing sequence: 0, 0.05, 0.15", placeholder="1st and last digit must be 0 and values should be between 0 and 1. ex:'0, 0.01, 0'")
                     overwrite_old_hypernetwork = gr.Checkbox(value=False, label="Overwrite Old Hypernetwork", elem_id="train_overwrite_old_hypernetwork")
 
-                    with gr.Row():
-                        with gr.Column(scale=3):
-                            gr.HTML(value="")
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Image preprocess settings</b></p>")
 
-                        with gr.Column():
-                            create_hypernetwork = gr.Button(value="Create hypernetwork", variant='primary', elem_id="train_create_hypernetwork")
+                        hypernetwork_images_s3uir = gr.Textbox(label='Images S3 URI')
+                        hypernetwork_models_s3uri = gr.Textbox(label='Models S3 URI')
+                        hypernetwork_process_width = gr.Slider(minimum=64, maximum=2048, step=64, label="Width", value=512)
+                        hypernetwork_process_height = gr.Slider(minimum=64, maximum=2048, step=64, label="Height", value=512)
+                        hypernetwork_preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"])
 
-                with gr.Tab(label="Preprocess images", id="preprocess_images"):
-                    process_src = gr.Textbox(label='Source directory', elem_id="train_process_src")
-                    process_dst = gr.Textbox(label='Destination directory', elem_id="train_process_dst")
-                    process_width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="train_process_width")
-                    process_height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="train_process_height")
-                    preprocess_txt_action = gr.Dropdown(label='Existing Caption txt Action', value="ignore", choices=["ignore", "copy", "prepend", "append"], elem_id="train_preprocess_txt_action")
-
-                    with gr.Row():
-                        process_keep_original_size = gr.Checkbox(label='Keep original size', elem_id="train_process_keep_original_size")
-                        process_flip = gr.Checkbox(label='Create flipped copies', elem_id="train_process_flip")
-                        process_split = gr.Checkbox(label='Split oversized images', elem_id="train_process_split")
-                        process_focal_crop = gr.Checkbox(label='Auto focal point crop', elem_id="train_process_focal_crop")
-                        process_multicrop = gr.Checkbox(label='Auto-sized crop', elem_id="train_process_multicrop")
-                        process_caption = gr.Checkbox(label='Use BLIP for caption', elem_id="train_process_caption")
-                        process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True, elem_id="train_process_caption_deepbooru")
-
-                    with gr.Row(visible=False) as process_split_extra_row:
-                        process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_split_threshold")
-                        process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05, elem_id="train_process_overlap_ratio")
-
-                    with gr.Row(visible=False) as process_focal_crop_row:
-                        process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_face_weight")
-                        process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_entropy_weight")
-                        process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_edges_weight")
-                        process_focal_crop_debug = gr.Checkbox(label='Create debug image', elem_id="train_process_focal_crop_debug")
-
-                    with gr.Column(visible=False) as process_multicrop_col:
-                        gr.Markdown('Each image is center-cropped with an automatically chosen width and height.')
                         with gr.Row():
-                            process_multicrop_mindim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension lower bound", value=384, elem_id="train_process_multicrop_mindim")
-                            process_multicrop_maxdim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension upper bound", value=768, elem_id="train_process_multicrop_maxdim")
-                        with gr.Row():
-                            process_multicrop_minarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area lower bound", value=64*64, elem_id="train_process_multicrop_minarea")
-                            process_multicrop_maxarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area upper bound", value=640*640, elem_id="train_process_multicrop_maxarea")
-                        with gr.Row():
-                            process_multicrop_objective = gr.Radio(["Maximize area", "Minimize error"], value="Maximize area", label="Resizing objective", elem_id="train_process_multicrop_objective")
-                            process_multicrop_threshold = gr.Slider(minimum=0, maximum=1, step=0.01, label="Error threshold", value=0.1, elem_id="train_process_multicrop_threshold")
+                            hypernetwork_process_keep_original_size = gr.Checkbox(label='Keep original size', elem_id="train_process_keep_original_size")
+                            hypernetwork_process_flip = gr.Checkbox(label='Create flipped copies', elem_id="train_process_flip")
+                            hypernetwork_process_split = gr.Checkbox(label='Split oversized images', elem_id="train_process_split")
+                            hypernetwork_process_focal_crop = gr.Checkbox(label='Auto focal point crop', elem_id="train_process_focal_crop")
+                            hypernetwork_process_multicrop = gr.Checkbox(label='Auto-sized crop', elem_id="train_process_multicrop")
+                            hypernetwork_process_caption = gr.Checkbox(label='Use BLIP for caption', elem_id="train_process_caption")
+                            hypernetwork_process_caption_deepbooru = gr.Checkbox(label='Use deepbooru for caption', visible=True, elem_id="train_process_caption_deepbooru")
 
-                    with gr.Row():
-                        with gr.Column(scale=3):
-                            gr.HTML(value="")
+                        with gr.Row(visible=False) as hypernetwork_process_split_extra_row:
+                            hypernetwork_process_split_threshold = gr.Slider(label='Split image threshold', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_split_threshold")
+                            hypernetwork_process_overlap_ratio = gr.Slider(label='Split image overlap ratio', value=0.2, minimum=0.0, maximum=0.9, step=0.05, elem_id="train_process_overlap_ratio")
 
-                        with gr.Column():
+                        with gr.Row(visible=False) as hypernetwork_process_focal_crop_row:
+                            hypernetwork_process_focal_crop_face_weight = gr.Slider(label='Focal point face weight', value=0.9, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_face_weight")
+                            hypernetwork_process_focal_crop_entropy_weight = gr.Slider(label='Focal point entropy weight', value=0.15, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_entropy_weight")
+                            hypernetwork_process_focal_crop_edges_weight = gr.Slider(label='Focal point edges weight', value=0.5, minimum=0.0, maximum=1.0, step=0.05, elem_id="train_process_focal_crop_edges_weight")
+                            hypernetwork_process_focal_crop_debug = gr.Checkbox(label='Create debug image', elem_id="train_process_focal_crop_debug")
+
+                        with gr.Column(visible=False) as hypernetwork_process_multicrop_col:
+                            gr.Markdown('Each image is center-cropped with an automatically chosen width and height.')
                             with gr.Row():
-                                interrupt_preprocessing = gr.Button("Interrupt", elem_id="train_interrupt_preprocessing")
-                            run_preprocess = gr.Button(value="Preprocess", variant='primary', elem_id="train_run_preprocess")
+                                hypernetwork_process_multicrop_mindim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension lower bound", value=384, elem_id="train_process_multicrop_mindim")
+                                hypernetwork_process_multicrop_maxdim = gr.Slider(minimum=64, maximum=2048, step=8, label="Dimension upper bound", value=768, elem_id="train_process_multicrop_maxdim")
+                            with gr.Row():
+                                hypernetwork_process_multicrop_minarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area lower bound", value=64*64, elem_id="train_process_multicrop_minarea")
+                                hypernetwork_process_multicrop_maxarea = gr.Slider(minimum=64*64, maximum=2048*2048, step=1, label="Area upper bound", value=640*640, elem_id="train_process_multicrop_maxarea")
+                            with gr.Row():
+                                hypernetwork_process_multicrop_objective = gr.Radio(["Maximize area", "Minimize error"], value="Maximize area", label="Resizing objective", elem_id="train_process_multicrop_objective")
+                                hypernetwork_process_multicrop_threshold = gr.Slider(minimum=0, maximum=1, step=0.01, label="Error threshold", value=0.1, elem_id="train_process_multicrop_threshold")
 
-                    process_split.change(
-                        fn=lambda show: gr_show(show),
-                        inputs=[process_split],
-                        outputs=[process_split_extra_row],
-                    )
+                        hypernetwork_process_split.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[hypernetwork_process_split],
+                            outputs=[hypernetwork_process_split_extra_row],
+                        )
 
-                    process_focal_crop.change(
-                        fn=lambda show: gr_show(show),
-                        inputs=[process_focal_crop],
-                        outputs=[process_focal_crop_row],
-                    )
+                        hypernetwork_process_focal_crop.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[hypernetwork_process_focal_crop],
+                            outputs=[hypernetwork_process_focal_crop_row],
+                        )
 
-                    process_multicrop.change(
-                        fn=lambda show: gr_show(show),
-                        inputs=[process_multicrop],
-                        outputs=[process_multicrop_col],
-                    )
+                        hypernetwork_process_multicrop.change(
+                            fn=lambda show: gr_show(show),
+                            inputs=[hypernetwork_process_multicrop],
+                            outputs=[hypernetwork_process_multicrop_col],
+                        )
 
-                def get_textual_inversion_template_names():
-                    return sorted(textual_inversion.textual_inversion_templates)
+                    with gr.Box():
+                        gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Train settings</b></p>")
 
-                with gr.Tab(label="Train", id="train"):
-                    gr.HTML(value="<p style='margin-bottom: 0.7em'>Train an embedding or Hypernetwork; you must specify a directory with a set of 1:1 ratio images <a href=\"https://github.com/AUTOMATIC1111/stable-diffusion-webui/wiki/Textual-Inversion\" style=\"font-weight:bold;\">[wiki]</a></p>")
-                    with FormRow():
-                        train_embedding_name = gr.Dropdown(label='Embedding', elem_id="train_embedding", choices=sorted(sd_hijack.model_hijack.embedding_db.word_embeddings.keys()))
-                        create_refresh_button(train_embedding_name, sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings, lambda: {"choices": sorted(sd_hijack.model_hijack.embedding_db.word_embeddings.keys())}, "refresh_train_embedding_name")
+                        with gr.Row():
+                            with gr.Column():
+                                hypernetwork_training_instance_type = gr.Dropdown(label='Instance type', value="ml.g4dn.xlarge", choices=training_instance_types)
+                            with gr.Column():
+                                hypernetwork_training_instance_count = gr.Number(label='Instance count', value=1, precision=0)
 
-                        train_hypernetwork_name = gr.Dropdown(label='Hypernetwork', elem_id="train_hypernetwork", choices=sorted(shared.hypernetworks))
-                        create_refresh_button(train_hypernetwork_name, shared.reload_hypernetworks, lambda: {"choices": sorted(shared.hypernetworks)}, "refresh_train_hypernetwork_name")
+                        with FormRow():
+                            hypernetwork_learn_rate = gr.Textbox(label='Hypernetwork Learning rate', placeholder="Hypernetwork Learning rate", value="0.00001", elem_id="train_hypernetwork_learn_rate")
 
-                    with FormRow():
-                        embedding_learn_rate = gr.Textbox(label='Embedding Learning rate', placeholder="Embedding Learning rate", value="0.005", elem_id="train_embedding_learn_rate")
-                        hypernetwork_learn_rate = gr.Textbox(label='Hypernetwork Learning rate', placeholder="Hypernetwork Learning rate", value="0.00001", elem_id="train_hypernetwork_learn_rate")
+                        with FormRow():
+                            hypernetwork_clip_grad_mode = gr.Dropdown(value="disabled", label="Gradient Clipping", choices=["disabled", "value", "norm"])
+                            hypernetwork_clip_grad_value = gr.Textbox(placeholder="Gradient clip value", value="0.1", show_label=False)
 
-                    with FormRow():
-                        clip_grad_mode = gr.Dropdown(value="disabled", label="Gradient Clipping", choices=["disabled", "value", "norm"])
-                        clip_grad_value = gr.Textbox(placeholder="Gradient clip value", value="0.1", show_label=False)
+                        with FormRow():
+                            hypernetwork_batch_size = gr.Number(label='Batch size', value=1, precision=0, elem_id="train_batch_size")
+                            hypernetwork_gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0, elem_id="train_gradient_step")
 
-                    with FormRow():
-                        batch_size = gr.Number(label='Batch size', value=1, precision=0, elem_id="train_batch_size")
-                        gradient_step = gr.Number(label='Gradient accumulation steps', value=1, precision=0, elem_id="train_gradient_step")
+                        with FormRow():
+                            hypernetwork_template_file = gr.Dropdown(label='Prompt template', value="style_filewords.txt", elem_id="train_template_file", choices=get_textual_inversion_template_names())
+                            create_refresh_button(hypernetwork_template_file, textual_inversion.list_textual_inversion_templates, lambda: {"choices": get_textual_inversion_template_names()}, "refrsh_train_template_file")
 
-                    dataset_directory = gr.Textbox(label='Dataset directory', placeholder="Path to directory with input images", elem_id="train_dataset_directory")
-                    log_directory = gr.Textbox(label='Log directory', placeholder="Path to directory where to write outputs", value="textual_inversion", elem_id="train_log_directory")
+                        hypernetwork_training_width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="train_training_width")
+                        hypernetwork_training_height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="train_training_height")
+                        hypernetwork_varsize = gr.Checkbox(label="Do not resize images", value=False, elem_id="train_varsize")
+                        hypernetwork_steps = gr.Number(label='Max steps', value=100000, precision=0, elem_id="train_steps")
 
-                    with FormRow():
-                        template_file = gr.Dropdown(label='Prompt template', value="style_filewords.txt", elem_id="train_template_file", choices=get_textual_inversion_template_names())
-                        create_refresh_button(template_file, textual_inversion.list_textual_inversion_templates, lambda: {"choices": get_textual_inversion_template_names()}, "refrsh_train_template_file")
+                        with FormRow():
+                            hypernetwork_create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_create_image_every")
+                            hypernetwork_save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_save_embedding_every")
 
-                    training_width = gr.Slider(minimum=64, maximum=2048, step=8, label="Width", value=512, elem_id="train_training_width")
-                    training_height = gr.Slider(minimum=64, maximum=2048, step=8, label="Height", value=512, elem_id="train_training_height")
-                    varsize = gr.Checkbox(label="Do not resize images", value=False, elem_id="train_varsize")
-                    steps = gr.Number(label='Max steps', value=100000, precision=0, elem_id="train_steps")
+                        hypernetwork_use_weight = gr.Checkbox(label="Use PNG alpha channel as loss weight", value=False, elem_id="use_weight")
 
-                    with FormRow():
-                        create_image_every = gr.Number(label='Save an image to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_create_image_every")
-                        save_embedding_every = gr.Number(label='Save a copy of embedding to log directory every N steps, 0 to disable', value=500, precision=0, elem_id="train_save_embedding_every")
+                        hypernetwork_save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True, elem_id="train_save_image_with_stored_embedding")
+                        hypernetwork_preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False, elem_id="train_preview_from_txt2img")
 
-                    use_weight = gr.Checkbox(label="Use PNG alpha channel as loss weight", value=False, elem_id="use_weight")
+                        hypernetwork_shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False, elem_id="train_shuffle_tags")
+                        hypernetwork_tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0, elem_id="train_tag_drop_out")
 
-                    save_image_with_stored_embedding = gr.Checkbox(label='Save images with embedding in PNG chunks', value=True, elem_id="train_save_image_with_stored_embedding")
-                    preview_from_txt2img = gr.Checkbox(label='Read parameters (prompt, etc...) from txt2img tab when making previews', value=False, elem_id="train_preview_from_txt2img")
-
-                    shuffle_tags = gr.Checkbox(label="Shuffle tags by ',' when creating prompts.", value=False, elem_id="train_shuffle_tags")
-                    tag_drop_out = gr.Slider(minimum=0, maximum=1, step=0.1, label="Drop out tags when creating prompts.", value=0, elem_id="train_tag_drop_out")
-
-                    latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'], elem_id="train_latent_sampling_method")
+                        hypernetwork_latent_sampling_method = gr.Radio(label='Choose latent sampling method', value="once", choices=['once', 'deterministic', 'random'], elem_id="train_latent_sampling_method")
 
                     with gr.Row():
-                        train_embedding = gr.Button(value="Train Embedding", variant='primary', elem_id="train_train_embedding")
-                        interrupt_training = gr.Button(value="Interrupt", elem_id="train_interrupt_training")
-                        train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary', elem_id="train_train_hypernetwork")
+                        with gr.Column(scale=3):
+                            hypernetwork_output = gr.Label(label='Output')
+                            hypernetwork_training_job = gr.Markdown('Job detail')
 
-                params = script_callbacks.UiTrainTabParams(txt2img_preview_params)
+                            with gr.Column():
+                                create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
 
-                script_callbacks.ui_train_tabs_callback(params)
+        if dreambooth_tab:
+            with gr.Tab(label="Train Dreambooth"):
+                dreambooth_tab.render()
 
-            with gr.Column(elem_id='ti_gallery_container'):
-                ti_output = gr.Text(elem_id="ti_output", value="", show_label=False)
-                gr.Gallery(label='Output', show_label=False, elem_id='ti_gallery').style(columns=4)
-                gr.HTML(elem_id="ti_progress", value="")
-                ti_outcome = gr.HTML(elem_id="ti_error", value="")
-
-        create_embedding.click(
-            fn=modules.textual_inversion.ui.create_embedding,
-            inputs=[
+        def sagemaker_train_embedding(
+                request: gr.Request,
+                sd_model_checkpoint,
                 new_embedding_name,
                 initialization_text,
                 nvpt,
                 overwrite_old_embedding,
-            ],
-            outputs=[
-                train_embedding_name,
-                ti_output,
-                ti_outcome,
-            ]
-        )
+                embedding_images_s3uri,
+                embedding_models_s3uri,
+                embedding_process_width,
+                embedding_process_height,
+                embedding_preprocess_txt_action,
+                embedding_process_keep_original_size,
+                embedding_process_flip,
+                embedding_process_split,
+                embedding_process_focal_crop,
+                embedding_process_caption,
+                embedding_process_caption_deepbooru,
+                embedding_process_split_threshold,
+                embedding_process_overlap_ratio,
+                embedding_process_focal_crop_face_weight,
+                embedding_process_focal_crop_entropy_weight,
+                embedding_process_focal_crop_edges_weight,
+                embedding_process_focal_crop_debug,
+                embedding_process_multicrop_mindim,
+                embedding_process_multicrop_maxdim,
+                embedding_process_multicrop_minarea,
+                embedding_process_multicrop_maxarea,
+                embedding_process_multicrop_objective,
+                embedding_process_multicrop_threshold,
+                embedding_learn_rate,
+                embedding_clip_grad_mode,
+                embedding_clip_grad_value,
+                embedding_batch_size,
+                embedding_gradient_step,
+                embedding_training_width,
+                embedding_training_height,
+                embedding_varsize,
+                embedding_steps,
+                embedding_shuffle_tags,
+                embedding_tag_drop_out,
+                embedding_latent_sampling_method,
+                embedding_create_image_every,
+                embedding_save_embedding_every,
+                embedding_use_weight,
+                embedding_save_image_with_stored_embedding,
+                embedding_preview_from_txt2img,
+                embedding_training_instance_type,
+                embedding_training_instance_count,
+                *txt2img_preview_params
+            ):
 
-        create_hypernetwork.click(
-            fn=modules.hypernetworks.ui.create_hypernetwork,
-            inputs=[
+            username = shared.get_webui_username(request)
+
+            train_args = {
+                'embedding_settings': {
+                    'name': new_embedding_name,
+                    'nvpt': nvpt,
+                    'overwrite_old': overwrite_old_embedding,
+                    'initialization_text': initialization_text
+                },
+                'images_preprocessing_settings': {
+                    'process_width': embedding_process_width,
+                    'process_height': embedding_process_height,
+                    'preprocess_txt_action': embedding_preprocess_txt_action,
+                    'embedding_process_keep_original_size': embedding_process_keep_original_size,
+                    'process_flip': embedding_process_flip,
+                    'process_split': embedding_process_split,
+                    'process_caption': embedding_process_caption,
+                    'process_caption_deepbooru': embedding_process_caption_deepbooru,
+                    'process_split_threshold': embedding_process_split_threshold,
+                    'process_overlap_ratio': embedding_process_overlap_ratio,
+                    'process_focal_crop': embedding_process_focal_crop,
+                    'process_focal_crop_face_weight': embedding_process_focal_crop_face_weight,
+                    'process_focal_crop_entropy_weight': embedding_process_focal_crop_entropy_weight,
+                    'process_focal_crop_edges_weight': embedding_process_focal_crop_edges_weight,
+                    'process_focal_crop_debug': embedding_process_focal_crop_debug,
+                    'process_multicrop_mindim': embedding_process_multicrop_mindim,
+                    'process_multicrop_maxdim': embedding_process_multicrop_maxdim,
+                    'process_multicrop_minarea': embedding_process_multicrop_minarea,
+                    'process_multicrop_maxarea': embedding_process_multicrop_maxarea,
+                    'process_multicrop_objective': embedding_process_multicrop_objective,
+                    'process_multicrop_threshold': embedding_process_multicrop_threshold                    
+                },
+                'train_embedding_settings':{
+                    'learn_rate': embedding_learn_rate,
+                    'embedding_clip_grad_mode': embedding_clip_grad_mode,
+                    'embedding_clip_grad_value': embedding_clip_grad_value,
+                    'batch_size': embedding_batch_size,
+                    'gradient_step': embedding_gradient_step,
+                    'training_width': embedding_training_width,
+                    'training_height': embedding_training_height,
+                    'varsize': embedding_varsize,
+                    'steps': embedding_steps,
+                    'shuffle_tags': embedding_shuffle_tags,
+                    'tag_drop_out': embedding_tag_drop_out,
+                    'latent_sampling_method': embedding_latent_sampling_method,
+                    'create_image_every': embedding_create_image_every,
+                    'save_embedding_every': embedding_save_embedding_every,
+                    'embedding_use_weight': embedding_use_weight,
+                    'save_image_with_stored_embedding': embedding_save_image_with_stored_embedding,
+                    'preview_from_txt2img': embedding_preview_from_txt2img,
+                    'txt2img_preview_params': txt2img_preview_params
+                }
+            }
+
+            sd_model_checkpoint = get_sd_model_checkpoint_from_title(sd_model_checkpoint)
+            hyperparameters = {
+                'train-args': json.dumps(json.dumps(train_args)),
+                'train-task': 'embedding',
+                'ckpt': '/opt/ml/input/data/models/{0}'.format(sd_model_checkpoint),
+                'username': username,
+                'api-endpoint': shared.api_endpoint
+            }
+
+            inputs = {
+                'images': embedding_images_s3uri,
+                'models': embedding_models_s3uri
+            }
+
+            data = {
+                'training_job_name': '',
+                'model_algorithm': 'stable-diffusion-webui',
+                'model_hyperparameters': hyperparameters,
+                'industrial_model': shared.industrial_model,
+                'instance_type': embedding_training_instance_type,
+                'instance_count': embedding_training_instance_count,
+                'inputs': inputs
+            }
+
+            response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
+            if response.status_code == 200:
+                training_job_url = response.text.replace('\"','')
+                return {
+                    embedding_output: gr.update(value='Submit training job sucessful'),
+                    embedding_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                }
+            else:
+                return {
+                    embedding_output: gr.update(value=response.text)
+                }
+
+        def sagemaker_train_hypernetwork(
+                request: gr.Request,
+                sd_model_checkpoint,
                 new_hypernetwork_name,
                 new_hypernetwork_sizes,
-                overwrite_old_hypernetwork,
                 new_hypernetwork_layer_structure,
                 new_hypernetwork_activation_func,
                 new_hypernetwork_initialization_option,
                 new_hypernetwork_add_layer_norm,
                 new_hypernetwork_use_dropout,
-                new_hypernetwork_dropout_structure
-            ],
-            outputs=[
-                train_hypernetwork_name,
-                ti_output,
-                ti_outcome,
-            ]
-        )
-
-        run_preprocess.click(
-            fn=wrap_gradio_gpu_call(modules.textual_inversion.ui.preprocess, extra_outputs=[gr.update()]),
-            _js="start_training_textual_inversion",
-            inputs=[
-                dummy_component,
-                process_src,
-                process_dst,
-                process_width,
-                process_height,
-                preprocess_txt_action,
-                process_keep_original_size,
-                process_flip,
-                process_split,
-                process_caption,
-                process_caption_deepbooru,
-                process_split_threshold,
-                process_overlap_ratio,
-                process_focal_crop,
-                process_focal_crop_face_weight,
-                process_focal_crop_entropy_weight,
-                process_focal_crop_edges_weight,
-                process_focal_crop_debug,
-                process_multicrop,
-                process_multicrop_mindim,
-                process_multicrop_maxdim,
-                process_multicrop_minarea,
-                process_multicrop_maxarea,
-                process_multicrop_objective,
-                process_multicrop_threshold,
-            ],
-            outputs=[
-                ti_output,
-                ti_outcome,
-            ],
-        )
-
-        train_embedding.click(
-            fn=wrap_gradio_gpu_call(modules.textual_inversion.ui.train_embedding, extra_outputs=[gr.update()]),
-            _js="start_training_textual_inversion",
-            inputs=[
-                dummy_component,
-                train_embedding_name,
-                embedding_learn_rate,
-                batch_size,
-                gradient_step,
-                dataset_directory,
-                log_directory,
-                training_width,
-                training_height,
-                varsize,
-                steps,
-                clip_grad_mode,
-                clip_grad_value,
-                shuffle_tags,
-                tag_drop_out,
-                latent_sampling_method,
-                use_weight,
-                create_image_every,
-                save_embedding_every,
-                template_file,
-                save_image_with_stored_embedding,
-                preview_from_txt2img,
-                *txt2img_preview_params,
-            ],
-            outputs=[
-                ti_output,
-                ti_outcome,
-            ]
-        )
-
-        train_hypernetwork.click(
-            fn=wrap_gradio_gpu_call(modules.hypernetworks.ui.train_hypernetwork, extra_outputs=[gr.update()]),
-            _js="start_training_textual_inversion",
-            inputs=[
-                dummy_component,
-                train_hypernetwork_name,
+                new_hypernetwork_dropout_structure,
+                overwrite_old_hypernetwork,
+                hypernetwork_images_s3uri,
+                hypernetwork_models_s3uri,
+                hypernetwork_process_width,
+                hypernetwork_process_height,
+                hypernetwork_preprocess_txt_action,
+                hypernetwork_process_flip,
+                hypernetwork_process_split,
+                hypernetwork_process_focal_crop,
+                hypernetwork_process_caption,
+                hypernetwork_process_caption_deepbooru,
+                hypernetwork_process_split_threshold,
+                hypernetwork_process_overlap_ratio,
+                hypernetwork_process_focal_crop_face_weight,
+                hypernetwork_process_focal_crop_entropy_weight,
+                hypernetwork_process_focal_crop_edges_weight,
+                hypernetwork_process_focal_crop_debug,
+                hypernetwork_process_multicrop_mindim,
+                hypernetwork_process_multicrop_maxdim,
+                hypernetwork_process_multicrop_minarea,
+                hypernetwork_process_multicrop_maxarea,
+                hypernetwork_process_multicrop_objective,
+                hypernetwork_process_multicrop_threshold,
                 hypernetwork_learn_rate,
-                batch_size,
-                gradient_step,
-                dataset_directory,
-                log_directory,
-                training_width,
-                training_height,
-                varsize,
-                steps,
-                clip_grad_mode,
-                clip_grad_value,
-                shuffle_tags,
-                tag_drop_out,
-                latent_sampling_method,
-                use_weight,
-                create_image_every,
-                save_embedding_every,
-                template_file,
-                preview_from_txt2img,
-                *txt2img_preview_params,
+                hypernetwork_clip_grad_mode,
+                hypernetwork_clip_grad_value,
+                hypernetwork_batch_size,
+                hypernetwork_gradient_step,
+                hypernetwork_training_width,
+                hypernetwork_training_height,
+                hypernetwork_varsize,
+                hypernetwork_steps,
+                hypernetwork_shuffle_tags,
+                hypernetwork_tag_drop_out,
+                hypernetwork_latent_sampling_method,
+                hypernetwork_create_image_every,
+                hypernetwork_save_embedding_every,
+                hypernetwork_use_weight,
+                hypernetwork_save_image_with_stored_embedding,
+                hypernetwork_preview_from_txt2img,
+                hypernetwork_training_instance_type,
+                hypernetwork_training_instance_count,
+                *txt2img_preview_params
+            ):
+
+            username = shared.get_webui_username(request)
+
+            train_args = {
+                'hypernetwork_settings': {
+                    'name': new_hypernetwork_name,
+                    'enable_sizes': new_hypernetwork_sizes,
+                    'overwrite_old': overwrite_old_hypernetwork,
+                    'layer_structure': new_hypernetwork_layer_structure,
+                    'activation_func': new_hypernetwork_activation_func,
+                    'weight_init': new_hypernetwork_initialization_option,
+                    'new_hypernetwork_add_layer_norm': new_hypernetwork_add_layer_norm,
+                    'new_hypernetwork_use_dropout': new_hypernetwork_use_dropout,
+                    'new_hypernetwork_dropout_structure': new_hypernetwork_dropout_structure
+                },
+                'images_preprocessing_settings': {
+                    'process_width': hypernetwork_process_width,
+                    'process_height': hypernetwork_process_height,
+                    'preprocess_txt_action': hypernetwork_preprocess_txt_action,
+                    'process_flip': hypernetwork_process_flip,
+                    'process_split': hypernetwork_process_split,
+                    'process_caption': hypernetwork_process_caption,
+                    'process_caption_deepbooru': hypernetwork_process_caption_deepbooru,
+                    'process_split_threshold': hypernetwork_process_split_threshold,
+                    'process_overlap_ratio': hypernetwork_process_overlap_ratio,
+                    'process_focal_crop': hypernetwork_process_focal_crop,
+                    'process_focal_crop_face_weight': hypernetwork_process_focal_crop_face_weight,
+                    'process_focal_crop_entropy_weight': hypernetwork_process_focal_crop_entropy_weight,
+                    'process_focal_crop_edges_weight': hypernetwork_process_focal_crop_edges_weight,
+                    'process_focal_crop_debug': hypernetwork_process_focal_crop_debug,
+                    'hypernetwork_process_multicrop_mindim': hypernetwork_process_multicrop_mindim,
+                    'hypernetwork_process_multicrop_maxdim': hypernetwork_process_multicrop_maxdim,
+                    'hypernetwork_process_multicrop_minarea': hypernetwork_process_multicrop_minarea,
+                    'hypernetwork_process_multicrop_maxarea': hypernetwork_process_multicrop_maxarea,
+                    'hypernetwork_process_multicrop_objective': hypernetwork_process_multicrop_objective,
+                    'hypernetwork_process_multicrop_threshold': hypernetwork_process_multicrop_threshold,
+                },
+                'train_hypernetwork_settings':{
+                    'learn_rate': hypernetwork_learn_rate,
+                    'hypernetwork_clip_grad_mode': hypernetwork_clip_grad_mode,
+                    'hypernetwork_clip_grad_value': hypernetwork_clip_grad_value,
+                    'batch_size': hypernetwork_batch_size,
+                    'gradient_step': hypernetwork_gradient_step,
+                    'training_width': hypernetwork_training_width,
+                    'training_height': hypernetwork_training_height,
+                    'hypernetwork_varsize': hypernetwork_varsize,
+                    'steps': hypernetwork_steps,
+                    'shuffle_tags': hypernetwork_shuffle_tags,
+                    'tag_drop_out': hypernetwork_tag_drop_out,
+                    'latent_sampling_method': hypernetwork_latent_sampling_method,
+                    'create_image_every': hypernetwork_create_image_every,
+                    'save_embedding_every': hypernetwork_save_embedding_every,
+                    'hypernetwork_use_weight': hypernetwork_use_weight,
+                    'save_image_with_stored_embedding': hypernetwork_save_image_with_stored_embedding,
+                    'preview_from_txt2img': hypernetwork_preview_from_txt2img,
+                    'txt2img_preview_params': txt2img_preview_params
+                }
+            }
+
+            sd_model_checkpoint = get_sd_model_checkpoint_from_title(sd_model_checkpoint)
+            hyperparameters = {
+                'train-args': json.dumps(json.dumps(train_args)),
+                'train-task': 'hypernetwork',
+                'ckpt': '/opt/ml/input/data/models/{0}'.format(sd_model_checkpoint),
+                'username': username,
+                'api-endpoint': shared.api_endpoint
+            }
+
+            inputs = {
+                'images': hypernetwork_images_s3uri,
+                'models': hypernetwork_models_s3uri
+            }
+
+            data = {
+                'training_job_name': '',
+                'model_algorithm': 'stable-diffusion-webui',
+                'model_hyperparameters': hyperparameters,
+                'industrial_model': shared.industrial_model,
+                'instance_type': hypernetwork_training_instance_type,
+                'instance_count': hypernetwork_training_instance_count,
+                'inputs': inputs
+            }
+
+            response = requests.post(url=f'{shared.api_endpoint}/train', json=data)
+            if response.status_code == 200:
+                ##begin add train job info by River
+                training_job_url = response.text.replace('\"','')
+                return {
+                    ##begin add train job info by River
+                    hypernetwork_output: gr.update(value='Submit training job sucessful'),
+                    hypernetwork_training_job:gr.update(value=f'Job detail:[{training_job_url}]({training_job_url})')
+                    ##end add train job info by River
+                }
+            else:
+                return {
+                    hypernetwork_output: gr.update(value=response.text)
+                }
+
+        create_train_embedding.click(
+            fn=sagemaker_train_embedding,
+            inputs=[
+                shared.sd_model_checkpoint_component,
+                new_embedding_name,
+                initialization_text,
+                nvpt,
+                overwrite_old_embedding,
+                embedding_images_s3uri,
+                embedding_models_s3uri,
+                embedding_process_width,
+                embedding_process_height,
+                embedding_preprocess_txt_action,
+                embedding_process_keep_original_size,
+                embedding_process_flip,
+                embedding_process_split,
+                embedding_process_focal_crop,
+                embedding_process_caption,
+                embedding_process_caption_deepbooru,
+                embedding_process_split_threshold,
+                embedding_process_overlap_ratio,
+                embedding_process_focal_crop_face_weight,
+                embedding_process_focal_crop_entropy_weight,
+                embedding_process_focal_crop_edges_weight,
+                embedding_process_focal_crop_debug,
+                embedding_process_multicrop_mindim,
+                embedding_process_multicrop_maxdim,
+                embedding_process_multicrop_minarea,
+                embedding_process_multicrop_maxarea,
+                embedding_process_multicrop_objective,
+                embedding_process_multicrop_threshold,
+                embedding_learn_rate,
+                embedding_clip_grad_mode,
+                embedding_clip_grad_value,
+                embedding_batch_size,
+                embedding_gradient_step,
+                embedding_training_width,
+                embedding_training_height,
+                embedding_varsize,
+                embedding_steps,
+                embedding_shuffle_tags,
+                embedding_tag_drop_out,
+                embedding_latent_sampling_method,
+                embedding_create_image_every,
+                embedding_save_embedding_every,
+                embedding_use_weight,
+                embedding_save_image_with_stored_embedding,
+                embedding_preview_from_txt2img,
+                embedding_training_instance_type,
+                embedding_training_instance_count,
+                *txt2img_preview_params
             ],
-            outputs=[
-                ti_output,
-                ti_outcome,
-            ]
+            outputs=[embedding_output,embedding_training_job]
         )
 
-        interrupt_training.click(
-            fn=lambda: shared.state.interrupt(),
-            inputs=[],
-            outputs=[],
+        create_train_hypernetwork.click(
+            fn=sagemaker_train_hypernetwork,
+            inputs=[
+                shared.sd_model_checkpoint_component,
+                new_hypernetwork_name,
+                new_hypernetwork_sizes,
+                new_hypernetwork_layer_structure,
+                new_hypernetwork_activation_func,
+                new_hypernetwork_initialization_option,
+                new_hypernetwork_add_layer_norm,
+                new_hypernetwork_use_dropout,
+                overwrite_old_hypernetwork,
+                hypernetwork_images_s3uir,
+                hypernetwork_models_s3uri,
+                hypernetwork_process_width,
+                hypernetwork_process_height,
+                hypernetwork_preprocess_txt_action,
+                hypernetwork_process_keep_original_size,
+                hypernetwork_process_flip,
+                hypernetwork_process_split,
+                hypernetwork_process_focal_crop,
+                hypernetwork_process_caption,
+                hypernetwork_process_caption_deepbooru,
+                hypernetwork_process_split_threshold,
+                hypernetwork_process_overlap_ratio,
+                hypernetwork_process_focal_crop_face_weight,
+                hypernetwork_process_focal_crop_entropy_weight,
+                hypernetwork_process_focal_crop_edges_weight,
+                hypernetwork_process_focal_crop_debug,
+                hypernetwork_learn_rate,
+                hypernetwork_batch_size,
+                hypernetwork_gradient_step,
+                hypernetwork_training_width,
+                hypernetwork_training_height,
+                hypernetwork_varsize,
+                hypernetwork_steps,
+                hypernetwork_shuffle_tags,
+                hypernetwork_tag_drop_out,
+                hypernetwork_latent_sampling_method,
+                hypernetwork_create_image_every,
+                hypernetwork_save_embedding_every,
+                hypernetwork_use_weight,
+                hypernetwork_save_image_with_stored_embedding,
+                hypernetwork_preview_from_txt2img,
+                hypernetwork_training_instance_type,
+                hypernetwork_training_instance_count,
+                *txt2img_preview_params
+            ],
+            outputs=[hypernetwork_output,hypernetwork_training_job]
         )
 
-        interrupt_preprocessing.click(
-            fn=lambda: shared.state.interrupt(),
-            inputs=[],
-            outputs=[],
+    with gr.Blocks(analytics_enabled=False) as user_interface:
+        user_dataframe = gr.Dataframe(
+            headers=["Username", "Password", "Options", "Sagemaker Endpoints"],
+            row_count=2,
+            col_count=(4,"fixed"),
+            label="User management (Only available for admin user)",
+            interactive=True,
+            visible=True,
+            datatype=["str","str","str", "str"],
+            type="array",
+            wrap=True,
         )
+
+        with gr.Row():
+            save_userdata_btn = gr.Button(value="Save")
+
+        def save_userdata(user_dataframe, request: gr.Request):
+            username = shared.get_webui_username(request)
+            if username != 'admin':
+                return gr.update()
+            items = []
+            for user_df in user_dataframe:
+                item = {
+                    'username': user_df[0],
+                    'password': user_df[1],
+                    'options': user_df[2],
+                    'attributes': {},
+                }
+                if user_df[3] != '':
+                    item['attributes'] = {
+                        'sagemaker_endpoints': user_df[3]
+                    }
+                items.append(item)
+            inputs = {
+                'action': 'save',
+                'items': items
+            }
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            if response.status_code == 200:
+                print(response.text)
+                return user_dataframe
+
+        save_userdata_btn.click(
+            save_userdata,
+            inputs=[user_dataframe],
+            outputs=[user_dataframe],
+            _js="var if alert('Only admin user can save user data')"
+        )
+
+    ui_tabs = script_callbacks.ui_tabs_callback()
+
+    dreambooth_tab = None
+    images_history_ui_tab = None
+    for ui_tab in ui_tabs:
+        if ui_tab[2] == 'dreambooth_interface':
+            dreambooth_tab = ui_tab[0]
+        elif ui_tab[2] == 'images_history':
+            images_history_ui_tab = ui_tab
+        else:
+            interfaces += [ui_tab]
 
     def create_setting_component(key, is_quicksettings=False):
         def fun():
@@ -1649,21 +2104,28 @@ def create_ui():
             inputs=[],
             outputs=[],
         )
+    if cmd_opts.pureui:
+        interfaces += [
+            (txt2img_interface, "txt2img", "txt2img"),
+            (img2img_interface, "img2img", "img2img"),
+            (extras_interface, "Extras", "extras"),
+            (pnginfo_interface, "PNG Info", "pnginfo"),
+            (train_interface, "Train", "ti"),
+            (user_interface, "User", "user")
+        ]
+    else:
+        interfaces = [
+            (txt2img_interface, "txt2img", "txt2img"),
+            (img2img_interface, "img2img", "img2img"),
+            (extras_interface, "Extras", "extras"),
+            (pnginfo_interface, "PNG Info", "pnginfo"),
+            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
+            (train_interface, "Train", "train"),
+        ]
 
-    interfaces = [
-        (txt2img_interface, "txt2img", "txt2img"),
-        (img2img_interface, "img2img", "img2img"),
-        (extras_interface, "Extras", "extras"),
-        (pnginfo_interface, "PNG Info", "pnginfo"),
-        (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
-        (train_interface, "Train", "train"),
-    ]
-
-    interfaces += script_callbacks.ui_tabs_callback()
     interfaces += [(settings_interface, "Settings", "settings")]
-
-    extensions_interface = ui_extensions.create_ui()
-    interfaces += [(extensions_interface, "Extensions", "extensions")]
+    interfaces += [images_history_ui_tab]
+    interfaces +=  [(modelmerger_interface,"Checkpoint Merger", "modelmerger")]
 
     shared.tab_names = []
     for _interface, label, _ifid in interfaces:

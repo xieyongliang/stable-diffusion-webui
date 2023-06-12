@@ -22,6 +22,7 @@ import boto3
 from botocore.exceptions import ClientError
 import requests
 import glob
+from datetime import datetime, timedelta, timezone
 
 demo = None
 
@@ -97,13 +98,84 @@ os.makedirs(cmd_opts.hypernetwork_dir, exist_ok=True)
 hypernetworks = {}
 loaded_hypernetworks = []
 
+if not cmd_opts.train:
+    api_endpoint = os.environ['api_endpoint']
+    industrial_model = ''
+    default_options = {}
+    sagemaker_endpoint_component = None
+    sd_model_checkpoint_component = None
+    create_train_dreambooth_component = None
+    sd_hypernetwork_component = None
+else:
+    api_endpoint = cmd_opts.api_endpoint
 
-def reload_hypernetworks():
+response = requests.get(url=f'{api_endpoint}/sd/industrialmodel')
+if response.status_code == 200:
+    industrial_model = response.text
+else:
+    model_name = 'stable-diffusion-webui'
+    model_description = model_name
+    inputs = {
+        'model_algorithm': 'stable-diffusion-webui',
+        'model_name': model_name,
+        'model_description': model_description,
+        'model_extra': '{"visible": "false"}',
+        'model_samples': '',
+        'file_content': {
+                'data': [(lambda x: int(x))(x) for x in open(os.path.join(script_path, 'logo.ico'), 'rb').read()]
+        }
+    }
+
+    response = requests.post(url=f'{api_endpoint}/industrialmodel', json = inputs)
+    if response.status_code == 200:
+        body = json.loads(response.text)
+        industrial_model = body['id']
+    else:
+        print(response.text)
+
+def reload_embeddings(request: gr.Request):
+    from modules import sd_hijack
+    global embeddings
+
+    embeddings = {}
+
+    if cmd_opts.pureui:
+        username = get_webui_username(request)
+        params = {
+            'module': 'embeddings',
+            'username': username
+        }
+        response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+        if response.status_code == 200:
+            for embedding_item in json.loads(response.text):
+                basename, fullname = os.path.split(embedding_item)
+                embeddings[os.path.splitext(embedding_item)[0]] = f'/tmp/models/embeddings/{fullname}'
+    else:
+        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)
+        embeddings = sd_hijack.model_hijack.embedding_db.word_embeddings.values()
+
+
+def reload_hypernetworks(request: gr.Request = None):
     from modules.hypernetworks import hypernetwork
     global hypernetworks
 
-    hypernetworks = hypernetwork.list_hypernetworks(cmd_opts.hypernetwork_dir)
+    hypernetworks = {}
 
+    if cmd_opts.pureui:
+        if request:
+            username = get_webui_username(request)
+            params = {
+                'module': 'hypernetwork',
+                'username': username
+            }
+            response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+            if response.status_code == 200:
+                for hypernetwork_item in json.loads(response.text):
+                    basename, fullname = os.path.split(hypernetwork_item)
+                    hypernetworks[os.path.splitext(hypernetwork_item)[0]] = f'/tmp/models/hypernetworks/{fullname}'
+    else:
+        hypernetworks = hypernetwork.list_hypernetworks(cmd_opts.hypernetwork_dir)
+        hypernetwork.load_hypernetwork(opts.sd_hypernetwork)
 
 class State:
     skipped = False
@@ -312,6 +384,90 @@ tab_names = []
 
 options_templates = {}
 
+options_templates = {}
+
+sagemaker_endpoints = []
+
+sd_models = []
+
+def list_sagemaker_endpoints():
+    global sagemaker_endpoints
+
+    return sagemaker_endpoints
+
+def list_sd_models():
+    global sd_models
+
+    return sd_models + [ x['filename'] for x in huggingface_models ]
+
+def intersection(lst1, lst2):
+    set1 = set(lst1)
+    set2 = set(lst2)
+
+    intersec = set1.intersection(set2)
+    return list(intersec)
+
+def get_available_sagemaker_endpoints(item):
+    attrs = item.get('attributes', '')
+    if attrs == '':
+        return ''
+
+    return attrs.get('sagemaker_endpoints', '')
+
+def refresh_sagemaker_endpoints(username):
+    global industrial_model, api_endpoint, sagemaker_endpoints
+
+    sagemaker_endpoints = []
+
+    if not username:
+        return sagemaker_endpoints
+
+    if industrial_model != '':
+        params = {
+            'industrial_model': industrial_model
+        }
+        response = requests.get(url=f'{api_endpoint}/endpoint', params=params)
+        if response.status_code == 200:
+            for endpoint_item in json.loads(response.text):
+                sagemaker_endpoints.append(endpoint_item['EndpointName'])
+
+    # to filter user's available endpoints
+    inputs = {
+        'action': 'get',
+        'username': username
+    }
+    response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+    if response.status_code == 200 and response.text != '':
+        data = json.loads(response.text)
+        eps = get_available_sagemaker_endpoints(data)
+        if eps != '':
+            sagemaker_endpoints = intersection(eps.split(','), sagemaker_endpoints)
+
+    return sagemaker_endpoints
+
+def refresh_sd_models(username):
+    global api_endpoint, sd_models
+
+    names = set()
+
+    if not username:
+        return sd_models
+
+    params = {
+        'module': 'sd_models'
+    }
+    params['username'] = username
+
+    response = requests.get(url=f'{api_endpoint}/sd/models', params=params)
+    if response.status_code == 200:
+        model_list = json.loads(response.text)
+        for model in model_list:
+            names.add(model)
+
+    sd_models = list(names)
+
+    return sd_models
+
 options_templates.update(options_section(('saving-images', "Saving images/grids"), {
     "samples_save": OptionInfo(True, "Always save all generated images"),
     "samples_format": OptionInfo('png', 'File format for images'),
@@ -407,6 +563,7 @@ options_templates.update(options_section(('training', "Training"), {
 }))
 
 options_templates.update(options_section(('sd', "Stable Diffusion"), {
+    "sagemaker_endpoint": OptionInfo(None, "SaegMaker endpoint", gr.Dropdown, lambda: {"choices": list_sagemaker_endpoints()}, refresh=refresh_sagemaker_endpoints),
     "sd_model_checkpoint": OptionInfo(None, "Stable Diffusion checkpoint", gr.Dropdown, lambda: {"choices": list_checkpoint_tiles()}, refresh=refresh_checkpoints),
     "sd_checkpoint_cache": OptionInfo(0, "Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
     "sd_vae_checkpoint_cache": OptionInfo(0, "VAE Checkpoints to cache in RAM", gr.Slider, {"minimum": 0, "maximum": 10, "step": 1}),
@@ -617,7 +774,7 @@ class Options:
         return data_label.default
 
     def save(self, filename):
-        assert not cmd_opts.freeze_settings, "saving settings is disabled"
+        assert not cmd_opts.pureui and not cmd_opts.freeze_settings, "saving settings is disabled"
 
         with open(filename, "w", encoding="utf8") as file:
             json.dump(self.data, file, indent=4)
@@ -632,6 +789,8 @@ class Options:
         return type_x == type_y
 
     def load(self, filename):
+        assert not cmd_opts.pureui
+
         with open(filename, "r", encoding="utf8") as file:
             self.data = json.load(file)
 
@@ -740,6 +899,9 @@ latent_upscale_modes = {
     "Latent (nearest)": {"mode": "nearest", "antialias": False},
     "Latent (nearest-exact)": {"mode": "nearest-exact", "antialias": False},
 }
+
+if cmd_opts.pureui and opts.localization == "None":
+    opts.localization = "zh_CN"
 
 sd_upscalers = []
 
@@ -905,6 +1067,11 @@ endpointUrl = s3_client.meta.endpoint_url
 s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
 s3_resource= boto3.resource('s3')
 generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+def list_objects(bucket,prefix=''):
+    response = s3_client.list_objects(Bucket=bucket, Prefix=prefix)
+    objects = response['Contents'] if response.get('Contents') else []
+    return [obj['Key'] for obj in objects]
 
 def get_default_sagemaker_bucket():
     region_name = boto3.Session().region_name
@@ -1125,3 +1292,23 @@ def download_images_for_ui(bucket_name):
 
     with open(cache_file_name, "w") as f:
                 json.dump(caches, f) 
+
+def upload_images_to_s3(imgs,request : gr.Request):
+    username = get_webui_username(request)
+    timestamp = datetime.now(timezone(timedelta(hours=+8))).strftime('%Y-%m-%dT%H:%M:%S')
+    bucket_name = opts.train_files_s3bucket.replace('s3://','')
+    if bucket_name.endswith('/'):
+        bucket_name= bucket_name[:-1]
+    if bucket_name == '':
+        return 'Error, please configure a S3 bucket at settings page first'
+    folder_name = f"train-images/{username}/{timestamp}"
+    try:
+        for i, img in enumerate(imgs):
+            filename = img.name.split('/')[-1]
+            object_name = f"{folder_name}/{filename}"
+            s3_client.upload_file(img.name, bucket_name.replace('s3://',''), object_name)
+    except ClientError as e:
+        print(e)
+        return e
+
+    return f"{len(imgs)} images uploaded to S3 folder:s3://{bucket_name}/{folder_name}"

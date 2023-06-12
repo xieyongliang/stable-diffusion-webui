@@ -228,6 +228,9 @@ def get_closet_checkpoint_match(search_string):
 
     return None
 
+def get_sd_model_checkpoint_from_title(sd_model_checkpoint_title):
+     pos = sd_model_checkpoint_title.rfind('[')
+     return sd_model_checkpoint_title[0 : pos - 1]
 
 def model_hash(filename):
     """old hash that only looks at a small part of the file and is prone to collisions"""

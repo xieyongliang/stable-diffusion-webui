@@ -34,6 +34,7 @@ import asyncio
 from typing import Union
 import traceback
 from modules.sd_vae import reload_vae_weights, refresh_vae_list
+from modules.img2img import process_batch
 import uuid
 import json
 
@@ -406,6 +407,22 @@ class Api:
         args.pop('script_name', None)
         args.pop('script_args', None)  # will refeed them to the pipeline directly after initializing them
         args.pop('alwayson_scripts', None)
+        img2img_batch_input_dir = args.pop('img2img_batch_input_dir', None)
+        img2img_batch_output_dir = args.pop('img2img_batch_output_dir', None)
+        img2img_batch_inpaint_mask_dir = args.pop('img2img_batch_inpaint_mask_dir', None)
+
+        if args['mode'] == 5:
+            if img2img_batch_input_dir:
+                img2img_batch_input_local_dir = f'/tmp/{uuid.uuid4()}'
+                shared.s3_download(img2img_batch_input_dir, img2img_batch_input_local_dir)
+
+            if img2img_batch_output_dir:
+                img2img_batch_output_local_dir = f'/tmp/{uuid.uuid4()}'
+                shared.s3_download(img2img_batch_output_dir, img2img_batch_output_local_dir)
+
+            if img2img_batch_inpaint_mask_dir:
+                img2img_batch_inpaint_mask_local_dir = f'/tmp/{uuid.uuid4()}'
+                shared.s3_download(img2img_batch_inpaint_mask_dir, img2img_batch_inpaint_mask_local_dir)
 
         script_args = self.init_script_args(img2imgreq, self.default_script_arg_img2img, selectable_scripts, selectable_script_idx, script_runner)
 
@@ -420,12 +437,15 @@ class Api:
             p.outpath_samples = opts.outdir_img2img_samples
 
             shared.state.begin()
-            if selectable_scripts is not None:
-                p.script_args = script_args
-                processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
+            if args['mode'] == 5:
+                process_batch(p, img2img_batch_input_dir, img2img_batch_output_dir, img2img_batch_inpaint_mask_dir, args)
             else:
-                p.script_args = tuple(script_args) # Need to pass args as tuple here
-                processed = process_images(p)
+                if selectable_scripts is not None:
+                    p.script_args = script_args
+                    processed = scripts.scripts_img2img.run(p, *p.script_args) # Need to pass args as list here
+                else:
+                    p.script_args = tuple(script_args) # Need to pass args as tuple here
+                    processed = process_images(p)
             shared.state.end()
 
         b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []

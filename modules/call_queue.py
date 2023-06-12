@@ -98,7 +98,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         if task == 'text-to-image' or task == 'image-to-image':
             if task == 'text-to-image':
                 script_args = []
-                for i in range(23, len(args)):
+                for i in range(29, len(args)):
                     if(isinstance(args[i], dict)):
                         script_arg = {}
                         for key in args[i]:
@@ -125,58 +125,73 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     else:
                         script_args.append(args[i])
 
-                prompt = args[0]
-                negative_prompt = args[1]
-                styles = [args[2], args[3]]
-                steps = args[4]
-                sampler_index = modules.sd_samplers.samplers[args[5]].name
-                restore_faces = args[6]
-                tiling = args[7]
-                n_iter = args[8]
-                batch_size = args[9]
-                cfg_scale = args[10]
-                seed = args[11]
-                subseed = args[12]
-                subseed_strength = args[13]
-                seed_resize_from_h = args[14]
-                seed_resize_from_w = args[15]
-                seed_enable_extras = args[16]
-                height = args[17]
-                width = args[18]
-                enable_hr = args[19]
-                denoising_strength = args[20]
-                firstphase_width = args[21]
-                firstphase_height = args[22]
+                txt2img_prompt = args[0]
+                txt2img_negative_prompt = args[1]
+                txt2img_prompt_styles = args[2]
+                steps = args[3]
+                sampler_index = args[4]
+                restore_faces = args[5]
+                tiling = args[6]
+                batch_count = args[7]
+                batch_size = args[8]
+                cfg_scale = args[9]
+                seed = args[10]
+                subseed = args[11]
+                subseed_strength = args[12]
+                seed_resize_from_h = args[13]
+                seed_resize_from_w = args[14]
+                seed_enable_extras = args[15]
+                height = args[16]
+                width = args[17]
+                enable_hr = args[18]
+                denoising_strength = args[19]
+                hr_scale = args[20]
+                hr_upscaler = args[21]
+                hr_second_pass_steps = args[22]
+                hr_resize_x = args[23]
+                hr_resize_y = args[24]
+                hr_sampler_index = args[25]
+                hr_prompt = args[26]
+                hr_negative_prompt = args[27]
+                override_settings = args[28]
 
                 payload = {
                     "enable_hr": enable_hr,
                     "denoising_strength": denoising_strength,
-                    "firstphase_width": firstphase_width,
-                    "firstphase_height": firstphase_height,
-                    "prompt": prompt,
-                    "styles": styles,
+                    "hr_scale": hr_scale,
+                    "hr_upscaler": hr_upscaler,
+                    "hr_second_pass_steps": hr_second_pass_steps,
+                    "hr_resize_x": hr_resize_x,
+                    "hr_resize_y": hr_resize_y,
+                    "hr_sampler_name": modules.sd_samplers.samplers_for_img2img[hr_sampler_index - 1].name if hr_sampler_index != 0 else None,
+                    "hr_prompt": hr_prompt,
+                    "hr_negative_prompt": hr_negative_prompt,
+                    "prompt": txt2img_prompt,
+                    "negative_prompt": txt2img_negative_prompt,
+                    "prompt_styles": txt2img_prompt_styles,
+                    "steps": steps,
+                    "sampler_index": sampler_index,
+                    "restore_faces": restore_faces,
+                    "tiling": tiling,
+                    "n_iter": batch_count,
+                    "batch_size": batch_size,
+                    "cfg_scale": cfg_scale,
                     "seed": seed,
                     "subseed": subseed,
                     "subseed_strength": subseed_strength,
                     "seed_resize_from_h": seed_resize_from_h,
                     "seed_resize_from_w": seed_resize_from_w,
-                    "sampler_index": sampler_index,
-                    "batch_size": batch_size,
-                    "n_iter": n_iter,
-                    "steps": steps,
-                    "cfg_scale": cfg_scale,
-                    "width": width,
+                    "seed_enable_extras": seed_enable_extras,
                     "height": height,
-                    "restore_faces": restore_faces,
-                    "tiling": tiling,
-                    "negative_prompt": negative_prompt,
+                    "width": width,
+                    "override_settings_texts": override_settings,
                     "eta": opts.eta_ddim if sampler_index == 'DDIM' or sampler_index == 'PLMS' else opts.eta_ancestral,
                     "s_churn": opts.s_churn,
                     "s_tmax": None,
                     "s_tmin": opts.s_tmin,
                     "s_noise": opts.s_noise,
-                    "override_settings": {},
-                    "script_args": json.dumps(script_args),
+                    "override_settings": override_settings,
+                    "script_args": json.dumps(script_args)
                 }
                 inputs = {
                     'task': task,
@@ -187,15 +202,16 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 mode = args[0]
                 prompt = args[1]
                 negative_prompt = args[2]
-                styles = [args[3], args[4]]
-                init_img = args[5]
+                prompt_styles = args[3]
+                init_img = args[4]
+                sketch = args[5]
                 init_img_with_mask = args[6]
-                init_img_with_mask_orig = args[7]
-                init_img_inpaint = args[8]
-                init_mask_inpaint = args[9]
-                mask_mode = args[10]
+                inpaint_color_sketch = args[7]
+                inpaint_color_sketch_orig = args[8]
+                init_img_inpaint = args[9]
+                init_mask_inpaint = args[10]
                 steps = args[11]
-                sampler_index = modules.sd_samplers.samplers_for_img2img[args[12]].name
+                sampler_index = args[12]
                 mask_blur = args[13]
                 mask_alpha = args[14]
                 inpainting_fill = args[15]
@@ -204,24 +220,29 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 n_iter = args[18]
                 batch_size = args[19]
                 cfg_scale = args[20]
-                denoising_strength = args[21]
-                seed = args[22]
-                subseed = args[23]
-                subseed_strength = args[24]
-                seed_resize_from_h = args[25]
-                seed_resize_from_w = args[26]
-                seed_enable_extras = args[27]
-                height = args[28]
-                width = args[29]
-                resize_mode = args[30]
-                inpaint_full_res = args[31]
-                inpaint_full_res_padding = args[32]
-                inpainting_mask_invert = args[33]
-                img2img_batch_input_dir = args[34]
-                img2img_batch_output_dir = args[35]
+                image_cfg_scale = args[21]
+                denoising_strength = args[22]
+                seed = args[23]
+                subseed = args[24]
+                subseed_strength = args[25]
+                seed_resize_from_h = args[26]
+                seed_resize_from_w = args[27]
+                seed_enable_extras = args[28]
+                selected_scale_tab = args[29]
+                height = args[30]
+                width = args[31]
+                scale_by = args[32]
+                resize_mode = args[33]
+                inpaint_full_res = args[34]
+                inpaint_full_res_padding = args[35]
+                inpainting_mask_invert = args[36]
+                img2img_batch_input_dir = args[37]
+                img2img_batch_output_dir = args[38]
+                img2img_batch_inpaint_mask_dir = args[39]
+                override_settings = args[40]
 
                 script_args = []
-                for i in range(36, len(args)):
+                for i in range(41, len(args)):
                     if(isinstance(args[i], dict)):
                         script_arg = {}
                         for key in args[i]:
@@ -248,39 +269,31 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     else:
                         script_args.append(args[i])
 
-                if mode == 1:
-                    # Drawn mask
-                    if mask_mode == 0:
-                        is_mask_sketch = isinstance(init_img_with_mask, dict)
-                        if is_mask_sketch:
-                            # Sketch: mask iff. not transparent
-                            image, mask = init_img_with_mask["image"], init_img_with_mask["mask"]
-                            alpha_mask = ImageOps.invert(image.split()[-1]).convert('L').point(lambda x: 255 if x > 0 else 0, mode='1')
-                            mask = ImageChops.lighter(alpha_mask, mask.convert('L')).convert('L')
-                        else:
-                            # Color-sketch: mask iff. painted over
-                            image = init_img_with_mask
-                            orig = init_img_with_mask_orig or init_img_with_mask
-                            pred = np.any(np.array(image) != np.array(orig), axis=-1)
-                            mask = Image.fromarray(pred.astype(np.uint8) * 255, "L")
-                            mask = ImageEnhance.Brightness(mask).enhance(1 - mask_alpha / 100)
-                            blur = ImageFilter.GaussianBlur(mask_blur)
-                            image = Image.composite(image.filter(blur), orig, mask.filter(blur))
-
-                        image = image.convert("RGB")
-
-                        image = init_img_with_mask['image']
-                        mask = init_img_with_mask['mask']
-                        alpha_mask = ImageOps.invert(image.split()[-1]).convert('L').point(lambda x: 255 if x > 0 else 0, mode='1')
-                        mask = ImageChops.lighter(alpha_mask, mask.convert('L')).convert('L')
-                        image = image.convert('RGB')
-                    # Uploaded mask
-                    else:
-                        image = init_img_inpaint
-                        mask = init_mask_inpaint
-                # No mask
+                if mode == 0:
+                    image = init_img.convert("RGB")
+                    mask = None
+                elif mode == 1:  # img2img sketch
+                    image = sketch.convert("RGB")
+                    mask = None
+                elif mode == 2:  # inpaint
+                    image, mask = init_img_with_mask["image"], init_img_with_mask["mask"]
+                    alpha_mask = ImageOps.invert(image.split()[-1]).convert('L').point(lambda x: 255 if x > 0 else 0, mode='1')
+                    mask = ImageChops.lighter(alpha_mask, mask.convert('L')).convert('L')
+                    image = image.convert("RGB")
+                elif mode == 3:  # inpaint sketch
+                    image = inpaint_color_sketch
+                    orig = inpaint_color_sketch_orig or inpaint_color_sketch
+                    pred = np.any(np.array(image) != np.array(orig), axis=-1)
+                    mask = Image.fromarray(pred.astype(np.uint8) * 255, "L")
+                    mask = ImageEnhance.Brightness(mask).enhance(1 - mask_alpha / 100)
+                    blur = ImageFilter.GaussianBlur(mask_blur)
+                    image = Image.composite(image.filter(blur), orig, mask.filter(blur))
+                    image = image.convert("RGB")
+                elif mode == 4:  # inpaint upload mask
+                    image = init_img_inpaint
+                    mask = init_mask_inpaint
                 else:
-                    image = init_img
+                    image = None
                     mask = None
 
                 # Use the EXIF orientation of photos taken by smartphones.
@@ -289,20 +302,20 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
                 assert 0. <= denoising_strength <= 1., 'can only work with strength in [0.0, 1.0]'
 
-                image_encoded_in_base64 = encode_image_to_base64(image)
-                mask_encoded_in_base64 = encode_image_to_base64(mask) if mask else None
+                if selected_scale_tab == 1:
+                    assert image, "Can't scale by because no image is selected"
 
-                if init_img_with_mask:
-                    image = init_img_with_mask['image']
-                    image_encoded_in_base64 = encode_image_to_base64(image)
-                    mask_encoded_in_base64 = encode_image_to_base64(mask)
-                    init_img_with_mask['image'] = image_encoded_in_base64
-                    init_img_with_mask['mask'] = mask_encoded_in_base64
+                    width = int(image.width * scale_by)
+                    height = int(image.height * scale_by)
+
+                image_encoded_in_base64 = encode_image_to_base64(image) if image else None
+                mask_encoded_in_base64 = encode_image_to_base64(mask) if mask else None
 
                 payload = {
                     "init_images": [image_encoded_in_base64],
                     "resize_mode": resize_mode,
                     "denoising_strength": denoising_strength,
+                    "image_cfg_scale": image_cfg_scale,
                     "mask": mask_encoded_in_base64,
                     "mask_blur": mask_blur,
                     "inpainting_fill": inpainting_fill,
@@ -310,12 +323,13 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "inpaint_full_res_padding": inpaint_full_res_padding,
                     "inpainting_mask_invert": inpainting_mask_invert,
                     "prompt": prompt,
-                    "styles": styles,
+                    "styles": prompt_styles,
                     "seed": seed,
                     "subseed": subseed,
                     "subseed_strength": subseed_strength,
                     "seed_resize_from_h": seed_resize_from_h,
                     "seed_resize_from_w": seed_resize_from_w,
+                    "seed_enable_extras": seed_enable_extras,
                     "sampler_index": sampler_index,
                     "batch_size": batch_size,
                     "n_iter": n_iter,
@@ -331,9 +345,12 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_tmax": None,
                     "s_tmin": opts.s_tmin,
                     "s_noise": opts.s_noise,
-                    "override_settings": {},
+                    "override_settings": override_settings,
                     "include_init_images": False,
-                    "script_args": json.dumps(script_args)
+                    "script_args": json.dumps(script_args),
+                    "img2img_batch_input_dir": img2img_batch_input_dir,
+                    "img2img_batch_output_dir": img2img_batch_output_dir,
+                    "img2img_batch_inpaint_mask_dir": img2img_batch_inpaint_mask_dir
                 }
                 inputs = {
                     'task': task,

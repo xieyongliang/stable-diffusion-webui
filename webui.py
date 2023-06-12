@@ -62,6 +62,7 @@ import modules.txt2img
 import modules.script_callbacks
 import modules.textual_inversion.textual_inversion
 import modules.progress
+import modules.hashes
 
 import modules.ui
 from modules import modelloader
@@ -238,7 +239,9 @@ def configure_sigint_handler():
 
 
 def configure_opts_onchange():
-    shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()), call=False)
+    if not cmd_opts.pureui:
+        shared.opts.onchange("sd_model_checkpoint", wrap_queued_call(lambda: modules.sd_models.reload_model_weights()), call=False)
+
     shared.opts.onchange("sd_vae", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
     shared.opts.onchange("sd_vae_as_default", wrap_queued_call(lambda: modules.sd_vae.reload_vae_weights()), call=False)
     shared.opts.onchange("temp_dir", ui_tempdir.on_tmpdir_changed)
@@ -246,6 +249,32 @@ def configure_opts_onchange():
     shared.opts.onchange("cross_attention_optimization", wrap_queued_call(lambda: modules.sd_hijack.model_hijack.redo_hijack(shared.sd_model)), call=False)
     startup_timer.record("opts onchange")
 
+    if not cmd_opts.pureui and not cmd_opts.train:
+        print(os.system('df -h'))
+        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
+        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
+        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
+        cache_dir = f"{shared.tmp_cache_dir}/"
+        session = boto3.Session()
+        region_name = session.region_name
+        sts_client = session.client('sts')
+        account_id = sts_client.get_caller_identity()['Account']
+        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+        if not shared.models_s3_bucket:
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+            shared.s3_folder_vae = "stable-diffusion-webui/models/VAE"
+
+
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(vae_models_tmp_dir,cache_dir,'vae')
+        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
+        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
 
 def initialize():
     fix_asyncio_event_loop_policy()
@@ -320,7 +349,8 @@ def initialize_rest(*, reload_script_modules=False):
         if modules.sd_hijack.current_optimizer is None:
             modules.sd_hijack.apply_optimizations()
 
-    Thread(target=load_model).start()
+    if not cmd_opts.pureui:
+        Thread(target=load_model).start()
 
     shared.reload_hypernetworks()
     startup_timer.record("reload hypernetworks")
@@ -632,10 +662,10 @@ def register_vae_models(vae_models_dir):
         }
         api_endpoint = os.environ['api_endpoint']
         endpoint_name = os.environ['endpoint_name']
-        for file in get_models(vae_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+        for filename in get_models(vae_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
             item = {}
-            item['model_name'] = os.path.basename(file)
-            item['path'] = file
+            item['model_name'] = os.path.basename(filename)
+            item['path'] = filename
             item['endpoint_name'] = endpoint_name
             items.append(item)
         inputs = {
@@ -654,11 +684,25 @@ def register_lora_models(lora_models_dir):
         }
         api_endpoint = os.environ['api_endpoint']
         endpoint_name = os.environ['endpoint_name']
-        for file in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
-            hash = modules.sd_models.model_hash(os.path.join(lora_models_dir, file))
+        for filename in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
+            shorthash = modules.hashes.calculate_sha256(os.path.join(lora_models_dir, filename))
+            hash = modules.sd_models.model_hash()
+            metadata = {}
+
+            is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
+
+            if is_safetensors:
+                try:
+                    metadata = modules.sd_models.read_metadata_from_safetensors(filename)
+                except Exception as e:
+                    errors.display(e, f"reading lora {filename}")
+
             item = {}
-            item['model_name'] = os.path.basename(file)
-            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['model_name'] = os.path.splitext(os.path.basename(filename))[0]
+            item['filename'] = os.path.basename(filename)
+            item['hash'] = hash
+            item['shorthash'] = shorthash
+            item['metadata'] = json.dumps(metadata)
             item['endpoint_name'] = endpoint_name
             items.append(item)
         inputs = {
@@ -726,11 +770,11 @@ def register_cn_models(cn_models_dir):
         params = {
             'module': 'ControlNet'
         }
-        for file in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
-            hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, file))
+        for filename in get_models(cn_models_dir, ['*.pt', '*.pth', '*.ckpt', '*.safetensors']):
+            hash = modules.sd_models.model_hash(os.path.join(cn_models_dir, filename))
             item = {}
-            item['model_name'] = os.path.basename(file)
-            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(file))[0], hash)
+            item['model_name'] = os.path.basename(filename)
+            item['title'] = '{0} [{1}]'.format(os.path.splitext(os.path.basename(filename))[0], hash)
             item['endpoint_name'] = endpoint_name
             items.append(item)
         inputs = {
@@ -783,6 +827,9 @@ def webui():
 
             FastAPI.original_setup = FastAPI.setup
             FastAPI.setup = fastapi_setup
+
+        if cmd_opts.pureui:
+            sync_images_from_s3()
 
         app, local_url, share_url = shared.demo.launch(
             share=cmd_opts.share,
@@ -927,6 +974,7 @@ if cmd_opts.train:
             process_width = train_args['images_preprocessing_settings']['process_width']
             process_height = train_args['images_preprocessing_settings']['process_height']
             preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+            process_keep_original_size = train_args['images_preprocessing_settings']['embedding_process_keep_original_size']
             process_flip = train_args['images_preprocessing_settings']['process_flip']
             process_split = train_args['images_preprocessing_settings']['process_split']
             process_caption = train_args['images_preprocessing_settings']['process_caption']    
@@ -938,12 +986,20 @@ if cmd_opts.train:
             process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
             process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
             process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            process_multicrop_mindim = train_args['images_preprocessing_settings']['process_multicrop_mindim']
+            process_multicrop_maxdim = train_args['images_preprocessing_settings']['process_multicrop_maxdim']
+            process_multicrop_minarea = train_args['process_multicrop_minarea']['process_multicrop_minarea']
+            process_multicrop_maxarea = train_args['process_multicrop_minarea']['process_multicrop_maxarea']
+            process_multicrop_objective = train_args['process_multicrop_minarea']['process_multicrop_objective']
+            process_multicrop_threshold = train_args['process_multicrop_minarea']['process_multicrop_threshold']
             modules.textual_inversion.preprocess.preprocess(
+                None,
                 process_src,
                 process_dst,
                 process_width,
                 process_height,
                 preprocess_txt_action,
+                process_keep_original_size,
                 process_flip,
                 process_split,
                 process_caption,
@@ -955,19 +1011,29 @@ if cmd_opts.train:
                 process_focal_crop_entropy_weight,
                 process_focal_crop_edges_weight,
                 process_focal_crop_debug,
+                process_multicrop_mindim,
+                process_multicrop_maxdim,
+                process_multicrop_minarea,
+                process_multicrop_maxarea,
+                process_multicrop_objective,
+                process_multicrop_threshold
             )
             train_embedding_name = name
             learn_rate = train_args['train_embedding_settings']['learn_rate']
+            clip_grad_mode = train_args['train_embedding_settings']['clip_grad_mode']
+            clip_grad_value = train_args['train_embedding_settings']['clip_grad_value']
             batch_size = train_args['train_embedding_settings']['batch_size']
             gradient_step = train_args['train_embedding_settings']['gradient_step']
             data_root = process_dst
             log_directory = 'textual_inversion'
             training_width = train_args['train_embedding_settings']['training_width']
             training_height = train_args['train_embedding_settings']['training_height']
+            varsize = train_args['train_embedding_settings']['varsize']
             steps = train_args['train_embedding_settings']['steps']
             shuffle_tags = train_args['train_embedding_settings']['shuffle_tags']
             tag_drop_out = train_args['train_embedding_settings']['tag_drop_out']
             latent_sampling_method = train_args['train_embedding_settings']['latent_sampling_method']
+            use_weight = train_args['train_embedding_settings']['use_weight']
             create_image_every = train_args['train_embedding_settings']['create_image_every']
             save_embedding_every = train_args['train_embedding_settings']['save_embedding_every']
             template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
@@ -975,6 +1041,7 @@ if cmd_opts.train:
             preview_from_txt2img = train_args['train_embedding_settings']['preview_from_txt2img']
             txt2img_preview_params = train_args['train_embedding_settings']['txt2img_preview_params']
             _, filename = modules.textual_inversion.textual_inversion.train_embedding(
+                None,
                 train_embedding_name,
                 learn_rate,
                 batch_size,
@@ -983,10 +1050,14 @@ if cmd_opts.train:
                 log_directory,
                 training_width,
                 training_height,
+                varsize,
                 steps,
+                clip_grad_mode,
+                clip_grad_value,
                 shuffle_tags,
                 tag_drop_out,
                 latent_sampling_method,
+                use_weight,
                 create_image_every,
                 save_embedding_every,
                 template_file,
@@ -1014,12 +1085,17 @@ if cmd_opts.train:
 
             name = "".join( x for x in name if (x.isalnum() or x in "._- "))
 
-            fn = os.path.join(cmd_opts.hypernetwork_dir, f"{name}.pt")
+            fn = os.path.join(shared.cmd_opts.hypernetwork_dir, f"{name}.pt")
             if not overwrite_old:
                 assert not os.path.exists(fn), f"file {fn} already exists"
 
             if type(layer_structure) == str:
                 layer_structure = [float(x.strip()) for x in layer_structure.split(",")]
+
+            if use_dropout and dropout_structure and type(dropout_structure) == str:
+                dropout_structure = [float(x.strip()) for x in dropout_structure.split(",")]
+            else:
+                dropout_structure = [0] * len(layer_structure)
 
             hypernet = modules.hypernetworks.hypernetwork.Hypernetwork(
                 name=name,
@@ -1039,6 +1115,7 @@ if cmd_opts.train:
             process_width = train_args['images_preprocessing_settings']['process_width']
             process_height = train_args['images_preprocessing_settings']['process_height']
             preprocess_txt_action = train_args['images_preprocessing_settings']['preprocess_txt_action']
+            process_keep_original_size = train_args['images_preprocessing_settings']['embedding_process_keep_original_size']
             process_flip = train_args['images_preprocessing_settings']['process_flip']
             process_split = train_args['images_preprocessing_settings']['process_split']
             process_caption = train_args['images_preprocessing_settings']['process_caption']    
@@ -1050,12 +1127,19 @@ if cmd_opts.train:
             process_focal_crop_entropy_weight = train_args['images_preprocessing_settings']['process_focal_crop_entropy_weight']    
             process_focal_crop_edges_weight = train_args['images_preprocessing_settings']['process_focal_crop_debug']
             process_focal_crop_debug = train_args['images_preprocessing_settings']['process_focal_crop_debug']
+            process_multicrop_mindim = train_args['images_preprocessing_settings']['process_multicrop_mindim']
+            process_multicrop_maxdim = train_args['images_preprocessing_settings']['process_multicrop_maxdim']
+            process_multicrop_minarea = train_args['process_multicrop_minarea']['process_multicrop_minarea']
+            process_multicrop_maxarea = train_args['process_multicrop_minarea']['process_multicrop_maxarea']
+            process_multicrop_objective = train_args['process_multicrop_minarea']['process_multicrop_objective']
+            process_multicrop_threshold = train_args['process_multicrop_minarea']['process_multicrop_threshold']
             modules.textual_inversion.preprocess.preprocess(
                 process_src,
                 process_dst,
                 process_width,
                 process_height,
                 preprocess_txt_action,
+                process_keep_original_size,
                 process_flip,
                 process_split,
                 process_caption,
@@ -1067,19 +1151,29 @@ if cmd_opts.train:
                 process_focal_crop_entropy_weight,
                 process_focal_crop_edges_weight,
                 process_focal_crop_debug,
+                process_multicrop_mindim,
+                process_multicrop_maxdim,
+                process_multicrop_minarea,
+                process_multicrop_maxarea,
+                process_multicrop_objective,
+                process_multicrop_threshold
             )
             train_hypernetwork_name = name
             learn_rate = train_args['train_hypernetwork_settings']['learn_rate']
+            clip_grad_mode = train_args['train_hypernetwork_settings']['clip_grad_mode']
+            clip_grad_value = train_args['train_hypernetwork_settings']['clip_grad_value']
             batch_size = train_args['train_hypernetwork_settings']['batch_size']
             gradient_step = train_args['train_hypernetwork_settings']['gradient_step']
             dataset_directory = process_dst
             log_directory = 'textual_inversion'
             training_width = train_args['train_hypernetwork_settings']['training_width']
             training_height = train_args['train_hypernetwork_settings']['training_height']
+            varsize = train_args['train_hypernetwork_settings']['varsize']
             steps = train_args['train_hypernetwork_settings']['steps']
             shuffle_tags = train_args['train_hypernetwork_settings']['shuffle_tags']
             tag_drop_out = train_args['train_hypernetwork_settings']['tag_drop_out']
             latent_sampling_method = train_args['train_hypernetwork_settings']['latent_sampling_method']
+            use_weight = train_args['train_embedding_settings']['use_weight']
             create_image_every = train_args['train_hypernetwork_settings']['create_image_every']
             save_hypernetwork_every = train_args['train_hypernetwork_settings']['save_embedding_every']
             template_file = os.path.join(script_path, "textual_inversion_templates", "style_filewords.txt")
@@ -1087,6 +1181,7 @@ if cmd_opts.train:
             preview_from_txt2img = train_args['train_hypernetwork_settings']['preview_from_txt2img']
             txt2img_preview_params = train_args['train_hypernetwork_settings']['txt2img_preview_params']        
             _, filename = modules.hypernetworks.hypernetwork.train_hypernetwork(
+                None,
                 train_hypernetwork_name,
                 learn_rate,
                 batch_size,
@@ -1095,10 +1190,14 @@ if cmd_opts.train:
                 log_directory,
                 training_width,
                 training_height,
+                varsize,
                 steps,
+                clip_grad_mode,
+                clip_grad_value,
                 shuffle_tags,
                 tag_drop_out,
                 latent_sampling_method,
+                use_weight,
                 create_image_every,
                 save_hypernetwork_every,
                 template_file,
