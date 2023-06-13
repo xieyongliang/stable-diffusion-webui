@@ -38,6 +38,31 @@ import modules.extras
 import requests
 from modules.sd_models import get_sd_model_checkpoint_from_title
 
+training_instance_types = [
+    'ml.p2.xlarge',
+    'ml.p2.8xlarge',
+    'ml.p2.16xlarge',
+    'ml.p3.2xlarge',
+    'ml.p3.8xlarge',
+    'ml.p3.16xlarge',
+    'ml.g4dn.xlarge',
+    'ml.g4dn.2xlarge',
+    'ml.g4dn.4xlarge',
+    'ml.g4dn.8xlarge',
+    'ml.g4dn.12xlarge',
+    'ml.g4dn.16xlarge',
+    'ml.g5.xlarge',
+    'ml.g5.2xlarge',
+    'ml.g5.4xlarge',
+    'ml.g5.8xlarge',
+    'ml.g5.12xlarge',
+    'ml.g5.16xlarge',
+    'ml.g5.24xlarge',
+    'ml.g5.48xlarge',
+    'ml.p4d.24xlarge'
+]
+component_dict = {}
+
 warnings.filterwarnings("default" if opts.show_warnings else "ignore", category=UserWarning)
 
 # this is a fix for Windows users. Without it, javascript files will be served with text/html content-type and the browser will not show any UI
@@ -385,12 +410,92 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
-    refresh_button = ToolButton(value=refresh_symbol, elem_id=elem_id)
-    refresh_button.click(
-        fn=refresh,
-        inputs=[],
-        outputs=[refresh_component]
-    )
+    def refresh_sagemaker_endpoints(request : gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_sd_models(request: gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_lora_models(sagemaker_endpoint,request:gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(sagemaker_endpoint,username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_vae_models(sagemaker_endpoint):
+        refresh_method(sagemaker_endpoint=sagemaker_endpoint)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    def refresh_checkpoints(sagemaker_endpoint,request:gr.Request):
+        username = shared.get_webui_username(request)
+        refresh_method(sagemaker_endpoint,username)
+        args = refreshed_args() if callable(refreshed_args) else refreshed_args
+
+        for k, v in args.items():
+            setattr(refresh_component, k, v)
+
+        return gr.update(**(args or {}))
+
+    refresh_button = gr.Button(value=refresh_symbol, elem_id=elem_id)
+    if elem_id == 'refresh_sagemaker_endpoint':
+        refresh_button.click(
+            fn=refresh_sagemaker_endpoints,
+            inputs=[],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_models':
+        refresh_button.click(
+            fn=refresh_sd_models,
+            inputs=[],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_model_checkpoint':
+        refresh_button.click(
+            fn=refresh_checkpoints,
+            inputs=[shared.sagemaker_endpoint_component],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_lora':
+        refresh_button.click(
+            fn=refresh_lora_models,
+            inputs=[shared.sagemaker_endpoint_component],
+            outputs=[refresh_component]
+        )
+    elif elem_id == 'refresh_sd_vae':
+        refresh_button.click(
+            fn=refresh_vae_models,
+            inputs=[shared.sagemaker_endpoint_component],
+            outputs=[refresh_component]
+        )
+    else:
+        refresh_button.click(
+            fn=refresh,
+            inputs=[],
+            outputs=[refresh_component]
+        )
     return refresh_button
 
 
@@ -475,7 +580,7 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
         with gr.Row():
             with gr.Column(scale=3):
-                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
+                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = shared.get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
                 dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, interactive=False,
                                                   value = shared.get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated/{username}')
 
@@ -1108,6 +1213,20 @@ def create_ui():
 
     modules.scripts.scripts_current = None
 
+    script_callbacks.ui_settings_callback()
+
+    ui_tabs = script_callbacks.ui_tabs_callback()
+
+    dreambooth_tab = None
+    images_history_ui_tab = None
+    for ui_tab in ui_tabs:
+        if ui_tab[2] == 'dreambooth_interface':
+            dreambooth_tab = ui_tab[0]
+        elif ui_tab[2] == 'images_history':
+            images_history_ui_tab = ui_tab
+        else:
+            interfaces += [ui_tab]
+
     with gr.Blocks(analytics_enabled=False) as extras_interface:
         ui_postprocessing.create_ui()
 
@@ -1186,6 +1305,153 @@ def create_ui():
             with gr.Column(variant='compact', elem_id="modelmerger_results_container"):
                 with gr.Group(elem_id="modelmerger_results_panel"):
                     modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
+
+    def create_setting_component(key, is_quicksettings=False):
+        def fun():
+            return opts.data[key] if key in opts.data else opts.data_labels[key].default
+
+        info = opts.data_labels[key]
+        t = type(info.default)
+
+        args = info.component_args() if callable(info.component_args) else info.component_args
+
+        if info.component is not None:
+            comp = info.component
+        elif t == str:
+            comp = gr.Textbox
+        elif t == int:
+            comp = gr.Number
+        elif t == bool:
+            comp = gr.Checkbox
+        else:
+            raise Exception(f'bad options item type: {t} for key {key}')
+
+        elem_id = f"setting_{key}"
+
+        if info.refresh is not None:
+            if is_quicksettings:
+                res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
+                create_refresh_button(res, info.refresh, info.component_args, f"refresh_{key}")
+            else:
+                with FormRow():
+                    res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
+                    create_refresh_button(res, info.refresh, info.component_args, f"refresh_{key}")
+        else:
+            res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
+
+        if key == 'sagemaker_endpoint':
+            shared.sagemaker_endpoint_component = res
+
+        if key == 'sd_model_checkpoint':
+            shared.sd_model_checkpoint_component = res
+
+        if key == 'sd_hypernetwork':
+            shared.sd_hypernetwork_component = res
+
+        return res
+
+    loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
+
+    components = []
+    component_dict = {}
+    shared.settings_components = component_dict
+
+    opts.reorder()
+
+    def run_settings(*args):
+        changed = []
+
+        for key, value, comp in zip(opts.data_labels.keys(), args, components):
+            assert comp == dummy_component or opts.same_type(value, opts.data_labels[key].default), f"Bad value for setting {key}: {value}; expecting {type(opts.data_labels[key].default).__name__}"
+
+        for key, value, comp in zip(opts.data_labels.keys(), args, components):
+            if comp == dummy_component:
+                continue
+
+            if opts.set(key, value):
+                changed.append(key)
+
+        try:
+            opts.save(shared.config_filename)
+        except RuntimeError:
+            return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
+        return opts.dumpjson(), f'{len(changed)} settings changed{": " if len(changed) > 0 else ""}{", ".join(changed)}.'
+
+    def run_settings_single(value, key):
+        if not opts.same_type(value, opts.data_labels[key].default):
+            return gr.update(visible=True), opts.dumpjson()
+
+        if not opts.set(key, value):
+            return gr.update(value=getattr(opts, key)), opts.dumpjson()
+
+        opts.save(shared.config_filename)
+
+        return get_value_for_setting(key), opts.dumpjson()
+
+    with gr.Blocks(analytics_enabled=False) as settings_interface:
+        with gr.Row():
+            with gr.Column(scale=6):
+                settings_submit = gr.Button(value="Apply settings", variant='primary', elem_id="settings_submit")
+            with gr.Column():
+                restart_gradio = gr.Button(value='Reload UI', variant='primary', elem_id="settings_restart_gradio")
+
+        result = gr.HTML(elem_id="settings_result")
+
+        quicksettings_names = opts.quicksettings_list
+        quicksettings_names = {x: i for i, x in enumerate(quicksettings_names) if x != 'quicksettings'}
+
+        quicksettings_list = []
+
+        previous_section = None
+        current_tab = None
+        current_row = None
+        with gr.Tabs(elem_id="settings"):
+            for i, (k, item) in enumerate(opts.data_labels.items()):
+                section_must_be_skipped = item.section[0] is None
+
+                if previous_section != item.section and not section_must_be_skipped:
+                    elem_id, text = item.section
+
+                    if current_tab is not None:
+                        current_row.__exit__()
+                        current_tab.__exit__()
+
+                    gr.Group()
+                    current_tab = gr.TabItem(elem_id=f"settings_{elem_id}", label=text)
+                    current_tab.__enter__()
+                    current_row = gr.Column(variant='compact')
+                    current_row.__enter__()
+
+                    previous_section = item.section
+
+                if k in quicksettings_names and not shared.cmd_opts.freeze_settings:
+                    quicksettings_list.append((i, k, item))
+                    components.append(dummy_component)
+                elif section_must_be_skipped:
+                    components.append(dummy_component)
+                else:
+                    component = create_setting_component(k)
+                    component_dict[k] = component
+                    components.append(component)
+
+            if current_tab is not None:
+                current_row.__exit__()
+                current_tab.__exit__()
+
+            with gr.TabItem("Defaults", id="defaults", elem_id="settings_tab_defaults"):
+                loadsave.create_ui()
+
+            with gr.TabItem("Licenses", id="licenses", elem_id="settings_tab_licenses"):
+                gr.HTML(shared.html("licenses.html"), elem_id="licenses")
+
+            gr.Button(value="Show all pages", elem_id="settings_show_all_pages")
+
+        restart_gradio.click(
+            fn=shared.state.request_restart,
+            _js='restart_reload',
+            inputs=[],
+            outputs=[],
+        )
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
 
@@ -1903,207 +2169,6 @@ def create_ui():
             _js="var if alert('Only admin user can save user data')"
         )
 
-    ui_tabs = script_callbacks.ui_tabs_callback()
-
-    dreambooth_tab = None
-    images_history_ui_tab = None
-    for ui_tab in ui_tabs:
-        if ui_tab[2] == 'dreambooth_interface':
-            dreambooth_tab = ui_tab[0]
-        elif ui_tab[2] == 'images_history':
-            images_history_ui_tab = ui_tab
-        else:
-            interfaces += [ui_tab]
-
-    def create_setting_component(key, is_quicksettings=False):
-        def fun():
-            return opts.data[key] if key in opts.data else opts.data_labels[key].default
-
-        info = opts.data_labels[key]
-        t = type(info.default)
-
-        args = info.component_args() if callable(info.component_args) else info.component_args
-
-        if info.component is not None:
-            comp = info.component
-        elif t == str:
-            comp = gr.Textbox
-        elif t == int:
-            comp = gr.Number
-        elif t == bool:
-            comp = gr.Checkbox
-        else:
-            raise Exception(f'bad options item type: {t} for key {key}')
-
-        elem_id = f"setting_{key}"
-
-        if info.refresh is not None:
-            if is_quicksettings:
-                res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
-                create_refresh_button(res, info.refresh, info.component_args, f"refresh_{key}")
-            else:
-                with FormRow():
-                    res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
-                    create_refresh_button(res, info.refresh, info.component_args, f"refresh_{key}")
-        else:
-            res = comp(label=info.label, value=fun(), elem_id=elem_id, **(args or {}))
-
-        return res
-
-    loadsave = ui_loadsave.UiLoadsave(cmd_opts.ui_config_file)
-
-    components = []
-    component_dict = {}
-    shared.settings_components = component_dict
-
-    script_callbacks.ui_settings_callback()
-    opts.reorder()
-
-    def run_settings(*args):
-        changed = []
-
-        for key, value, comp in zip(opts.data_labels.keys(), args, components):
-            assert comp == dummy_component or opts.same_type(value, opts.data_labels[key].default), f"Bad value for setting {key}: {value}; expecting {type(opts.data_labels[key].default).__name__}"
-
-        for key, value, comp in zip(opts.data_labels.keys(), args, components):
-            if comp == dummy_component:
-                continue
-
-            if opts.set(key, value):
-                changed.append(key)
-
-        try:
-            opts.save(shared.config_filename)
-        except RuntimeError:
-            return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
-        return opts.dumpjson(), f'{len(changed)} settings changed{": " if len(changed) > 0 else ""}{", ".join(changed)}.'
-
-    def run_settings_single(value, key):
-        if not opts.same_type(value, opts.data_labels[key].default):
-            return gr.update(visible=True), opts.dumpjson()
-
-        if not opts.set(key, value):
-            return gr.update(value=getattr(opts, key)), opts.dumpjson()
-
-        opts.save(shared.config_filename)
-
-        return get_value_for_setting(key), opts.dumpjson()
-
-    with gr.Blocks(analytics_enabled=False) as settings_interface:
-        with gr.Row():
-            with gr.Column(scale=6):
-                settings_submit = gr.Button(value="Apply settings", variant='primary', elem_id="settings_submit")
-            with gr.Column():
-                restart_gradio = gr.Button(value='Reload UI', variant='primary', elem_id="settings_restart_gradio")
-
-        result = gr.HTML(elem_id="settings_result")
-
-        quicksettings_names = opts.quicksettings_list
-        quicksettings_names = {x: i for i, x in enumerate(quicksettings_names) if x != 'quicksettings'}
-
-        quicksettings_list = []
-
-        previous_section = None
-        current_tab = None
-        current_row = None
-        with gr.Tabs(elem_id="settings"):
-            for i, (k, item) in enumerate(opts.data_labels.items()):
-                section_must_be_skipped = item.section[0] is None
-
-                if previous_section != item.section and not section_must_be_skipped:
-                    elem_id, text = item.section
-
-                    if current_tab is not None:
-                        current_row.__exit__()
-                        current_tab.__exit__()
-
-                    gr.Group()
-                    current_tab = gr.TabItem(elem_id=f"settings_{elem_id}", label=text)
-                    current_tab.__enter__()
-                    current_row = gr.Column(variant='compact')
-                    current_row.__enter__()
-
-                    previous_section = item.section
-
-                if k in quicksettings_names and not shared.cmd_opts.freeze_settings:
-                    quicksettings_list.append((i, k, item))
-                    components.append(dummy_component)
-                elif section_must_be_skipped:
-                    components.append(dummy_component)
-                else:
-                    component = create_setting_component(k)
-                    component_dict[k] = component
-                    components.append(component)
-
-            if current_tab is not None:
-                current_row.__exit__()
-                current_tab.__exit__()
-
-            with gr.TabItem("Defaults", id="defaults", elem_id="settings_tab_defaults"):
-                loadsave.create_ui()
-
-            with gr.TabItem("Actions", id="actions", elem_id="settings_tab_actions"):
-                request_notifications = gr.Button(value='Request browser notifications', elem_id="request_notifications")
-                download_localization = gr.Button(value='Download localization template', elem_id="download_localization")
-                reload_script_bodies = gr.Button(value='Reload custom script bodies (No ui updates, No restart)', variant='secondary', elem_id="settings_reload_script_bodies")
-                with gr.Row():
-                    unload_sd_model = gr.Button(value='Unload SD checkpoint to free VRAM', elem_id="sett_unload_sd_model")
-                    reload_sd_model = gr.Button(value='Reload the last SD checkpoint back into VRAM', elem_id="sett_reload_sd_model")
-
-            with gr.TabItem("Licenses", id="licenses", elem_id="settings_tab_licenses"):
-                gr.HTML(shared.html("licenses.html"), elem_id="licenses")
-
-            gr.Button(value="Show all pages", elem_id="settings_show_all_pages")
-
-
-        def unload_sd_weights():
-            modules.sd_models.unload_model_weights()
-
-        def reload_sd_weights():
-            modules.sd_models.reload_model_weights()
-
-        unload_sd_model.click(
-            fn=unload_sd_weights,
-            inputs=[],
-            outputs=[]
-        )
-
-        reload_sd_model.click(
-            fn=reload_sd_weights,
-            inputs=[],
-            outputs=[]
-        )
-
-        request_notifications.click(
-            fn=lambda: None,
-            inputs=[],
-            outputs=[],
-            _js='function(){}'
-        )
-
-        download_localization.click(
-            fn=lambda: None,
-            inputs=[],
-            outputs=[],
-            _js='download_localization'
-        )
-
-        def reload_scripts():
-            modules.scripts.reload_script_body_only()
-            reload_javascript()  # need to refresh the html page
-
-        reload_script_bodies.click(
-            fn=reload_scripts,
-            inputs=[],
-            outputs=[]
-        )
-
-        restart_gradio.click(
-            fn=shared.state.request_restart,
-            _js='restart_reload',
-            inputs=[],
-            outputs=[],
-        )
     if cmd_opts.pureui:
         interfaces += [
             (txt2img_interface, "txt2img", "txt2img"),
@@ -2187,7 +2252,42 @@ def create_ui():
 
         update_image_cfg_scale_visibility = lambda: gr.update(visible=shared.sd_model and shared.sd_model.cond_stage_key == "edit")
         text_settings.change(fn=update_image_cfg_scale_visibility, inputs=[], outputs=[image_cfg_scale])
-        demo.load(fn=update_image_cfg_scale_visibility, inputs=[], outputs=[image_cfg_scale])
+
+        def demo_load(request: gr.Request):
+            username = shared.get_webui_username(request)
+
+            inputs = {
+                'action': 'load'
+            }
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            if response.status_code == 200:
+                if username == 'admin':
+                    items = []
+                    for item in json.loads(response.text):
+                        items.append([item['username'], item['password'], item['options'] if 'options' in item else '', shared.get_available_sagemaker_endpoints(item)])
+                    additional_components = [gr.update(value=f'<h1>{username}</h1>'), gr.update(value=items if items != [] else None), gr.update(), gr.update()]
+                else:
+                    for item in json.loads(response.text):
+                        if item['username'] == username:
+                            try:
+                                shared.opts.data = json.loads(item['options'])
+                                break
+                            except Exception as e:
+                                print(e)
+                    shared.refresh_sagemaker_endpoints(username)
+                    shared.refresh_sd_models(username)
+                    shared.refresh_checkpoints(shared.opts.sagemaker_endpoint,username)
+                    additional_components = [gr.update(value=f'<h1>{username}</h1>'), gr.update(), gr.update(value=shared.opts.sagemaker_endpoint, choices=shared.sagemaker_endpoints), gr.update(value=shared.opts.sd_model_checkpoint, choices=modules.sd_models.checkpoint_tiles())]
+            else:
+                additional_components = [gr.update(value=username), gr.update(), gr.update(), gr.update()]
+
+            return [getattr(opts, key) for key in component_keys] + additional_components
+
+        demo.load(
+            fn=demo_load,
+            inputs=[],
+            outputs=[component_dict[k] for k in component_keys] + [username_state, user_dataframe, shared.sagemaker_endpoint_component, shared.sd_model_checkpoint_component]
+        )
 
         button_set_checkpoint = gr.Button('Change checkpoint', elem_id='change_checkpoint', visible=False)
         button_set_checkpoint.click(

@@ -293,6 +293,8 @@ def remove_callbacks_for_function(callback_func):
         for callback_to_remove in [cb for cb in callback_list if cb.callback == callback_func]:
             callback_list.remove(callback_to_remove)
 
+def on_update_cn_models(callback):
+    add_callback(callback_map['callbacks_update_cn_models'], callback)
 
 def on_app_started(callback):
     """register a function to be called when the webui started, the gradio `Block` component and
