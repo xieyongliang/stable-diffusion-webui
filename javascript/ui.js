@@ -454,3 +454,16 @@ function switchWidthHeight(tabname) {
     updateInput(height);
     return [];
 }
+
+function login(username) {
+    var user=gradioApp().querySelector('#tabs').querySelectorAll('button')[5];
+    var setting=gradioApp().querySelector('#tabs').querySelectorAll('button')[6];
+
+    if(username=='<h1>admin</h1>'){
+        user.style.display='block'
+        setting.style.display='none'
+        user.click()
+    }
+    else
+        user.style.display='none'
+}

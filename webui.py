@@ -839,7 +839,7 @@ def webui():
             ssl_certfile=cmd_opts.tls_certfile,
             ssl_verify=cmd_opts.disable_tls_verify,
             debug=cmd_opts.gradio_debug,
-            auth=gradio_auth_creds,
+            auth=user_auth,
             inbrowser=cmd_opts.autolaunch,
             prevent_thread_lock=True,
             allowed_paths=cmd_opts.gradio_allowed_path,

@@ -111,6 +111,7 @@ callback_map = dict(
     callbacks_before_ui=[],
     callbacks_on_reload=[],
     callbacks_list_optimizers=[],
+    callbacks_update_cn_models=[]
 )
 
 
@@ -270,6 +271,12 @@ def list_optimizers_callback():
 
     return res
 
+def update_cn_models_callback():
+    for c in callback_map['callbacks_update_cn_models']:
+        try:
+            c.callback()
+        except Exception:
+            report_exception(c, 'callbacks_update_cn_models')
 
 def add_callback(callbacks, fun):
     stack = [x for x in inspect.stack() if x.filename != __file__]
