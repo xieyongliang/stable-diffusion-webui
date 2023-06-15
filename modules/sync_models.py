@@ -4,6 +4,7 @@ import modules.shared as shared
 import modules.sd_models as sd_models
 import modules.script_callbacks as script_callbacks
 from modules.shared import syncLock
+from modules.call_queue import queue_lock
 
 FREESPACE = 20
 def check_space_s3_download(s3_client, bucket_name, s3_folder, local_folder, file, size, mode):
@@ -213,10 +214,12 @@ def sync_s3_folder(local_folder, cache_dir,mode):
         if registerflag:
             if mode == 'sd':
                 #Refreshing Model List
-                sd_models.list_models()
+                with queue_lock:
+                    sd_models.list_models()
             # cn models sync not supported temporally due to an unfixed bug
             elif mode == 'cn':
-                script_callbacks.update_cn_models_callback()
+                with queue_lock:
+                    script_callbacks.update_cn_models_callback()
             elif mode == 'lora':
                 print('Nothing To do')
 
