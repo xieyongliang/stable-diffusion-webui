@@ -31,52 +31,52 @@ checkpoints_loaded = collections.OrderedDict()
 
 
 class CheckpointInfo:
-    def __init__(self, filename):
-        self.filename = filename
-        abspath = os.path.abspath(filename)
-
-        if shared.cmd_opts.ckpt_dir is not None and abspath.startswith(shared.cmd_opts.ckpt_dir):
-            name = abspath.replace(shared.cmd_opts.ckpt_dir, '')
-        elif abspath.startswith(model_path):
-            name = abspath.replace(model_path, '')
+    def __init__(self, filename, name, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata):
+        if name:
+            self.name = name
+            self.filename = filename
+            self.name_for_extra = name_for_extra
+            self.model_name = model_name
+            self.hash = hash
+            self.sha256 = sha256
+            self.shorthash = shorthash
+            self.title = title
+            self.ids = ids
+            self.metadata = metadata
         else:
-            name = os.path.basename(filename)
+            self.filename = filename
+            abspath = os.path.abspath(filename)
 
-        if name.startswith("\\") or name.startswith("/"):
-            name = name[1:]
+            if shared.cmd_opts.ckpt_dir is not None and abspath.startswith(shared.cmd_opts.ckpt_dir):
+                name = abspath.replace(shared.cmd_opts.ckpt_dir, '')
+            elif abspath.startswith(model_path):
+                name = abspath.replace(model_path, '')
+            else:
+                name = os.path.basename(filename)
 
-        self.name = name
-        self.name_for_extra = os.path.splitext(os.path.basename(filename))[0]
-        self.model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
-        self.hash = model_hash(filename)
+            if name.startswith("\\") or name.startswith("/"):
+                name = name[1:]
 
-        self.sha256 = hashes.sha256_from_cache(self.filename, f"checkpoint/{name}")
-        self.shorthash = self.sha256[0:10] if self.sha256 else None
+            self.name = name
+            self.name_for_extra = os.path.splitext(os.path.basename(filename))[0]
+            self.model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
+            self.hash = model_hash(filename)
 
-        self.title = name if self.shorthash is None else f'{name} [{self.shorthash}]'
+            self.sha256 = hashes.sha256_from_cache(self.filename, f"checkpoint/{name}")
+            self.shorthash = self.sha256[0:10] if self.sha256 else None
 
-        self.ids = [self.hash, self.model_name, self.title, name, f'{name} [{self.hash}]'] + ([self.shorthash, self.sha256, f'{self.name} [{self.shorthash}]'] if self.shorthash else [])
+            self.title = name if self.shorthash is None else f'{name} [{self.shorthash}]'
 
-        self.metadata = {}
+            self.ids = [self.hash, self.model_name, self.title, name, f'{name} [{self.hash}]'] + ([self.shorthash, self.sha256, f'{self.name} [{self.shorthash}]'] if self.shorthash else [])
 
-        _, ext = os.path.splitext(self.filename)
-        if ext.lower() == ".safetensors":
-            try:
-                self.metadata = read_metadata_from_safetensors(filename)
-            except Exception as e:
-                errors.display(e, f"reading checkpoint metadata: {filename}")
+            self.metadata = {}
 
-    def __init__(self, name, filename, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata):
-        self.name = name
-        self.filename = filename
-        self.name_for_extra = name_for_extra
-        self.model_name = model_name
-        self.hash = hash
-        self.sha256 = sha256
-        self.shorthash = shorthash
-        self.title = title
-        self.ids = ids
-        self.metadata = metadata
+            _, ext = os.path.splitext(self.filename)
+            if ext.lower() == ".safetensors":
+                try:
+                    self.metadata = read_metadata_from_safetensors(filename)
+                except Exception as e:
+                    errors.display(e, f"reading checkpoint metadata: {filename}")
 
     def register(self):
         checkpoints_list[self.title] = self
@@ -172,7 +172,7 @@ def list_models(sagemaker_endpoint=None,username=''):
                     if 'sd_model_checkpoint' not in shared.opts.data:
                         shared.opts.data['sd_model_checkpoint'] = title
 
-                    checkpoints_list[title] = CheckpointInfo(name, filename, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata)
+                    checkpoints_list[title] = CheckpointInfo(filename, name, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata)
             else:
                 print(response.text)
 
