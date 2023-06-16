@@ -1080,10 +1080,10 @@ s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name
 s3_resource= boto3.resource('s3')
 generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
 
-def get_default_sagemaker_bucket():
+def get_default_bucket():
     region_name = boto3.Session().region_name
     account_id = boto3.Session().client('sts').get_caller_identity()['Account']
-    return f"s3://sagemaker-{region_name}-{account_id}"
+    return f"sagemaker-{region_name}-{account_id}"
 
 def realesrgan_models_names():
     import modules.realesrgan_model
@@ -1263,7 +1263,7 @@ s3_resource = boto3.resource('s3')
 s3_image_path_prefix = 'stable-diffusion-webui/generated/'
 
 def download_images_for_ui(bucket_name):
-    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    bucket_name = get_default_bucket()
     # Create an empty file if not exist
     cache_dir = opts.outdir_txt2img_samples.split('/')[0]
     os.makedirs(cache_dir, exist_ok=True)

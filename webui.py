@@ -66,7 +66,7 @@ import modules.hashes
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts, opts, syncLock,sync_images_lock,de_register_model,get_default_sagemaker_bucket
+from modules.shared import cmd_opts, opts, syncLock, sync_images_lock, de_register_model, get_default_bucket
 import modules.hypernetworks.hypernetwork
 
 from modules.paths import script_path
@@ -406,7 +406,7 @@ def get_models(path, extensions):
         models.append(filename)
     return models
 
-def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,size,mode):
+def check_space_s3_download(bucket_name, s3_folder, local_folder, file, size, mode):
     print(f"bucket_name:{bucket_name},s3_folder:{s3_folder},file:{file}")
     if file == '' or None:
         print('Debug log:file is empty, return')
@@ -419,7 +419,7 @@ def check_space_s3_download(s3_client,bucket_name,s3_folder,local_folder,file,si
     print(f"Total space: {disk_usage.total/(1024**3)}, Used space: {disk_usage.used/(1024**3)}, Free space: {freespace}")
     if freespace - size >= FREESPACE:
         try:
-            s3_client.download_file(bucket_name, src, dist)
+            shared.s3_client.download_file(bucket_name, src, dist)
             #init ref cnt to 0, when the model file first time download
             hash = modules.sd_models.model_hash(dist)
             if mode == 'sd' :
@@ -488,7 +488,7 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
         s3_files = {}
         with open(s3_file_name, "w") as f:
             json.dump(s3_files, f)
-    s3_objects = shared.list_objects(s3_client=s3, bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+    s3_objects = shared.list_objects(shared.models_s3_bucket, s3_folder)
     fnames_dict = {}
     for obj in s3_objects:
         filename = obj['Key'].replace(s3_folder, '').lstrip('/')
@@ -511,7 +511,7 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
             _, file_names =  next(iter(fnames_dict.items()))
             for fname in file_names:
                 s3_files[fname] = tmp_s3_files.get(fname)
-                check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
+                check_space_s3_download(shared.models_s3_bucket, s3_folder,local_folder, fname, tmp_s3_files.get(fname)[1], mode)
                 register_models(local_folder,mode)
         except Exception as e:
             traceback.print_stack()
@@ -542,7 +542,7 @@ def sync_s3_folder(local_folder,cache_dir,mode):
             with open(s3_file_name, "w") as f:
                 json.dump(s3_files, f)
 
-        s3_objects = shared.list_objects(bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+        s3_objects = shared.list_objects(shared.models_s3_bucket, s3_folder)
         s3_files = {}
         for obj in s3_objects:
             etag = obj['ETag'].strip('"').strip("'")   
@@ -572,7 +572,7 @@ def sync_s3_folder(local_folder,cache_dir,mode):
             registerflag = True
             retry = 3 ##retry limit times to prevent dead loop in case other folders is empty
             while retry:
-                ret = check_space_s3_download(s3,shared.models_s3_bucket, s3_folder,local_folder, file, s3_files[file][1], mode)
+                ret = check_space_s3_download(shared.models_s3_bucket, s3_folder,local_folder, file, s3_files[file][1], mode)
                 if ret:
                     retry = 0
                 else:
@@ -743,7 +743,7 @@ def register_cn_models(cn_models_dir):
 
 def sync_images_from_s3():
     # Create a thread function to keep syncing with the S3 folder
-    bucket_name = get_default_sagemaker_bucket().replace('s3://','')
+    bucket_name = shared.get_default_bucket()
     def sync_thread(bucket_name):  
         while True:
             sync_images_lock.acquire()
@@ -808,14 +808,12 @@ def webui():
         lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
         vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
         cache_dir = f"{shared.tmp_cache_dir}/"
-        sg_s3_bucket, _ = shared.get_bucket_and_key(shared.get_default_sagemaker_bucket())
         if not shared.models_s3_bucket:
-            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else shared.get_default_bucket()
             shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
             shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
             shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
             shared.s3_folder_vae = "stable-diffusion-webui/models/VAE"
-
 
         #only download the cn models and the first sd model from default bucket, to accerlate the startup time
         initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')

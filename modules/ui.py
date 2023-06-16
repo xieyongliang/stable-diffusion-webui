@@ -577,9 +577,7 @@ def create_ui():
     with gr.Blocks(analytics_enabled=False) as imagesviewer_interface:
         with gr.Row():
             with gr.Column(scale=3):
-                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = shared.get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated')
-                dummy_images_s3_path = gr.Textbox(label="Input S3 path of images",visible=False, interactive=False,
-                                                  value = shared.get_default_sagemaker_bucket()+'/stable-diffusion-webui/generated/{username}')
+                images_s3_path = gr.Textbox(label="Input S3 path of images",visible=True, value = "s3://" + shared.get_default_bucket()+'/stable-diffusion-webui/generated')
 
             with gr.Column(scale=1):
                 show_user_only = gr.Checkbox(label="Show current user's images only", value=True,visible=True,interactive=True)
@@ -704,16 +702,17 @@ def create_ui():
 
             return get_value_for_setting(key), opts.dumpjson()
 
-    default_sagemaker_s3 = shared.get_default_sagemaker_bucket()
-    default_s3_path =  f"{default_sagemaker_s3}/stable-diffusion-webui/models/"
     with gr.Blocks(analytics_enabled=False) as settings_interface:
         dummy_component = gr.Label(visible=False)
         with gr.Row():
             settings_submit = gr.Button(value="Apply settings", variant='primary')
         with gr.Row():
             with gr.Column(scale=4):
-                models_s3bucket = gr.Textbox(label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
-                                            value=default_s3_path,visible=True)
+                models_s3bucket = gr.Textbox(
+                    label="S3 path for downloading model files (E.g, s3://bucket-name/models/)",
+                    value=f"s3://{shared.models_s3_bucket}/stable-diffusion-webui/models/", 
+                    visible=True
+                )
             with gr.Column(scale=1):
                 set_models_s3bucket_btn = gr.Button(value="Update model files path",elem_id='id_set_models_s3bucket',visible=True)
             with gr.Column(scale=1):
