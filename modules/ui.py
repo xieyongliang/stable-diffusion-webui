@@ -2351,9 +2351,6 @@ def create_ui():
                 show_progress=info.refresh is not None,
             )
 
-        update_image_cfg_scale_visibility = lambda: gr.update(visible=shared.sd_model and shared.sd_model.cond_stage_key == "edit")
-        text_settings.change(fn=update_image_cfg_scale_visibility, inputs=[], outputs=[image_cfg_scale])
-
         component_keys = [k for k in opts.data_labels.keys() if k in component_dict]
 
         def demo_load(request: gr.Request):
