@@ -31,7 +31,7 @@ checkpoints_loaded = collections.OrderedDict()
 
 
 class CheckpointInfo:
-    def __init__(self, filename, name, name_for_extra, model_name, hash, sha256, shorthash, title, ids, metadata):
+    def __init__(self, filename, name=None, name_for_extra=None, model_name=None, hash=None, sha256=None, shorthash=None, title=None, ids=None, metadata=None):
         if name:
             self.name = name
             self.filename = filename
