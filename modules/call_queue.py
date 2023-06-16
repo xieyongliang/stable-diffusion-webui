@@ -16,6 +16,8 @@ from PIL import Image, ImageOps, ImageFilter, ImageEnhance, ImageChops
 from modules.shared import cmd_opts, opts
 import modules
 
+import gradio as gr
+
 queue_lock = threading.Lock()
 
 
@@ -528,14 +530,19 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
 
 
 def wrap_gradio_call(func, extra_outputs=None, add_stats=False):
-    def f(*args, extra_outputs_array=extra_outputs, **kwargs):
+    def f(request: gr.Request, *args, extra_outputs_array=extra_outputs, **kwargs):
+        username = shared.get_webui_username(request)
+
         run_memmon = shared.opts.memmon_poll_rate > 0 and not shared.mem_mon.disabled and add_stats
         if run_memmon:
             shared.mem_mon.monitor()
         t = time.perf_counter()
 
         try:
-            res = list(func(*args, **kwargs))
+            if func.__name__ == 'f' or func.__name__ == 'run_settings' or func.__name__ == 'save_files':
+                res = list(func(username, *args, **kwargs))
+            else:
+                res = list(func(*args, **kwargs))
         except Exception as e:
             # When printing out our debug argument list, do not print out more than a MB of text
             max_debug_str_len = 131072 # (1024*1024)/8

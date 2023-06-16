@@ -640,8 +640,11 @@ def create_ui():
 
         return res
 
-    def run_settings(*args):
+    def run_settings(username, *args,):
         changed = []
+
+        if not username or username == '':
+            return opts.dumpjson(), f'{len(changed)} settings changed: {", ".join(changed)}.'
 
         for key, value, comp in zip(opts.data_labels.keys(), args, components):
             assert comp == dummy_component or opts.same_type(value, opts.data_labels[key].default), f"Bad value for setting {key}: {value}; expecting {type(opts.data_labels[key].default).__name__}"
@@ -654,21 +657,52 @@ def create_ui():
                 changed.append(key)
 
         try:
-            opts.save(shared.config_filename)
+            inputs = {
+                'action': 'put',
+                'username': username,
+                'options': opts.dumpjson()
+            }
+
+            response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+            if response.status_code != 200:
+                raise RuntimeError("Settings saved failed")
         except RuntimeError:
-            return opts.dumpjson(), f'{len(changed)} settings changed without save: {", ".join(changed)}.'
-        return opts.dumpjson(), f'{len(changed)} settings changed{": " if len(changed) > 0 else ""}{", ".join(changed)}.'
+            return opts.dumpjson(), 'Settings changed without save'
+        return opts.dumpjson(), 'Settings changed and saved'
 
-    def run_settings_single(value, key):
-        if not opts.same_type(value, opts.data_labels[key].default):
-            return gr.update(visible=True), opts.dumpjson()
+    def run_settings_single(value, key, request : gr.Request):
+        username = shared.get_webui_username(request)
 
-        if not opts.set(key, value):
-            return gr.update(value=getattr(opts, key)), opts.dumpjson()
+        if username and username != '':
+            if not opts.same_type(value, opts.data_labels[key].default):
+                return gr.update(visible=True), opts.dumpjson()
 
-        opts.save(shared.config_filename)
+            if not opts.set(key, value):
+                return gr.update(value=getattr(opts, key)), opts.dumpjson()
 
-        return get_value_for_setting(key), opts.dumpjson()
+            try:
+                if username and username != '':
+                    inputs = {
+                        'action': 'edit',
+                        'username': username,
+                        'options': opts.dumpjson()
+                    }
+
+                    response = requests.post(url=f'{shared.api_endpoint}/sd/user', json=inputs)
+                    if response.status_code != 200:
+                        raise RuntimeError("Settings saved failed")
+            except RuntimeError:
+                return gr.update(visible=True), opts.dumpjson()
+
+            return gr.update(value=value), opts.dumpjson()
+        else:
+            if not opts.same_type(value, opts.data_labels[key].default):
+                return gr.update(visible=True), opts.dumpjson()
+
+            if not opts.set(key, value):
+                return gr.update(value=getattr(opts, key)), opts.dumpjson()
+
+            return get_value_for_setting(key), opts.dumpjson()
 
     default_sagemaker_s3 = shared.get_default_sagemaker_bucket()
     default_s3_path =  f"{default_sagemaker_s3}/stable-diffusion-webui/models/"
