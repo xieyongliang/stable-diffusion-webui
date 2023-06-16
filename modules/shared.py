@@ -1089,7 +1089,7 @@ def realesrgan_models_names():
     import modules.realesrgan_model
     return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
 
-def list_s3_objects(bucket, prefix='', exts=['.pt', '.pth', '.ckpt', '.safetensors','.yaml']):
+def list_objects(bucket, prefix='', exts=['.pt', '.pth', '.ckpt', '.safetensors','.yaml']):
     objects = []
     paginator = s3_client.get_paginator('list_objects_v2')
     page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
