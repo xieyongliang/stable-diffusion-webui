@@ -66,7 +66,7 @@ import modules.hashes
 
 import modules.ui
 from modules import modelloader
-from modules.shared import cmd_opts, opts, syncLock, sync_images_lock, de_register_model, get_default_bucket
+from modules.shared import cmd_opts, opts, syncLock, sync_images_lock, de_register_model
 import modules.hypernetworks.hypernetwork
 
 from modules.paths import script_path
@@ -888,6 +888,31 @@ def webui():
 
         if launch_api:
             create_api(app)
+
+            cmd_sd_models_path = cmd_opts.ckpt_dir
+            sd_models_dir = os.path.join(shared.models_path, "Stable-diffusion")
+            if cmd_sd_models_path is not None:
+                sd_models_dir = cmd_sd_models_path
+
+            cmd_controlnet_models_path = cmd_opts.controlnet_dir
+            cn_models_dir = os.path.join(shared.models_path, "ControlNet")
+            if cmd_controlnet_models_path is not None:
+                cn_models_dir = cmd_controlnet_models_path
+
+            cmd_lora_models_path = cmd_opts.lora_dir
+            lora_models_dir = os.path.join(shared.models_path, "Lora")
+            if cmd_lora_models_path is not None:
+                lora_models_dir = cmd_lora_models_path
+
+            cmd_vae_models_path = cmd_opts.vae_path
+            vae_models_dir = os.path.join(shared.models_path, "VAE")
+            if cmd_vae_models_path is not None:
+                vae_models_dir = cmd_vae_models_path
+
+            register_sd_models(sd_models_dir)
+            register_cn_models(cn_models_dir)
+            register_lora_models(lora_models_dir)
+            register_vae_models(vae_models_dir)
 
         ui_extra_networks.add_pages_to_demo(app)
 

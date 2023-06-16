@@ -75,7 +75,7 @@ def convert_diffusers_name_to_compvis(key, is_sd2):
 
 
 class LoraOnDisk:
-    def __init__(self, name, filename, alias, hash, shorthash, metadata):
+    def __init__(self, name, filename, alias=None, hash=None, shorthash=None, metadata=None):
         self.name = name
         self.filename = filename
 
