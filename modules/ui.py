@@ -13,7 +13,7 @@ import numpy as np
 from PIL import Image  # noqa: F401
 from modules.call_queue import wrap_gradio_gpu_call, wrap_queued_call, wrap_gradio_call
 
-from modules import sd_models, localization, script_callbacks, deepbooru, sd_vae, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave
+from modules import sd_models, localization, script_callbacks, deepbooru, sd_vae, extra_networks, ui_common, ui_postprocessing, progress, ui_loadsave, ui_extensions
 from modules.ui_components import FormRow, FormGroup, ToolButton, FormHTML
 from modules.paths import script_path, data_path
 
@@ -2210,28 +2210,21 @@ def create_ui():
             _js="var if alert('Only admin user can save user data')"
         )
 
-    if cmd_opts.pureui:
-        interfaces += [
-            (txt2img_interface, "txt2img", "txt2img"),
-            (img2img_interface, "img2img", "img2img"),
-            (extras_interface, "Extras", "extras"),
-            (pnginfo_interface, "PNG Info", "pnginfo"),
-            (train_interface, "Train", "ti"),
-            (user_interface, "User", "user")
-        ]
-    else:
-        interfaces = [
-            (txt2img_interface, "txt2img", "txt2img"),
-            (img2img_interface, "img2img", "img2img"),
-            (extras_interface, "Extras", "extras"),
-            (pnginfo_interface, "PNG Info", "pnginfo"),
-            (modelmerger_interface, "Checkpoint Merger", "modelmerger"),
-            (train_interface, "Train", "train"),
-        ]
+    interfaces += [
+        (txt2img_interface, "txt2img", "txt2img"),
+        (img2img_interface, "img2img", "img2img"),
+        (extras_interface, "Extras", "extras"),
+        (pnginfo_interface, "PNG Info", "pnginfo"),
+        (train_interface, "Train", "ti"),
+        (user_interface, "User", "user")
+    ]
 
     interfaces += [(settings_interface, "Settings", "settings")]
     interfaces += [images_history_ui_tab]
     interfaces +=  [(modelmerger_interface,"Checkpoint Merger", "modelmerger")]
+
+    extensions_interface = ui_extensions.create_ui()
+    interfaces += [(extensions_interface, "Extensions", "extensions")]
 
     shared.tab_names = []
     for _interface, label, _ifid in interfaces:
