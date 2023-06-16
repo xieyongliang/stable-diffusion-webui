@@ -478,21 +478,6 @@ def free_local_disk(local_folder,size,mode):
         filename = os.path.basename(oldest_file)
         de_register_model(filename,mode)
 
-def list_s3_objects(s3_client,bucket_name, prefix=''):
-    objects = []
-    paginator = s3_client.get_paginator('list_objects_v2')
-    page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix)
-    for page in page_iterator:
-        if 'Contents' in page:
-            for obj in page['Contents']:
-                _, ext = os.path.splitext(obj['Key'].lstrip('/'))
-                if ext in ['.pt', '.pth', '.ckpt', '.safetensors','.yaml']:
-                    objects.append(obj)
-        if 'NextContinuationToken' in page:
-            page_iterator = paginator.paginate(Bucket=bucket_name, Prefix=prefix,
-                                                ContinuationToken=page['NextContinuationToken'])
-    return objects
-
 def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
     os.makedirs(os.path.dirname(local_folder), exist_ok=True)
     os.makedirs(os.path.dirname(cache_dir), exist_ok=True)
@@ -503,8 +488,7 @@ def initial_s3_download(s3_folder, local_folder,cache_dir,mode):
         s3_files = {}
         with open(s3_file_name, "w") as f:
             json.dump(s3_files, f)
-    s3 = boto3.client('s3')
-    s3_objects = list_s3_objects(s3_client=s3, bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+    s3_objects = shared.list_objects(s3_client=s3, bucket_name=shared.models_s3_bucket, prefix=s3_folder)
     fnames_dict = {}
     for obj in s3_objects:
         filename = obj['Key'].replace(s3_folder, '').lstrip('/')
@@ -558,7 +542,7 @@ def sync_s3_folder(local_folder,cache_dir,mode):
             with open(s3_file_name, "w") as f:
                 json.dump(s3_files, f)
 
-        s3_objects = list_s3_objects(s3_client=s3,bucket_name=shared.models_s3_bucket, prefix=s3_folder)
+        s3_objects = shared.list_objects(bucket_name=shared.models_s3_bucket, prefix=s3_folder)
         s3_files = {}
         for obj in s3_objects:
             etag = obj['ETag'].strip('"').strip("'")   
@@ -824,7 +808,7 @@ def webui():
         lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
         vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
         cache_dir = f"{shared.tmp_cache_dir}/"
-        sg_s3_bucket = shared.get_default_sagemaker_bucket()
+        sg_s3_bucket, _ = shared.get_bucket_and_key(shared.get_default_sagemaker_bucket())
         if not shared.models_s3_bucket:
             shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
             shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"

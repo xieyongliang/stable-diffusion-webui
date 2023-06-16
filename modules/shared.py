@@ -1080,11 +1080,6 @@ s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name
 s3_resource= boto3.resource('s3')
 generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
 
-def list_objects(bucket,prefix=''):
-    response = s3_client.list_objects(Bucket=bucket, Prefix=prefix)
-    objects = response['Contents'] if response.get('Contents') else []
-    return [obj['Key'] for obj in objects]
-
 def get_default_sagemaker_bucket():
     region_name = boto3.Session().region_name
     account_id = boto3.Session().client('sts').get_caller_identity()['Account']
@@ -1093,6 +1088,21 @@ def get_default_sagemaker_bucket():
 def realesrgan_models_names():
     import modules.realesrgan_model
     return [x.name for x in modules.realesrgan_model.get_realesrgan_models(None)]
+
+def list_s3_objects(bucket, prefix='', exts=['.pt', '.pth', '.ckpt', '.safetensors','.yaml']):
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                _, ext = os.path.splitext(obj['Key'].lstrip('/'))
+                if ext in exts:
+                    objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=prefix,
+                                                ContinuationToken=page['NextContinuationToken'])
+    return objects
 
 class ModelsRef:
     def __init__(self):
