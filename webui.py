@@ -249,33 +249,6 @@ def configure_opts_onchange():
     shared.opts.onchange("cross_attention_optimization", wrap_queued_call(lambda: modules.sd_hijack.model_hijack.redo_hijack(shared.sd_model)), call=False)
     startup_timer.record("opts onchange")
 
-    if not cmd_opts.pureui and not cmd_opts.train:
-        print(os.system('df -h'))
-        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
-        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
-        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
-        vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
-        cache_dir = f"{shared.tmp_cache_dir}/"
-        session = boto3.Session()
-        region_name = session.region_name
-        sts_client = session.client('sts')
-        account_id = sts_client.get_caller_identity()['Account']
-        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
-        if not shared.models_s3_bucket:
-            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
-            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
-            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
-            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
-            shared.s3_folder_vae = "stable-diffusion-webui/models/VAE"
-
-
-        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
-        initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
-        sync_s3_folder(vae_models_tmp_dir,cache_dir,'vae')
-        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
-        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
-        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
-
 def initialize():
     fix_asyncio_event_loop_policy()
     validate_tls_options()
@@ -799,6 +772,74 @@ def sync_images_from_s3():
 
 def webui():
     launch_api = cmd_opts.api
+
+    if launch_api:
+        models_config_s3uri = os.environ.get('models_config_s3uri', None)
+        if models_config_s3uri:
+            bucket, key = get_bucket_and_key(models_config_s3uri)
+            s3_object = shared.s3_client.get_object(Bucket=bucket, Key=key)
+            bytes = s3_object["Body"].read()
+            payload = bytes.decode('utf8')
+            huggingface_models = json.loads(payload).get('huggingface_models', None)
+            s3_models = json.loads(payload).get('s3_models', None)
+            http_models = json.loads(payload).get('http_models', None)
+        else:
+            huggingface_models = os.environ.get('huggingface_models', None)
+            huggingface_models = json.loads(huggingface_models) if huggingface_models else None
+            s3_models = os.environ.get('s3_models', None)
+            s3_models = json.loads(s3_models) if s3_models else None
+            http_models = os.environ.get('http_models', None)
+            http_models = json.loads(http_models) if http_models else None
+
+        if huggingface_models:
+            for huggingface_model in huggingface_models:
+                repo_id = huggingface_model['repo_id']
+                filename = huggingface_model['filename']
+                name = huggingface_model['name']
+
+                hf_hub_download(
+                    repo_id=repo_id,
+                    filename=filename,
+                    local_dir=f'/tmp/models/{name}',
+                    cache_dir='/tmp/cache/huggingface'
+                )
+
+        if s3_models:
+            for s3_model in s3_models:
+                uri = s3_model['uri']
+                name = s3_model['name']
+                shared.s3_download(uri, f'/tmp/models/{name}')
+
+        if http_models:
+            for http_model in http_models:
+                uri = http_model['uri']
+                filename = http_model['filename']
+                name = http_model['name']
+                shared.http_download(uri, f'/tmp/models/{name}/{filename}')
+
+    if not cmd_opts.pureui and not cmd_opts.train:
+        print(os.system('df -h'))
+        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
+        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
+        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        vae_models_tmp_dir = f"{shared.tmp_models_dir}/VAE/"
+        cache_dir = f"{shared.tmp_cache_dir}/"
+        sg_s3_bucket = shared.get_default_sagemaker_bucket()
+        if not shared.models_s3_bucket:
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+            shared.s3_folder_vae = "stable-diffusion-webui/models/VAE"
+
+
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        initial_s3_download(shared.s3_folder_sd,sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(vae_models_tmp_dir,cache_dir,'vae')
+        sync_s3_folder(sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(cn_models_tmp_dir,cache_dir,'cn')
+        sync_s3_folder(lora_models_tmp_dir,cache_dir,'lora')
+
     initialize()
 
     while 1:
