@@ -643,7 +643,7 @@ def register_lora_models(lora_models_dir):
         endpoint_name = os.environ['endpoint_name']
         for filename in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
             shorthash = modules.hashes.calculate_sha256(os.path.join(lora_models_dir, filename))
-            hash = modules.sd_models.model_hash()
+            hash = modules.sd_models.model_hash(filename)
             metadata = {}
 
             is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
@@ -687,36 +687,36 @@ def register_sd_models(sd_models_dir):
             else:
                 name = os.path.basename(filename)
 
-        if name.startswith("\\") or name.startswith("/"):
-            name = name[1:]
+            if name.startswith("\\") or name.startswith("/"):
+                name = name[1:]
 
-            item = {}
-            item['name'] = name
-            item['name_for_extra'] = name_for_extra = os.path.splitext(os.path.basename(filename))[0]
-            item['model_name'] = model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
-            item['hash'] = hash = modules.sd_models.model_hash(filename)
-            item['sha256'] = sha256 = modules.hashes.sha256_from_cache(filename, f"checkpoint/{name}")
-            item['shorthash'] = shorthash = sha256[0:10] if sha256 else None
-            item['title'] = title = name if shorthash is None else f'{name} [{shorthash}]'
-            item['ids'] = [hash, model_name, title, name, f'{name} [{hash}]'] + ([shorthash, sha256, f'{name} [{shorthash}]'] if shorthash else [])
-            item['metadata'] = {}
-            _, ext = os.path.splitext(filename)
-            if ext.lower() == ".safetensors":
-                try:
-                    item['metadata'] = modules.sd_models.read_metadata_from_safetensors(filename)
-                except Exception as e:
-                    errors.display(e, f"reading checkpoint metadata: {filename}")
-            item['endpoint_name'] = endpoint_name
-            items.append(item)
-        inputs = {
-            'items': items
-        }
-        params = {
-            'module': 'Stable-diffusion'
-        }
-        if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
-            response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
-            print(response)
+                item = {}
+                item['name'] = name
+                item['name_for_extra'] = name_for_extra = os.path.splitext(os.path.basename(filename))[0]
+                item['model_name'] = model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
+                item['hash'] = hash = modules.sd_models.model_hash(filename)
+                item['sha256'] = sha256 = modules.hashes.sha256_from_cache(filename, f"checkpoint/{name}")
+                item['shorthash'] = shorthash = sha256[0:10] if sha256 else None
+                item['title'] = title = name if shorthash is None else f'{name} [{shorthash}]'
+                item['ids'] = [hash, model_name, title, name, f'{name} [{hash}]'] + ([shorthash, sha256, f'{name} [{shorthash}]'] if shorthash else [])
+                item['metadata'] = {}
+                _, ext = os.path.splitext(filename)
+                if ext.lower() == ".safetensors":
+                    try:
+                        item['metadata'] = modules.sd_models.read_metadata_from_safetensors(filename)
+                    except Exception as e:
+                        errors.display(e, f"reading checkpoint metadata: {filename}")
+                item['endpoint_name'] = endpoint_name
+                items.append(item)
+            inputs = {
+                'items': items
+            }
+            params = {
+                'module': 'Stable-diffusion'
+            }
+            if api_endpoint.startswith('http://') or api_endpoint.startswith('https://'):
+                response = requests.post(url=f'{api_endpoint}/sd/models', json=inputs, params=params)
+                print(response)
 
 def register_cn_models(cn_models_dir):
     print ('---register_cn_models()----')
