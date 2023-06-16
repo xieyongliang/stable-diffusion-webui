@@ -1,5 +1,6 @@
 import json
 import os
+import gradio as gr
 
 from modules import ui_extra_networks, sd_hijack, shared
 
@@ -9,8 +10,8 @@ class ExtraNetworksPageTextualInversion(ui_extra_networks.ExtraNetworksPage):
         super().__init__('Textual Inversion')
         self.allow_negative_prompt = True
 
-    def refresh(self):
-        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings(force_reload=True)
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
+        shared.reload_embeddings(request)
 
     def list_items(self):
         for embedding in sd_hijack.model_hijack.embedding_db.word_embeddings.values():

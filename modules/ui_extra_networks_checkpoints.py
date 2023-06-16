@@ -1,6 +1,7 @@
 import html
 import json
 import os
+import gradio as gr
 
 from modules import shared, ui_extra_networks, sd_models
 
@@ -9,8 +10,9 @@ class ExtraNetworksPageCheckpoints(ui_extra_networks.ExtraNetworksPage):
     def __init__(self):
         super().__init__('Checkpoints')
 
-    def refresh(self):
-        shared.refresh_checkpoints()
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
+        username = shared.get_webui_username(request)
+        shared.refresh_checkpoints(sagemaker_endpoint, username)
 
     def list_items(self):
         checkpoint: sd_models.CheckpointInfo

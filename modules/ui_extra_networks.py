@@ -63,7 +63,7 @@ class ExtraNetworksPage:
         self.allow_negative_prompt = False
         self.metadata = {}
 
-    def refresh(self):
+    def refresh(self, sagemaker_endpoint, request: gr.Request):
         pass
 
     def link_preview(self, filename):
@@ -306,11 +306,11 @@ def create_ui(container, button, tabname):
 
         return is_visible, gr.update(visible=is_visible), gr.update(variant=("secondary-down" if is_visible else "secondary"))
 
-    def fill_tabs(is_empty):
+    def fill_tabs(is_empty, sagemaker_endpoint, request: gr.Request):
         """Creates HTML for extra networks' tabs when the extra networks button is clicked for the first time."""
 
         if not ui.pages_contents:
-            refresh()
+            refresh(sagemaker_endpoint, request)
 
         if is_empty:
             return True, *ui.pages_contents
@@ -321,11 +321,13 @@ def create_ui(container, button, tabname):
     button.click(fn=toggle_visibility, inputs=[state_visible], outputs=[state_visible, container, button], show_progress=False)
 
     state_empty = gr.State(value=True)
-    button.click(fn=fill_tabs, inputs=[state_empty], outputs=[state_empty, *ui.pages], show_progress=False)
+    button.click(fn=fill_tabs, inputs=[state_empty, shared.sagemaker_endpoint_component], outputs=[state_empty, *ui.pages], show_progress=False)
 
-    def refresh():
+    def refresh(sagemaker_endpoint, request: gr.Request):
+        res = []
+
         for pg in ui.stored_extra_pages:
-            pg.refresh()
+            pg.refresh(sagemaker_endpoint, request)
 
         ui.pages_contents = [pg.create_html(ui.tabname) for pg in ui.stored_extra_pages]
 
