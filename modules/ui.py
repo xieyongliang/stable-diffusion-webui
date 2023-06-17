@@ -2449,35 +2449,8 @@ def create_ui():
                 return [f"Error merging checkpoints: {e}"]
             return results
 
-        modelmerger_merge.click(fn=lambda: '', inputs=[], outputs=[modelmerger_result])
-        modelmerger_merge.click(
-            fn=wrap_gradio_gpu_call(modelmerger, extra_outputs=lambda: [gr.update() for _ in range(4)]),
-            _js='modelmerger',
-            inputs=[
-                dummy_component,
-                primary_model_name,
-                secondary_model_name,
-                tertiary_model_name,
-                interp_method,
-                interp_amount,
-                save_as_half,
-                custom_name,
-                checkpoint_format,
-                config_source,
-                bake_in_vae,
-                discard_weights,
-                save_metadata,
-            ],
-            outputs=[
-                modelmerger_result
-            ]
-        )
-
     loadsave.dump_defaults()
     demo.ui_loadsave = loadsave
-
-    # Required as a workaround for change() event not triggering when loading values from ui-config.json
-    interp_description.value = update_interp_description(interp_method.value)
 
     return demo
 
