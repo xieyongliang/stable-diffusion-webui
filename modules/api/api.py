@@ -111,7 +111,7 @@ def encode_pil_to_base64(image):
 
     return base64.b64encode(bytes_data)
 
-def export_pil_to_bytes(image, quality):
+def export_pil_to_bytes(image):
     with io.BytesIO() as output_bytes:
 
         if opts.samples_format.lower() == 'png':
@@ -121,7 +121,7 @@ def export_pil_to_bytes(image, quality):
                 if isinstance(key, str) and isinstance(value, str):
                     metadata.add_text(key, value)
                     use_metadata = True
-            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=quality if quality else opts.jpeg_quality)
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=opts.jpeg_quality)
 
         elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
             parameters = image.info.get('parameters', None)
@@ -129,9 +129,9 @@ def export_pil_to_bytes(image, quality):
                 "Exif": { piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode") }
             })
             if opts.samples_format.lower() in ("jpg", "jpeg"):
-                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=quality if quality else opts.jpeg_quality)
+                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=opts.jpeg_quality)
             else:
-                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=quality if quality else opts.jpeg_quality)
+                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=opts.jpeg_quality)
 
         else:
             raise HTTPException(status_code=500, detail="Invalid image format")
