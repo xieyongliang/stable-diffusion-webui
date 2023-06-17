@@ -817,11 +817,6 @@ class Api:
                     except Exception as e:
                         print(e)
 
-            if req.options != None:
-                options = json.loads(req.options)
-                for key in options:
-                    shared.opts.data[key] = options[key]
-
             if req.task == 'text-to-image':
                 shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()

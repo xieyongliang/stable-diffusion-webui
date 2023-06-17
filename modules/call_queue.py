@@ -193,7 +193,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_tmin": opts.s_tmin,
                     "s_noise": opts.s_noise,
                     "override_settings": override_settings,
-                    "script_args": json.dumps(script_args)
+                    "script_args": script_args
                 }
                 inputs = {
                     'task': task,
@@ -349,7 +349,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_noise": opts.s_noise,
                     "override_settings": override_settings,
                     "include_init_images": False,
-                    "script_args": json.dumps(script_args),
+                    "script_args": script_args,
                     "img2img_batch_input_dir": img2img_batch_input_dir,
                     "img2img_batch_output_dir": img2img_batch_output_dir,
                     "img2img_batch_inpaint_mask_dir": img2img_batch_inpaint_mask_dir
@@ -490,6 +490,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
         if len(args) > 0 and type(args[0]) == str and args[0][0:5] == "task(" and args[0][-1] == ")":
             id_task = args[0]
             progress.add_task_to_queue(id_task)
+            args = args[1:]
         else:
             id_task = None
 
