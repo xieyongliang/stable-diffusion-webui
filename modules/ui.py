@@ -956,8 +956,7 @@ def create_ui():
                 outputs=[
                     txt2img_gallery,
                     generation_info,
-                    html_info,
-                    html_log,
+                    html_info
                 ],
                 show_progress=False,
             )
@@ -974,8 +973,7 @@ def create_ui():
                 outputs=[
                     txt2img_gallery,
                     generation_info,
-                    html_info,
-                    html_log,
+                    html_info
                 ],
                 show_progress=False,
             )
@@ -1323,8 +1321,7 @@ def create_ui():
                 outputs=[
                     img2img_gallery,
                     generation_info,
-                    html_info,
-                    html_log,
+                    html_info
                 ],
                 show_progress=False,
             )
@@ -1364,8 +1361,7 @@ def create_ui():
                 outputs=[
                     img2img_gallery,
                     generation_info,
-                    html_info,
-                    html_log,
+                    html_info
                 ],
                 show_progress=False,
             )

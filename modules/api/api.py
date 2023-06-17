@@ -30,13 +30,19 @@ from typing import Dict, List, Any
 import piexif
 import piexif.helper
 
-import asyncio
+import os
 from typing import Union
 import traceback
 from modules.sd_vae import reload_vae_weights, refresh_vae_list
 from modules.img2img import process_batch
+import modules.sd_models
+import modules.sd_vae
+import modules.hypernetworks.hypernetwork
+from modules.shared import de_register_model
 import uuid
 import json
+from datetime import datetime
+import requests
 
 def upscaler_to_index(name: str):
     try:
@@ -758,51 +764,58 @@ class Api:
         self.app.include_router(self.router)
         uvicorn.run(self.app, host=server_name, port=port)
 
-    def post_invocations(self, b64images, quality):
-        if shared.generated_images_s3uri:
-            bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
+    def post_invocations(self, username, b64images, task):
+        generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+        if generated_images_s3uri:
+            generated_images_s3uri = f'{generated_images_s3uri}{username}/{task}/'
+            bucket, key = self.get_bucket_and_key(generated_images_s3uri)
             if key.endswith('/'):
                 key = key[ : -1]
-            images = []
             for b64image in b64images:
-                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image), quality)
-                image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
+                bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
+                image_id = datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
                 suffix = opts.samples_format.lower()
                 shared.s3_client.put_object(
                     Body=bytes_data,
                     Bucket=bucket,
                     Key=f'{key}/{image_id}.{suffix}'
                 )
-                images.append(f's3://{bucket}/{key}/{image_id}.{suffix}')
-            return images
-        else:
-            return b64images
 
     def invocations(self, req: models.InvocationsRequest):
-        print('-------invocation------')
-        print(req)
-
         try:
-            if req.vae != None:
-                shared.opts.data['sd_vae'] = req.vae
-                refresh_vae_list()
-
-            if req.model != None:
-                sd_model_checkpoint = shared.opts.sd_model_checkpoint
-                shared.opts.sd_model_checkpoint = req.model
-                with self.queue_lock:
-                    reload_model_weights()
-                if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
-                    reload_vae_weights()
-
-            quality = req.quality
+            print('-------invocation------')
+            print(req)
 
             embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
             hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
-            if hypernetwork_s3uri !='':
-                shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
-                shared.reload_hypernetworks()
+            username = req.username
+            default_options = shared.opts.data
+
+            if username != '':
+                inputs = {
+                    'action': 'get',
+                    'username': username
+                }
+                api_endpoint = os.environ['api_endpoint']
+                response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+                if response.status_code == 200 and response.text != '':
+                    try:
+                        data = json.loads(response.text)
+                        sd_model_checkpoint = shared.opts.sd_model_checkpoint
+                        shared.opts.data = json.loads(data['options'])
+                        modules.sd_vae.refresh_vae_list()
+                        with self.queue_lock:
+                            modules.sd_models.reload_model_weights()
+                            if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
+                                modules.sd_vae.reload_vae_weights()
+
+                        shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
+                        shared.reload_hypernetworks()
+                        shared.sd_models_Ref.add_models_ref(shared.opts.data['sd_model_checkpoint'])
+                    except Exception as e:
+                        print(e)
 
             if req.options != None:
                 options = json.loads(req.options)
@@ -810,29 +823,41 @@ class Api:
                     shared.opts.data[key] = options[key]
 
             if req.task == 'text-to-image':
-                if embeddings_s3uri != '':
-                    shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
-                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                response.images = self.post_invocations(response.images, quality)
+                self.post_invocations(response.images, req.task)
+                shared.opts.data = default_options
                 return response
             elif req.task == 'image-to-image':
-                if embeddings_s3uri != '':
-                    shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
-                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                response.images = self.post_invocations(response.images, quality)
+                self.post_invocations(response.images, req.task)
+                shared.opts.data = default_options
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                response.image = self.post_invocations([response.image], quality)[0]
+                self.post_invocations([response.image], req.task)
+                shared.opts.data = default_options
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                response.images = self.post_invocations(response.images, quality)
+                self.post_invocations(response.images, req.task)
+                shared.opts.data = default_options
                 return response
             elif req.task == 'interrogate':
                 response = self.interrogateapi(req.interrogate_payload)
+                shared.opts.data = default_options
+                return response
+            elif req.task == 'reload-all-models':
+                response = self.reload_all_models()
+                shared.opts.data = default_options
+                return response
+            elif req.task == 'set-models-bucket':
+                bucket = req.models_bucket
+                response = self.set_models_bucket(bucket)
+                shared.opts.data = default_options
                 return response
             else:
                 return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
@@ -843,3 +868,44 @@ class Api:
 
     def ping(self):
         return {'status': 'Healthy'}
+
+    def reload_all_models(self):
+        print('-------reload_all_models------')
+        def remove_files(path):
+            for file_name in os.listdir(path):
+                file_path = os.path.join(path, file_name)
+                if os.path.isfile(file_path):
+                    os.remove(file_path)
+                    print(f'{file_path} has been removed')
+                    if file_path.find('Stable-diffusion'):
+                        de_register_model(file_name,'sd')
+                    elif file_path.find('ControlNet'):
+                        de_register_model(file_name,'cn')
+                elif os.path.isdir(file_path):
+                    remove_files(file_path)
+                    os.rmdir(file_path)
+        shared.syncLock.acquire()
+        remove_files(shared.tmp_models_dir)
+        remove_files(shared.tmp_cache_dir)
+        shared.syncLock.release()
+        return {'simple_result':'success'}
+
+    def set_models_bucket(self,bucket):
+        shared.syncLock.acquire()
+        if bucket.endswith('/'):
+            bucket = bucket[:-1]
+        url_parts = bucket.replace('s3://','').split('/')
+        shared.models_s3_bucket = url_parts[0]
+        lastfolder = url_parts[-1]
+        if lastfolder == 'Stable-diffusion':
+            shared.s3_folder_sd = '/'.join(url_parts[1:])
+        elif lastfolder == 'ControlNet':
+            shared.s3_folder_cn = '/'.join(url_parts[1:])
+        else:
+            shared.s3_folder_sd = '/'.join(url_parts[1:]+['Stable-diffusion'])
+            shared.s3_folder_cn = '/'.join(url_parts[1:]+['ControlNet'])
+        print(f'set_models_bucket to {shared.models_s3_bucket}')
+        print(f'set_s3_folder_sd to {shared.s3_folder_sd}')
+        print(f'set_s3_folder_cn to {shared.s3_folder_cn}')
+        shared.syncLock.release()
+        return {'simple_result':'success'}

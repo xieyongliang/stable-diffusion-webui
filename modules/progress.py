@@ -16,13 +16,14 @@ finished_tasks = []
 recorded_results = []
 recorded_results_limit = 2
 
+task_info = {}
 
 def start_task(id_task):
     global current_task
 
     current_task = id_task
     pending_tasks.pop(id_task, None)
-
+    task_info[id_task] = time.time()
 
 def finish_task(id_task):
     global current_task
@@ -33,7 +34,7 @@ def finish_task(id_task):
     finished_tasks.append(id_task)
     if len(finished_tasks) > 16:
         finished_tasks.pop(0)
-
+    task_info.pop(id_task)
 
 def record_results(id_task, res):
     recorded_results.append((id_task, res))
@@ -85,7 +86,7 @@ def progressapi(req: ProgressRequest):
 
     progress = min(progress, 1)
 
-    elapsed_since_start = time.time() - shared.state.time_start
+    elapsed_since_start = time.time() - task_info[req.id_task]
     predicted_duration = elapsed_since_start / progress if progress > 0 else None
     eta = predicted_duration - elapsed_since_start if predicted_duration is not None else None
 

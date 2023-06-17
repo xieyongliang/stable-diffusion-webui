@@ -310,11 +310,9 @@ class ScriptInfo(BaseModel):
 
 class InvocationsRequest(BaseModel):
     task: str
-    id: Optional[str]
-    model: Optional[str]
-    vae: Optional[str]
-    quality: Optional[int]
-    options: Optional[str]
+    username: Optional[str]
+    models_bucket:Optional[str]
+    simple_result:Optional[str]    
     txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
     img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
     extras_single_payload: Optional[ExtrasSingleImageRequest]

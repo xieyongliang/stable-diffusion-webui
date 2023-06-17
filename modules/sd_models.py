@@ -138,8 +138,8 @@ if shared.cmd_opts.pureui:
             self.sha256 = sha256
             self.shorthash = shorthash
             self.title = title
-            self.ids = json.loads(ids)
-            self.metadata = json.loads(metadata)
+            self.ids = ids
+            self.metadata = metadata
             self.sd_model_checkpoint = sd_model_checkpoint
             self.sd_checkpoint_info = sd_checkpoint_info
 
