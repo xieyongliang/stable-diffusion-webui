@@ -460,7 +460,7 @@ def create_refresh_button(refresh_component, refresh_method, refreshed_args, ele
 
         return gr.update(**(args or {}))
 
-    refresh_button = gr.Button(value=refresh_symbol, elem_id=elem_id)
+    refresh_button = ToolButton(value=refresh_symbol, elem_id=elem_id)
     if elem_id == 'refresh_sagemaker_endpoint':
         refresh_button.click(
             fn=refresh_sagemaker_endpoints,
