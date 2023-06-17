@@ -37,6 +37,7 @@ import modules.extras
 
 import requests
 from modules.sd_models import get_sd_model_checkpoint_from_title
+import modules.modelmerger
 
 training_instance_types = [
     'ml.p2.xlarge',
