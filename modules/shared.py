@@ -268,7 +268,7 @@ class State:
         self.job_count = -1
         self.processing_has_refined_job_count = False
         self.job_no = 0
-        self.job_timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        self.job_timestamp = datetime.now().strftime("%Y%m%d%H%M%S")
         self.current_latent = None
         self.current_image = None
         self.current_image_sampling_step = 0

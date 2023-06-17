@@ -61,8 +61,7 @@ class CheckpointInfo:
             self.name_for_extra = os.path.splitext(os.path.basename(filename))[0]
             self.model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
             self.hash = model_hash(filename)
-
-            self.sha256 = hashes.sha256_from_cache(self.filename, f"checkpoint/{name}")
+            self.sha256 = hashes.sha256(self.filename, f"checkpoint/{name}")
             self.shorthash = self.sha256[0:10] if self.sha256 else None
 
             self.title = name if self.shorthash is None else f'{name} [{self.shorthash}]'
