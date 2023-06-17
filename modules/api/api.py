@@ -768,7 +768,7 @@ class Api:
 
         if generated_images_s3uri:
             generated_images_s3uri = f'{generated_images_s3uri}{username}/{task}/'
-            bucket, key = self.get_bucket_and_key(generated_images_s3uri)
+            bucket, key = shared.get_bucket_and_key(generated_images_s3uri)
             if key.endswith('/'):
                 key = key[ : -1]
             for b64image in b64images:
