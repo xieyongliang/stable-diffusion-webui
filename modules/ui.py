@@ -1509,9 +1509,9 @@ def create_ui():
                
 
                 with gr.Row():
-                    primary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
-                    secondary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
-                    tertiary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
+                    primary_model_name = gr.Dropdown(modules.modelmerger.get_checkpoints_to_merge(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
+                    secondary_model_name = gr.Dropdown(modules.modelmerger.get_checkpoints_to_merge(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
+                    tertiary_model_name = gr.Dropdown(modules.modelmerger.get_checkpoints_to_merge(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
                 custom_name = gr.Textbox(label="Custom Name (Optional)")
                 interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
                 interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
@@ -1531,7 +1531,7 @@ def create_ui():
                         outputs=[primary_model_name, secondary_model_name, tertiary_model_name])
 
         # A periodic function to check the submit output
-        modelmerger_interface.load(modules.model_merger.get_processing_job_status,
+        modelmerger_interface.load(modules.modelmerger.get_processing_job_status,
                                    inputs=None, outputs=submit_result,
                                    every=10, queue=True)
 
