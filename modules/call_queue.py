@@ -17,6 +17,7 @@ from modules.shared import cmd_opts, opts
 import modules
 
 import gradio as gr
+import modules.sd_samplers
 
 queue_lock = threading.Lock()
 
@@ -131,7 +132,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 txt2img_negative_prompt = args[1]
                 txt2img_prompt_styles = args[2]
                 steps = args[3]
-                sampler_index = args[4]
+                sampler_index = modules.sd_samplers.samplers[args[4]].name
                 restore_faces = args[5]
                 tiling = args[6]
                 batch_count = args[7]
@@ -213,7 +214,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 init_img_inpaint = args[9]
                 init_mask_inpaint = args[10]
                 steps = args[11]
-                sampler_index = args[12]
+                sampler_index = modules.sd_samplers.samplers_for_img2img[args[12]].name
                 mask_blur = args[13]
                 mask_alpha = args[14]
                 inpainting_fill = args[15]

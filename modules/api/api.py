@@ -41,7 +41,6 @@ import modules.hypernetworks.hypernetwork
 from modules.shared import de_register_model
 import uuid
 import json
-from datetime import datetime
 import requests
 
 def upscaler_to_index(name: str):
