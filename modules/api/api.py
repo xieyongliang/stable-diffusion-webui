@@ -820,24 +820,24 @@ class Api:
                 shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.text2imgapi(req.txt2img_payload)
-                self.post_invocations(response.images, req.task)
+                self.post_invocations(username, response.images, req.task)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'image-to-image':
                 shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                 sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
                 response = self.img2imgapi(req.img2img_payload)
-                self.post_invocations(response.images, req.task)
+                self.post_invocations(username, response.images, req.task)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-single-image':
                 response = self.extras_single_image_api(req.extras_single_payload)
-                self.post_invocations([response.image], req.task)
+                self.post_invocations(username, [response.image], req.task)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'extras-batch-images':
                 response = self.extras_batch_images_api(req.extras_batch_payload)
-                self.post_invocations(response.images, req.task)
+                self.post_invocations(username, response.images, req.task)
                 shared.opts.data = default_options
                 return response
             elif req.task == 'interrogate':
