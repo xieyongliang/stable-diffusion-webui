@@ -950,7 +950,7 @@ def create_ui():
                     hr_negative_prompt,
                     override_settings,
 
-                ] + custom_inputs,
+                ] + custom_inputs + [shared.sagemaker_endpoint_component],
 
                 outputs=[
                     txt2img_gallery,
@@ -1318,7 +1318,7 @@ def create_ui():
                     img2img_batch_output_dir,
                     img2img_batch_inpaint_mask_dir,
                     override_settings,
-                ] + custom_inputs,
+                ] + custom_inputs + [shared.sagemaker_endpoint_component],
                 outputs=[
                     img2img_gallery,
                     generation_info,
@@ -1483,49 +1483,91 @@ def create_ui():
         }
         return interp_descriptions[value]
 
+    def load_checkpoints_from_s3_uri(model_s3url,load_all_user,request:gr.Request):
+        username = shared.get_webui_username(request)
+
+        return modules.modelmerger.load_checkpoints_from_s3_uri(model_s3url, load_all_user, username)
+
     with gr.Blocks(analytics_enabled=False) as modelmerger_interface:
         with gr.Row().style(equal_height=False):
-            with gr.Column(variant='compact'):
-                interp_description = gr.HTML(value=update_interp_description("Weighted sum"), elem_id="modelmerger_interp_description")
-
-                with FormRow(elem_id="modelmerger_models"):
-                    primary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
-                    create_refresh_button(primary_model_name, modules.sd_models.list_models, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, "refresh_checkpoint_A")
-
-                    secondary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
-                    create_refresh_button(secondary_model_name, modules.sd_models.list_models, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, "refresh_checkpoint_B")
-
-                    tertiary_model_name = gr.Dropdown(modules.sd_models.checkpoint_tiles(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
-                    create_refresh_button(tertiary_model_name, modules.sd_models.list_models, lambda: {"choices": modules.sd_models.checkpoint_tiles()}, "refresh_checkpoint_C")
-
-                custom_name = gr.Textbox(label="Custom Name (Optional)", elem_id="modelmerger_custom_name")
-                interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3, elem_id="modelmerger_interp_amount")
-                interp_method = gr.Radio(choices=["No interpolation", "Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method", elem_id="modelmerger_interp_method")
-                interp_method.change(fn=update_interp_description, inputs=[interp_method], outputs=[interp_description])
-
-                with FormRow():
-                    checkpoint_format = gr.Radio(choices=["ckpt", "safetensors"], value="safetensors", label="Checkpoint format", elem_id="modelmerger_checkpoint_format")
-                    save_as_half = gr.Checkbox(value=False, label="Save as float16", elem_id="modelmerger_save_as_half")
-                    save_metadata = gr.Checkbox(value=True, label="Save metadata (.safetensors only)", elem_id="modelmerger_save_metadata")
-
-                with FormRow():
-                    with gr.Column():
-                        config_source = gr.Radio(choices=["A, B or C", "B", "C", "Don't"], value="A, B or C", label="Copy config from", type="index", elem_id="modelmerger_config_method")
-
-                    with gr.Column():
-                        with FormRow():
-                            bake_in_vae = gr.Dropdown(choices=["None"] + list(sd_vae.vae_dict), value="None", label="Bake in VAE", elem_id="modelmerger_bake_in_vae")
-                            create_refresh_button(bake_in_vae, sd_vae.refresh_vae_list, lambda: {"choices": ["None"] + list(sd_vae.vae_dict)}, "modelmerger_refresh_bake_in_vae")
-
-                with FormRow():
-                    discard_weights = gr.Textbox(value="", label="Discard weights with matching name", elem_id="modelmerger_discard_weights")
+            with gr.Column():
+                gr.HTML(value="<p>Merged checkpoints will be put in the specified output S3 location</p>")
+                default_ckpt_s3 = shared.get_default_bucket()+'/stable-diffusion-webui/models/Stable-diffusion/'
+                # default_merge_output_s3 =  default_ckpt_s3
+                with gr.Row():
+                        dummy_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="dummy_chkpt_s3uri",
+                                                    value='模型存放位置:'+default_ckpt_s3+'{用户名}',
+                                                    lines=2, visible=False,interactive=False)
+                        chkpt_s3uri = gr.Textbox(label="Checkpoint S3 URI", elem_id="chkpt_s3uri", value= default_ckpt_s3,lines=2,visible=True)
+                        merge_output_s3uri = gr.Textbox(label="Merge Result S3 URI",lines=2, visible=True,placeholder='（选填），默认输出位置:'+default_ckpt_s3+'{用户名}')
+                with gr.Row():
+                    with gr.Column(scale=1):
+                        load_all_user = gr.Checkbox(label="Don't load other user's models",interactive=True, value=True,visible=True)
+                    with gr.Column(scale=2):
+                        chkpt_s3uri_button = gr.Button(value="Load Checkpoints", variant='primary')
+                    
+               
 
                 with gr.Row():
-                    modelmerger_merge = gr.Button(elem_id="modelmerger_merge", value="Merge", variant='primary')
+                    primary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_primary_model_name", label="Primary model (A)")
+                    secondary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_secondary_model_name", label="Secondary model (B)")
+                    tertiary_model_name = gr.Dropdown(modules.model_merger.get_checkpoints_to_merge(), elem_id="modelmerger_tertiary_model_name", label="Tertiary model (C)")
+                custom_name = gr.Textbox(label="Custom Name (Optional)")
+                interp_amount = gr.Slider(minimum=0.0, maximum=1.0, step=0.05, label='Multiplier (M) - set to 0 to get model A', value=0.3)
+                interp_method = gr.Radio(choices=["Weighted sum", "Add difference"], value="Weighted sum", label="Interpolation Method")
 
-            with gr.Column(variant='compact', elem_id="modelmerger_results_container"):
-                with gr.Group(elem_id="modelmerger_results_panel"):
-                    modelmerger_result = gr.HTML(elem_id="modelmerger_result", show_label=False)
+
+                with gr.Row():
+                    checkpoint_format = gr.Radio(choices=["ckpt", "safetensors"], value="ckpt", label="Checkpoint format")
+                    save_as_half = gr.Checkbox(value=False, label="Save as float16")
+
+                modelmerger_merge = gr.Button(elem_id="modelmerger_merge", value="Merge", variant='primary')
+
+            with gr.Column():
+                submit_result = gr.Textbox(elem_id="modelmerger_result", show_label=False)
+        chkpt_s3uri_button.click(
+                        fn=load_checkpoints_from_s3_uri,
+                        inputs=[chkpt_s3uri,load_all_user],
+                        outputs=[primary_model_name, secondary_model_name, tertiary_model_name])
+
+        # A periodic function to check the submit output
+        modelmerger_interface.load(modules.model_merger.get_processing_job_status,
+                                   inputs=None, outputs=submit_result,
+                                   every=10, queue=True)
+
+        def modelmerger(primary_model_name, secondary_model_name,
+                           tertiary_model_name, interp_method, multiplier,
+                           save_as_half, custom_name, checkpoint_format,
+                           output_chkpt_s3uri, submit_result,request:gr.Request):
+            try:
+                results = modules.modelmerger.run_modelmerger_remote(primary_model_name, secondary_model_name,
+                           tertiary_model_name, interp_method, multiplier,
+                           save_as_half, custom_name, checkpoint_format,
+                           output_chkpt_s3uri, submit_result,request)
+            except Exception as e:
+                print("Error loading/saving model file:", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                return "Error running model merge"
+            return results
+
+        modelmerger_merge.click(
+            fn=modelmerger,
+            inputs=[
+                primary_model_name,
+                secondary_model_name,
+                tertiary_model_name,
+                interp_method,
+                interp_amount,
+                save_as_half,
+                custom_name,
+                checkpoint_format,
+                merge_output_s3uri,
+                submit_result,
+            ],
+            outputs=[
+                submit_result,
+            ]
+        )
 
     with gr.Blocks(analytics_enabled=False) as train_interface:
 
@@ -2403,7 +2445,7 @@ def create_ui():
                 print("Error loading/saving model file:", file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
                 modules.sd_models.list_models()  # to remove the potentially missing models from the list
-                return [*[gr.Dropdown.update(choices=modules.sd_models.checkpoint_tiles()) for _ in range(4)], f"Error merging checkpoints: {e}"]
+                return [f"Error merging checkpoints: {e}"]
             return results
 
         modelmerger_merge.click(fn=lambda: '', inputs=[], outputs=[modelmerger_result])
@@ -2426,11 +2468,7 @@ def create_ui():
                 save_metadata,
             ],
             outputs=[
-                primary_model_name,
-                secondary_model_name,
-                tertiary_model_name,
-                component_dict['sd_model_checkpoint'],
-                modelmerger_result,
+                modelmerger_result
             ]
         )
 
