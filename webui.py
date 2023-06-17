@@ -696,7 +696,7 @@ def register_sd_models(sd_models_dir):
                 item['name_for_extra'] = name_for_extra = os.path.splitext(os.path.basename(filename))[0]
                 item['model_name'] = model_name = os.path.splitext(name.replace("/", "_").replace("\\", "_"))[0]
                 item['hash'] = hash = modules.sd_models.model_hash(filename)
-                item['sha256'] = sha256 = modules.hashes.hashes.sha256(filename, f"checkpoint/{name}")
+                item['sha256'] = sha256 = modules.hashes.sha256(filename, f"checkpoint/{name}")
                 item['shorthash'] = shorthash = sha256[0:10] if sha256 else None
                 item['title'] = title = name if shorthash is None else f'{name} [{shorthash}]'
                 item['ids'] = [hash, model_name, title, name, f'{name} [{hash}]'] + ([shorthash, sha256, f'{name} [{shorthash}]'] if shorthash else [])
