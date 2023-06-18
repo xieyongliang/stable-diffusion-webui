@@ -773,7 +773,7 @@ class Api:
                 key = key[ : -1]
             for b64image in b64images:
                 bytes_data = export_pil_to_bytes(decode_base64_to_image(b64image))
-                image_id = datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
+                image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
                 suffix = opts.samples_format.lower()
                 shared.s3_client.put_object(
                     Body=bytes_data,
