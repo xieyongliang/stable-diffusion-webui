@@ -160,7 +160,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 override_settings = args[28]
                 alwayson_scripts = {}
                 script_name = None
-                script_index = script_args[0]
+                script_index = None
 
                 for script in modules.scripts.scripts_txt2img.alwayson_scripts:
                     alwayson_script_arg = {
@@ -169,20 +169,12 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     for script_arg in script_args[script.args_from:script.args_to]:
                         alwayson_script_arg['args'].append(script_arg)
                     alwayson_scripts[script.name] = alwayson_script_arg
-
+                script_index = script_args[0]
                 if script_index != 0:
                     script_name = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].name
-                    script_from = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_from
-                    script_to = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_to
-                    print('---0---', script_from, script_to, script_args)
-                    for idx in range(1, script_from):
-                        script_args[idx] = None
-                    for idx in range(script_to, len(script_args)):
-                        script_args[idx] = None
-                    print('---1---', script_from, script_to, script_args)
-                else:
-                    for idx in range(1, len(script_args)):
-                        script_args[idx] = None
+                    args_from = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_from
+                    args_to = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_to
+                    script_args = script_args[args_from: args_to]
 
                 payload = {
                     "enable_hr": enable_hr,
@@ -356,15 +348,13 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 script_index = script_args[0]
                 if script_index != 0:
                     script_name = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].name
-                    script_from = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_from
-                    script_to = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_to
-                    for idx in range(1, script_from):
-                        script_args[idx] = None
-                    for idx in range(script_to, len(script_args)):
-                        script_args[idx] = None
-                else:
-                    for idx in range(1, len(script_args)):
-                        script_args[idx] = None
+                    args_from = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_from
+                    args_to = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_to
+                    script_args = script_args[args_from: args_to]
+
+                script_index = script_args[0]
+                if script_index != 0:
+                    script_name = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].name
 
                 payload = {
                     "init_images": [image_encoded_in_base64],
