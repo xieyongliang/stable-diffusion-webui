@@ -438,6 +438,7 @@ class ScriptRunner:
             return None
 
         script_args = args[script.args_from:script.args_to]
+        print('---script_args in scripts.py---', script_args)
         processed = script.run(p, *script_args)
 
         shared.total_tqdm.clear()

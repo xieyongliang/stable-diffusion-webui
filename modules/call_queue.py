@@ -21,6 +21,7 @@ import modules.sd_samplers
 
 queue_lock = threading.Lock()
 
+import modules.scripts
 
 def wrap_queued_call(func):
     def f(*args, **kwargs):
@@ -157,6 +158,31 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 hr_prompt = args[26]
                 hr_negative_prompt = args[27]
                 override_settings = args[28]
+                alwayson_scripts = {}
+                script_name = None
+                script_index = script_args[0]
+
+                for script in modules.scripts.scripts_txt2img.alwayson_scripts:
+                    alwayson_script_arg = {
+                        'args': []
+                    }
+                    for script_arg in script_args[script.args_from:script.args_to]:
+                        alwayson_script_arg['args'].append(script_arg)
+                    alwayson_scripts[script.name] = alwayson_script_arg
+
+                if script_index != 0:
+                    script_name = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].name
+                    script_from = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_from
+                    script_to = modules.scripts.scripts_txt2img.selectable_scripts[script_index - 1].args_to
+                    print('---0---', script_from, script_to, script_args)
+                    for idx in range(1, script_from):
+                        script_args[idx] = None
+                    for idx in range(script_to, len(script_args)):
+                        script_args[idx] = None
+                    print('---1---', script_from, script_to, script_args)
+                else:
+                    for idx in range(1, len(script_args)):
+                        script_args[idx] = None
 
                 payload = {
                     "enable_hr": enable_hr,
@@ -194,8 +220,12 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_tmin": opts.s_tmin,
                     "s_noise": opts.s_noise,
                     "override_settings": override_settings,
-                    "script_args": script_args
+                    "script_args": script_args,
+                    "alwayson_scripts": alwayson_scripts
                 }
+                if script_name:
+                    payload['script_name'] = script_name
+
                 inputs = {
                     'task': task,
                     'txt2img_payload': payload,
@@ -243,6 +273,7 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 img2img_batch_output_dir = args[38]
                 img2img_batch_inpaint_mask_dir = args[39]
                 override_settings = args[40]
+                script_name = None
 
                 script_args = []
                 for i in range(41, len(args)):
@@ -314,6 +345,27 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 image_encoded_in_base64 = encode_image_to_base64(image) if image else None
                 mask_encoded_in_base64 = encode_image_to_base64(mask) if mask else None
 
+                for script in modules.scripts.scripts_img2img.alwayson_scripts:
+                    alwayson_script_arg = {
+                        'args': []
+                    }
+                    for script_arg in script_args[script.args_from:script.args_to]:
+                        alwayson_script_arg['args'].append(script_arg)
+                    alwayson_scripts[script.name] = alwayson_script_arg
+
+                script_index = script_args[0]
+                if script_index != 0:
+                    script_name = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].name
+                    script_from = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_from
+                    script_to = modules.scripts.scripts_img2img.selectable_scripts[script_index - 1].args_to
+                    for idx in range(1, script_from):
+                        script_args[idx] = None
+                    for idx in range(script_to, len(script_args)):
+                        script_args[idx] = None
+                else:
+                    for idx in range(1, len(script_args)):
+                        script_args[idx] = None
+
                 payload = {
                     "init_images": [image_encoded_in_base64],
                     "resize_mode": resize_mode,
@@ -350,11 +402,15 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_noise": opts.s_noise,
                     "override_settings": override_settings,
                     "include_init_images": False,
-                    "script_args": script_args,
                     "img2img_batch_input_dir": img2img_batch_input_dir,
                     "img2img_batch_output_dir": img2img_batch_output_dir,
-                    "img2img_batch_inpaint_mask_dir": img2img_batch_inpaint_mask_dir
+                    "img2img_batch_inpaint_mask_dir": img2img_batch_inpaint_mask_dir,
+                    "script_args": script_args,
+                    "alwayson_scripts": alwayson_scripts
                 }
+                if script_name:
+                    payload['script_name'] = script_name
+
                 inputs = {
                     'task': task,
                     'img2img_payload': payload,

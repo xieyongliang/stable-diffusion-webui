@@ -358,6 +358,8 @@ class Api:
         args.pop('alwayson_scripts', None)
 
         script_args = self.init_script_args(txt2imgreq, self.default_script_arg_txt2img, selectable_scripts, selectable_script_idx, script_runner)
+        print('---script_args---', script_args)
+        print('---selectable_scripts---', selectable_scripts)
 
         send_images = args.pop('send_images', True)
         args.pop('save_images', None)
@@ -430,6 +432,9 @@ class Api:
                 shared.s3_download(img2img_batch_inpaint_mask_dir, img2img_batch_inpaint_mask_local_dir)
 
         script_args = self.init_script_args(img2imgreq, self.default_script_arg_img2img, selectable_scripts, selectable_script_idx, script_runner)
+
+        print('---script_args in api.py---', script_args)
+        print('---selectable_scripts---', selectable_scripts)
 
         send_images = args.pop('send_images', True)
         args.pop('save_images', None)
