@@ -1704,7 +1704,7 @@ def create_ui():
                             with gr.Column():
                                 create_train_embedding = gr.Button(value="Train Embedding", variant='primary')
 
-                with gr.Tab(label="Create hypernetwork", id="create_hypernetwork"):
+                with gr.Tab(label="Train hypernetwork", id="create_hypernetwork"):
 
                     with gr.Box():
                         gr.HTML(value="<p style='margin-bottom: 1.5em'><b>Hypernetwork settings</b></p>")
@@ -1828,9 +1828,9 @@ def create_ui():
                             with gr.Column():
                                 create_train_hypernetwork = gr.Button(value="Train Hypernetwork", variant='primary')
 
-        if dreambooth_tab:
-            with gr.Tab(label="Train Dreambooth"):
-                dreambooth_tab.render()
+                if dreambooth_tab:
+                    with gr.Tab(label="Train Dreambooth"):
+                        dreambooth_tab.render()
 
         def sagemaker_train_embedding(
                 request: gr.Request,
