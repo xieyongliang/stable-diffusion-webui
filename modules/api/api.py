@@ -809,10 +809,10 @@ class Api:
             return b64images
 
     def invocations(self, req: InvocationsRequest):
-        print('-------invocation------')
-        print(req)
-
         with self.invocations_lock:
+            print('-------invocation------')
+            print(req)
+
             try:
                 if req.vae != None:
                     shared.opts.data['sd_vae'] = req.vae
