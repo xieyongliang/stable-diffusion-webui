@@ -265,7 +265,9 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                 img2img_batch_output_dir = args[38]
                 img2img_batch_inpaint_mask_dir = args[39]
                 override_settings = args[40]
+                alwayson_scripts = {}
                 script_name = None
+                script_index = None
 
                 script_args = []
                 for i in range(41, len(args)):
@@ -392,12 +394,14 @@ def wrap_gradio_gpu_call(func, extra_outputs=None):
                     "s_noise": opts.s_noise,
                     "override_settings": override_settings,
                     "include_init_images": False,
-                    "img2img_batch_input_dir": img2img_batch_input_dir,
-                    "img2img_batch_output_dir": img2img_batch_output_dir,
-                    "img2img_batch_inpaint_mask_dir": img2img_batch_inpaint_mask_dir,
                     "script_args": script_args,
                     "alwayson_scripts": alwayson_scripts
                 }
+                if mode == 5:
+                    payload['img2img_batch_input_dir'] = img2img_batch_input_dir
+                    payload['img2img_batch_output_dir'] = img2img_batch_output_dir
+                    payload['img2img_batch_inpaint_mask_dir'] = img2img_batch_inpaint_mask_dir
+
                 if script_name:
                     payload['script_name'] = script_name
 

@@ -418,18 +418,17 @@ class Api:
         img2img_batch_output_dir = args.pop('img2img_batch_output_dir', None)
         img2img_batch_inpaint_mask_dir = args.pop('img2img_batch_inpaint_mask_dir', None)
 
-        if args['mode'] == 5:
-            if img2img_batch_input_dir:
-                img2img_batch_input_local_dir = f'/tmp/{uuid.uuid4()}'
-                shared.s3_download(img2img_batch_input_dir, img2img_batch_input_local_dir)
+        if img2img_batch_input_dir:
+            img2img_batch_input_local_dir = f'/tmp/{uuid.uuid4()}'
+            shared.s3_download(img2img_batch_input_dir, img2img_batch_input_local_dir)
 
-            if img2img_batch_output_dir:
-                img2img_batch_output_local_dir = f'/tmp/{uuid.uuid4()}'
-                shared.s3_download(img2img_batch_output_dir, img2img_batch_output_local_dir)
+        if img2img_batch_output_dir:
+            img2img_batch_output_local_dir = f'/tmp/{uuid.uuid4()}'
+            shared.s3_download(img2img_batch_output_dir, img2img_batch_output_local_dir)
 
-            if img2img_batch_inpaint_mask_dir:
-                img2img_batch_inpaint_mask_local_dir = f'/tmp/{uuid.uuid4()}'
-                shared.s3_download(img2img_batch_inpaint_mask_dir, img2img_batch_inpaint_mask_local_dir)
+        if img2img_batch_inpaint_mask_dir:
+            img2img_batch_inpaint_mask_local_dir = f'/tmp/{uuid.uuid4()}'
+            shared.s3_download(img2img_batch_inpaint_mask_dir, img2img_batch_inpaint_mask_local_dir)
 
         script_args = self.init_script_args(img2imgreq, self.default_script_arg_img2img, selectable_scripts, selectable_script_idx, script_runner)
 
