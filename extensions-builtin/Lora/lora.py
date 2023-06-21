@@ -75,15 +75,12 @@ def convert_diffusers_name_to_compvis(key, is_sd2):
 
 
 class LoraOnDisk:
-    def __init__(self, name, filename, alias=None, hash=None, shorthash=None, metadata=None):
+    def __init__(self, name, filename, metadata=None):
         self.name = name
         self.filename = filename
 
         if shared.cmd_opts.pureui:
             self.ssmd_cover_images = None
-            self.alias = alias
-            self.hash = hash
-            self.shorthash = shorthash
             self.metadata = metadata
         else:
             self.metadata = {}
@@ -462,15 +459,13 @@ def list_available_loras(sagemaker_endpoint=None, username=None):
                 for item in items:
                     filename = item['filename']
                     name = os.path.splitext(item['model_name'])[0]
-                    alias = item['alias']
-                    hash = item['hash']
-                    shorthash = item['shorthash']
+
                     try:
                         metadata = json.loads(item['metadata'])
                     except:
                         metadata = {}
 
-                    entry = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}', alias, hash, shorthash, metadata)
+                    entry = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}', metadata)
 
                     available_loras[name] = entry
 

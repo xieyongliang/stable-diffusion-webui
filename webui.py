@@ -642,8 +642,6 @@ def register_lora_models(lora_models_dir):
         api_endpoint = os.environ['api_endpoint']
         endpoint_name = os.environ['endpoint_name']
         for filename in get_models(lora_models_dir, ['*.pt', '*.ckpt', '*.safetensors']):
-            shorthash = modules.hashes.calculate_sha256(os.path.join(lora_models_dir, filename))
-            hash = modules.sd_models.model_hash(filename)
             metadata = {}
 
             is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
@@ -657,8 +655,6 @@ def register_lora_models(lora_models_dir):
             item = {}
             item['model_name'] = os.path.splitext(os.path.basename(filename))[0]
             item['filename'] = os.path.basename(filename)
-            item['hash'] = hash
-            item['shorthash'] = shorthash
             item['metadata'] = json.dumps(metadata)
             item['endpoint_name'] = endpoint_name
             items.append(item)
