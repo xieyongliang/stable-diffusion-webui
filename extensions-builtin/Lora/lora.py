@@ -75,7 +75,7 @@ def convert_diffusers_name_to_compvis(key, is_sd2):
 
 
 class LoraOnDisk:
-    def __init__(self, name, filename, hash, shorthash, metadata=None):
+    def __init__(self, name, filename, hash=None, shorthash=None, metadata=None):
         self.name = name
         self.filename = filename
         self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
