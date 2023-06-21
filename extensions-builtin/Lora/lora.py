@@ -75,16 +75,28 @@ def convert_diffusers_name_to_compvis(key, is_sd2):
 
 
 class LoraOnDisk:
-    def __init__(self, name, filename, metadata=None):
+    def __init__(self, name, filename, hash, shorthash, metadata=None):
         self.name = name
         self.filename = filename
+        self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
 
         if shared.cmd_opts.pureui:
             self.ssmd_cover_images = None
             self.metadata = metadata
+
+            if self.metadata:
+                m = {}
+                for k, v in sorted(self.metadata.items(), key=lambda x: metadata_tags_order.get(x[0], 999)):
+                    m[k] = v
+
+                self.metadata = m
+
+            self.ssmd_cover_images = self.metadata.pop('ssmd_cover_images', None)  # those are cover images and they are too big to display in UI as text
+            self.alias = self.metadata.get('ss_output_name', self.name)
+            self.hash = hash
+            self.shorthash = shorthash
         else:
             self.metadata = {}
-            self.is_safetensors = os.path.splitext(filename)[1].lower() == ".safetensors"
 
             if self.is_safetensors:
                 try:
@@ -92,23 +104,23 @@ class LoraOnDisk:
                 except Exception as e:
                     errors.display(e, f"reading lora {filename}")
 
-        if self.metadata:
-            m = {}
-            for k, v in sorted(self.metadata.items(), key=lambda x: metadata_tags_order.get(x[0], 999)):
-                m[k] = v
+            if self.metadata:
+                m = {}
+                for k, v in sorted(self.metadata.items(), key=lambda x: metadata_tags_order.get(x[0], 999)):
+                    m[k] = v
 
-            self.metadata = m
+                self.metadata = m
 
-        self.ssmd_cover_images = self.metadata.pop('ssmd_cover_images', None)  # those are cover images and they are too big to display in UI as text
-        self.alias = self.metadata.get('ss_output_name', self.name)
+            self.ssmd_cover_images = self.metadata.pop('ssmd_cover_images', None)  # those are cover images and they are too big to display in UI as text
+            self.alias = self.metadata.get('ss_output_name', self.name)
 
-        self.hash = None
-        self.shorthash = None
-        self.set_hash(
-            self.metadata.get('sshs_model_hash') or
-            hashes.sha256_from_cache(self.filename, "lora/" + self.name, use_addnet_hash=self.is_safetensors) or
-            ''
-        )
+            self.hash = None
+            self.shorthash = None
+            self.set_hash(
+                self.metadata.get('sshs_model_hash') or
+                hashes.sha256_from_cache(self.filename, "lora/" + self.name, use_addnet_hash=self.is_safetensors) or
+                ''
+            )
 
     def set_hash(self, v):
         self.hash = v
@@ -458,6 +470,8 @@ def list_available_loras(sagemaker_endpoint=None, username=None):
                 items = json.loads(response.text)
                 for item in items:
                     filename = item['filename']
+                    hash = item['hash']
+                    shorthash = item['shorthash']
                     name = os.path.splitext(item['model_name'])[0]
 
                     try:
@@ -465,7 +479,7 @@ def list_available_loras(sagemaker_endpoint=None, username=None):
                     except:
                         metadata = {}
 
-                    entry = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}', metadata)
+                    entry = LoraOnDisk(name, f'/tmp/models/Lora/{username}/{filename}', hash, shorthash, metadata)
 
                     available_loras[name] = entry
 
