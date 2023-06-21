@@ -446,7 +446,7 @@ class Api:
             p.outpath_samples = opts.outdir_img2img_samples
 
             shared.state.begin()
-            if args['mode'] == 5:
+            if img2img_batch_input_dir != None and img2img_batch_output_dir != None and img2img_batch_inpaint_mask_dir != None:
                 process_batch(p, img2img_batch_input_dir, img2img_batch_output_dir, img2img_batch_inpaint_mask_dir, args)
             else:
                 if selectable_scripts is not None:
