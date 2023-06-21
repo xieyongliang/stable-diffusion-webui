@@ -213,6 +213,7 @@ class Api:
         self.router = APIRouter()
         self.app = app
         self.queue_lock = queue_lock
+        self.invocations_lock = Lock()
         api_middleware(self.app)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
@@ -786,83 +787,84 @@ class Api:
                 )
 
     def invocations(self, req: models.InvocationsRequest):
-        try:
+        with self.invocations_lock:
             print('-------invocation------')
             print(req)
 
-            embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
-            hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
+            try:
+                embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
+                hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
 
-            username = req.username
-            default_options = shared.opts.data
+                username = req.username
+                default_options = shared.opts.data
 
-            if username != '':
-                inputs = {
-                    'action': 'get',
-                    'username': username
-                }
-                api_endpoint = os.environ['api_endpoint']
-                response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
-                if response.status_code == 200 and response.text != '':
-                    try:
-                        data = json.loads(response.text)
-                        sd_model_checkpoint = shared.opts.sd_model_checkpoint
-                        shared.opts.data = json.loads(data['options'])
-                        modules.sd_vae.refresh_vae_list()
-                        with self.queue_lock:
-                            modules.sd_models.reload_model_weights()
-                            if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
-                                modules.sd_vae.reload_vae_weights()
+                if username != '':
+                    inputs = {
+                        'action': 'get',
+                        'username': username
+                    }
+                    api_endpoint = os.environ['api_endpoint']
+                    response = requests.post(url=f'{api_endpoint}/sd/user', json=inputs)
+                    if response.status_code == 200 and response.text != '':
+                        try:
+                            data = json.loads(response.text)
+                            sd_model_checkpoint = shared.opts.sd_model_checkpoint
+                            shared.opts.data = json.loads(data['options'])
+                            modules.sd_vae.refresh_vae_list()
+                            with self.queue_lock:
+                                modules.sd_models.reload_model_weights()
+                                if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
+                                    modules.sd_vae.reload_vae_weights()
 
-                        shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
-                        shared.reload_hypernetworks()
-                        shared.sd_models_Ref.add_models_ref(shared.opts.data['sd_model_checkpoint'])
-                    except Exception as e:
-                        print(e)
+                            shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
+                            shared.reload_hypernetworks()
+                            shared.sd_models_Ref.add_models_ref(shared.opts.data['sd_model_checkpoint'])
+                        except Exception as e:
+                            print(e)
 
-            if req.task == 'text-to-image':
-                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
-                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                response = self.text2imgapi(req.txt2img_payload)
-                self.post_invocations(username, response.images, req.task)
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'image-to-image':
-                shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
-                sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
-                response = self.img2imgapi(req.img2img_payload)
-                self.post_invocations(username, response.images, req.task)
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'extras-single-image':
-                response = self.extras_single_image_api(req.extras_single_payload)
-                self.post_invocations(username, [response.image], req.task)
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'extras-batch-images':
-                response = self.extras_batch_images_api(req.extras_batch_payload)
-                self.post_invocations(username, response.images, req.task)
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'interrogate':
-                response = self.interrogateapi(req.interrogate_payload)
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'reload-all-models':
-                response = self.reload_all_models()
-                shared.opts.data = default_options
-                return response
-            elif req.task == 'set-models-bucket':
-                bucket = req.models_bucket
-                response = self.set_models_bucket(bucket)
-                shared.opts.data = default_options
-                return response
-            else:
-                return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+                if req.task == 'text-to-image':
+                    shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                    response = self.text2imgapi(req.txt2img_payload)
+                    self.post_invocations(username, response.images, req.task)
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'image-to-image':
+                    shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                    sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                    response = self.img2imgapi(req.img2img_payload)
+                    self.post_invocations(username, response.images, req.task)
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'extras-single-image':
+                    response = self.extras_single_image_api(req.extras_single_payload)
+                    self.post_invocations(username, [response.image], req.task)
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'extras-batch-images':
+                    response = self.extras_batch_images_api(req.extras_batch_payload)
+                    self.post_invocations(username, response.images, req.task)
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'interrogate':
+                    response = self.interrogateapi(req.interrogate_payload)
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'reload-all-models':
+                    response = self.reload_all_models()
+                    shared.opts.data = default_options
+                    return response
+                elif req.task == 'set-models-bucket':
+                    bucket = req.models_bucket
+                    response = self.set_models_bucket(bucket)
+                    shared.opts.data = default_options
+                    return response
+                else:
+                    return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
 
-        except Exception as e:
-            traceback.print_exc()
-            return models.InvocationsErrorResponse(error = str(e))
+            except Exception as e:
+                traceback.print_exc()
+                return models.InvocationsErrorResponse(error = str(e))
 
     def ping(self):
         return {'status': 'Healthy'}
