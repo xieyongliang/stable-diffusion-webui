@@ -314,3 +314,22 @@ class ScriptInfo(BaseModel):
     is_alwayson: bool = Field(default=None, title="IsAlwayson", description="Flag specifying whether this script is an alwayson script")
     is_img2img: bool = Field(default=None, title="IsImg2img", description="Flag specifying whether this script is an img2img script")
     args: List[ScriptArg] = Field(title="Arguments", description="List of script's arguments")
+
+class InvocationsRequest(BaseModel):
+    task: str
+    id: Optional[str]
+    model: Optional[str]
+    vae: Optional[str]
+    quality: Optional[int]
+    options: Optional[str]
+    txt2img_payload: Optional[StableDiffusionTxt2ImgProcessingAPI]
+    img2img_payload: Optional[StableDiffusionImg2ImgProcessingAPI]
+    extras_single_payload: Optional[ExtrasSingleImageRequest]
+    extras_batch_payload: Optional[ExtrasBatchImagesRequest]
+    interrogate_payload: Optional[InterrogateRequest]
+
+class InvocationsErrorResponse(BaseModel):
+    error: str = Field(title="Invocation error", description="Error response from invocation.")
+
+class PingResponse(BaseModel):
+    status: str

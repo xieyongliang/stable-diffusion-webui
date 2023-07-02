@@ -31,6 +31,14 @@ from typing import Dict, List, Any
 import piexif
 import piexif.helper
 
+import asyncio
+from typing import Union
+import traceback
+from modules.sd_vae import reload_vae_weights, refresh_vae_list
+import uuid
+import json
+import requests
+from datetime import date
 
 def upscaler_to_index(name: str):
     try:
@@ -60,6 +68,28 @@ def setUpscalers(req: dict):
     reqDict['extras_upscaler_2'] = reqDict.pop('upscaler_2', None)
     return reqDict
 
+def decode_to_image(encoding):
+    image = None
+    try:
+        if encoding.startswith("http://") or encoding.startswith("https://"):
+            response = requests.get(encoding)
+            if response.status_code == 200:
+                encoding = response.text
+                image = Image.open(BytesIO(response.content))
+        elif encoding.startswith("s3://"):
+            bucket, key = shared.get_bucket_and_key(encoding)
+            response = shared.s3_client.get_object(
+                Bucket=bucket,
+                Key=key
+            )
+            image = Image.open(response['Body'])
+        else:
+            if encoding.startswith("data:image/"):
+                encoding = encoding.split(";")[1].split(",")[1]
+            image = Image.open(BytesIO(base64.b64decode(encoding)))
+        return image
+    except Exception as err:
+        raise HTTPException(status_code=500, detail="Invalid encoded image")
 
 def decode_base64_to_image(encoding):
     if encoding.startswith("data:image/"):
@@ -70,6 +100,19 @@ def decode_base64_to_image(encoding):
     except Exception as e:
         raise HTTPException(status_code=500, detail="Invalid encoded image") from e
 
+def encode_to_base64(image):
+    with io.BytesIO() as output_bytes:
+        image.save(output_bytes, format="PNG", quality=opts.jpeg_quality)
+        bytes_data = output_bytes.getvalue()
+
+    encoded_string = base64.b64encode(bytes_data)
+
+    base64_str = str(encoded_string, "utf-8")
+    mimetype = "image/png"
+    image_encoded_in_base64 = (
+        "data:" + (mimetype if mimetype is not None else "") + ";base64," + base64_str
+    )
+    return image_encoded_in_base64
 
 def encode_pil_to_base64(image):
     with io.BytesIO() as output_bytes:
@@ -100,6 +143,34 @@ def encode_pil_to_base64(image):
 
     return base64.b64encode(bytes_data)
 
+def export_pil_to_bytes(image, quality):
+    with io.BytesIO() as output_bytes:
+
+        if opts.samples_format.lower() == 'png':
+            use_metadata = False
+            metadata = PngImagePlugin.PngInfo()
+            for key, value in image.info.items():
+                if isinstance(key, str) and isinstance(value, str):
+                    metadata.add_text(key, value)
+                    use_metadata = True
+            image.save(output_bytes, format="PNG", pnginfo=(metadata if use_metadata else None), quality=quality if quality else opts.jpeg_quality)
+
+        elif opts.samples_format.lower() in ("jpg", "jpeg", "webp"):
+            parameters = image.info.get('parameters', None)
+            exif_bytes = piexif.dump({
+                "Exif": { piexif.ExifIFD.UserComment: piexif.helper.UserComment.dump(parameters or "", encoding="unicode") }
+            })
+            if opts.samples_format.lower() in ("jpg", "jpeg"):
+                image.save(output_bytes, format="JPEG", exif = exif_bytes, quality=quality if quality else opts.jpeg_quality)
+            else:
+                image.save(output_bytes, format="WEBP", exif = exif_bytes, quality=quality if quality else opts.jpeg_quality)
+
+        else:
+            raise HTTPException(status_code=500, detail="Invalid image format")
+
+        bytes_data = output_bytes.getvalue()
+
+    return bytes_data
 
 def api_middleware(app: FastAPI):
     rich_available = True
@@ -174,6 +245,7 @@ class Api:
         self.router = APIRouter()
         self.app = app
         self.queue_lock = queue_lock
+        self.invocations_lock = Lock()
         api_middleware(self.app)
         self.add_api_route("/sdapi/v1/txt2img", self.text2imgapi, methods=["POST"], response_model=models.TextToImageResponse)
         self.add_api_route("/sdapi/v1/img2img", self.img2imgapi, methods=["POST"], response_model=models.ImageToImageResponse)
@@ -208,6 +280,8 @@ class Api:
         self.add_api_route("/sdapi/v1/reload-checkpoint", self.reloadapi, methods=["POST"])
         self.add_api_route("/sdapi/v1/scripts", self.get_scripts_list, methods=["GET"], response_model=models.ScriptsList)
         self.add_api_route("/sdapi/v1/script-info", self.get_script_info, methods=["GET"], response_model=List[models.ScriptInfo])
+        self.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[models.TextToImageResponse, models.ImageToImageResponse, models.ExtrasSingleImageResponse, models.ExtrasBatchImagesResponse, models.InvocationsErrorResponse, models.InterrogateResponse])
+        self.add_api_route("/ping", self.ping, methods=["GET"], response_model=models.PingResponse)
 
         self.default_script_arg_txt2img = []
         self.default_script_arg_img2img = []
@@ -254,6 +328,15 @@ class Api:
         return script_runner.scripts[script_idx]
 
     def init_default_script_args(self, script_runner):
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError as e:
+            if str(e).startswith('There is no current event loop in thread'):
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+            else:
+                raise
+
         #find max idx from the scripts in runner and generate a none array to init script_args
         last_arg_index = 1
         for script in script_runner.scripts:
@@ -294,6 +377,28 @@ class Api:
                     # min between arg length in scriptrunner and arg length in the request
                     for idx in range(0, min((alwayson_script.args_to - alwayson_script.args_from), len(request.alwayson_scripts[alwayson_script_name]["args"]))):
                         script_args[alwayson_script.args_from + idx] = request.alwayson_scripts[alwayson_script_name]["args"][idx]
+
+        for i in range(0, len(script_args)):
+            if(isinstance(script_args[i], dict)):
+                script_arg = {}
+                for key in script_args[i]:
+                    if key == 'image' or key == 'mask':
+                        script_arg[key] = encode_to_base64(decode_to_image(script_args[i][key]))
+                    else:
+                        script_arg[key] = script_args[i][key]
+                script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
+            elif hasattr(script_args[i], '__dict__'):
+                script_arg = {}
+                for key in script_args[i].__dict__:
+                    script_arg[key] = script_args[i].__dict__[key]
+                    if key == 'image':
+                        if script_args[i].__dict__[key]:
+                            if 'image' in script_args[i].__dict__[key]:
+                                script_arg[key]['image'] = encode_to_base64(decode_to_image(script_args[i].__dict__[key]['image']))
+                            if 'mask' in script_args[i].__dict__[key]:
+                                script_arg[key]['mask'] = encode_to_base64(decode_to_image(script_args[i].__dict__[key]['mask']))
+                script_args[i] = None if len(script_arg.keys()) == 0 else script_arg
+
         return script_args
 
     def text2imgapi(self, txt2imgreq: models.StableDiffusionTxt2ImgProcessingAPI):
@@ -340,7 +445,7 @@ class Api:
 
         b64images = list(map(encode_pil_to_base64, processed.images)) if send_images else []
 
-        return models.TextToImageResponse(images=b64images, parameters=vars(txt2imgreq), info=processed.js())
+        return models.TextToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
 
     def img2imgapi(self, img2imgreq: models.StableDiffusionImg2ImgProcessingAPI):
         init_images = img2imgreq.init_images
@@ -349,7 +454,7 @@ class Api:
 
         mask = img2imgreq.mask
         if mask:
-            mask = decode_base64_to_image(mask)
+            mask = decode_to_image(mask)
 
         script_runner = scripts.scripts_img2img
         if not script_runner.scripts:
@@ -381,7 +486,7 @@ class Api:
 
         with self.queue_lock:
             p = StableDiffusionProcessingImg2Img(sd_model=shared.sd_model, **args)
-            p.init_images = [decode_base64_to_image(x) for x in init_images]
+            p.init_images = [decode_to_image(x) for x in init_images]
             p.scripts = script_runner
             p.outpath_grids = opts.outdir_img2img_grids
             p.outpath_samples = opts.outdir_img2img_samples
@@ -401,12 +506,13 @@ class Api:
             img2imgreq.init_images = None
             img2imgreq.mask = None
 
-        return models.ImageToImageResponse(images=b64images, parameters=vars(img2imgreq), info=processed.js())
+        populate.mask = img2imgreq.mask
+        return models.ImageToImageResponse(images=b64images, parameters=vars(populate), info=processed.js())
 
     def extras_single_image_api(self, req: models.ExtrasSingleImageRequest):
         reqDict = setUpscalers(req)
 
-        reqDict['image'] = decode_base64_to_image(reqDict['image'])
+        reqDict['image'] = decode_to_image(reqDict['image'])
 
         with self.queue_lock:
             result = postprocessing.run_extras(extras_mode=0, image_folder="", input_dir="", output_dir="", save_output=False, **reqDict)
@@ -711,6 +817,92 @@ class Api:
         except Exception as err:
             cuda = {'error': f'{err}'}
         return models.MemoryResponse(ram=ram, cuda=cuda)
+    def post_invocations(self, b64images, quality):
+        if shared.generated_images_s3uri:
+            bucket, key = shared.get_bucket_and_key(shared.generated_images_s3uri)
+            if key.endswith('/'):
+                key = key[ : -1]
+            images = []
+            for b64image in b64images:
+                bytes_data = export_pil_to_bytes(decode_to_image(b64image), quality)
+                image_id = datetime.datetime.now().strftime(f"%Y%m%d%H%M%S-{uuid.uuid4()}")
+                suffix = opts.samples_format.lower()
+                shared.s3_client.put_object(
+                    Body=bytes_data,
+                    Bucket=bucket,
+                    Key=f'{key}/{image_id}.{suffix}'
+                )
+                images.append(f's3://{bucket}/{key}/{image_id}.{suffix}')
+            return images
+        else:
+            return b64images
+
+    def invocations(self, req: models.InvocationsRequest):
+        with self.invocations_lock:
+            print('-------invocation------')
+            print(req)
+
+            try:
+                if req.vae != None:
+                    shared.opts.data['sd_vae'] = req.vae
+                    refresh_vae_list()
+
+                if req.model != None:
+                    sd_model_checkpoint = shared.opts.sd_model_checkpoint
+                    shared.opts.sd_model_checkpoint = req.model
+                    with self.queue_lock:
+                        reload_model_weights()
+                    if sd_model_checkpoint == shared.opts.sd_model_checkpoint:
+                        reload_vae_weights()
+
+                quality = req.quality
+
+                embeddings_s3uri = shared.cmd_opts.embeddings_s3uri
+                hypernetwork_s3uri = shared.cmd_opts.hypernetwork_s3uri
+
+                if hypernetwork_s3uri !='':
+                    shared.s3_download(hypernetwork_s3uri, shared.cmd_opts.hypernetwork_dir)
+                    shared.reload_hypernetworks()
+
+                if req.options != None:
+                    options = json.loads(req.options)
+                    for key in options:
+                        shared.opts.data[key] = options[key]
+
+                if req.task == 'text-to-image':
+                    if embeddings_s3uri != '':
+                        shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                    response = self.text2imgapi(req.txt2img_payload)
+                    response.images = self.post_invocations(response.images, quality)
+                    return response
+                elif req.task == 'image-to-image':
+                    if embeddings_s3uri != '':
+                        shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
+                        sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
+                    response = self.img2imgapi(req.img2img_payload)
+                    response.images = self.post_invocations(response.images, quality)
+                    return response
+                elif req.task == 'extras-single-image':
+                    response = self.extras_single_image_api(req.extras_single_payload)
+                    response.image = self.post_invocations([response.image], quality)[0]
+                    return response
+                elif req.task == 'extras-batch-images':
+                    response = self.extras_batch_images_api(req.extras_batch_payload)
+                    response.images = self.post_invocations(response.images, quality)
+                    return response
+                elif req.task == 'interrogate':
+                    response = self.interrogateapi(req.interrogate_payload)
+                    return response
+                else:
+                    return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
+
+            except Exception as e:
+                traceback.print_exc()
+                return models.InvocationsErrorResponse(error = str(e))
+
+    def ping(self):
+        return {'status': 'Healthy'}
 
     def launch(self, server_name, port):
         self.app.include_router(self.router)

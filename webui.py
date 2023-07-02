@@ -69,6 +69,17 @@ from modules import modelloader
 from modules.shared import cmd_opts
 import modules.hypernetworks.hypernetwork
 
+from huggingface_hub import hf_hub_download
+import boto3
+import json
+from modules.sync_models import initial_s3_download,sync_s3_folder
+
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd-webui-controlnet'))
+sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd_dreambooth_extension'))
+
+if cmd_opts.train:
+    from extensions.sd_dreambooth_extension.scripts.train import train_dreambooth
+
 startup_timer.record("other imports")
 
 
@@ -366,9 +377,75 @@ def stop_route(request):
     shared.state.server_command = "stop"
     return Response("Stopping.")
 
-
 def webui():
+    global cache
+
     launch_api = cmd_opts.api
+
+    if launch_api:
+        models_config_s3uri = os.environ.get('models_config_s3uri', None)
+        if models_config_s3uri:
+            bucket, key = shared.get_bucket_and_key(models_config_s3uri)
+            s3_object = shared.s3_client.get_object(Bucket=bucket, Key=key)
+            bytes = s3_object["Body"].read()
+            payload = bytes.decode('utf8')
+            huggingface_models = json.loads(payload).get('huggingface_models', None)
+            s3_models = json.loads(payload).get('s3_models', None)
+            http_models = json.loads(payload).get('http_models', None)
+        else:
+            huggingface_models = os.environ.get('huggingface_models', None)
+            huggingface_models = json.loads(huggingface_models) if huggingface_models else None
+            s3_models = os.environ.get('s3_models', None)
+            s3_models = json.loads(s3_models) if s3_models else None
+            http_models = os.environ.get('http_models', None)
+            http_models = json.loads(http_models) if http_models else None
+
+        if huggingface_models:
+            for huggingface_model in huggingface_models:
+                repo_id = huggingface_model['repo_id']
+                filename = huggingface_model['filename']
+                name = huggingface_model['name']
+
+                hf_hub_download(
+                    repo_id=repo_id,
+                    filename=filename,
+                    local_dir=f'/tmp/models/{name}',
+                    cache_dir='/tmp/cache/huggingface'
+                )
+
+        if s3_models:
+            for s3_model in s3_models:
+                uri = s3_model['uri']
+                name = s3_model['name']
+                shared.s3_download(uri, f'/tmp/models/{name}')
+
+        if http_models:
+            for http_model in http_models:
+                uri = http_model['uri']
+                filename = http_model['filename']
+                name = http_model['name']
+                shared.http_download(uri, f'/tmp/models/{name}/{filename}')
+
+        print(os.system('df -h'))
+        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
+        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
+        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
+        cache_dir = f"{shared.tmp_cache_dir}/"
+        session = boto3.Session()
+        region_name = session.region_name
+        sts_client = session.client('sts')
+        account_id = sts_client.get_caller_identity()['Account']
+        sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
+        if not shared.models_s3_bucket:
+            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
+            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
+            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
+            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
+        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
+        initial_s3_download(shared.s3_client, shared.s3_folder_sd, sd_models_tmp_dir,cache_dir,'sd')
+        sync_s3_folder(sd_models_tmp_dir, cache_dir, 'sd')
+        sync_s3_folder(cn_models_tmp_dir, cache_dir, 'cn')
+        sync_s3_folder(lora_models_tmp_dir, cache_dir, 'lora')
     initialize()
 
     while 1:
@@ -468,10 +545,22 @@ def webui():
         modules.script_callbacks.script_unloaded_callback()
         startup_timer.record("scripts unloaded callback")
         initialize_rest(reload_script_modules=True)
+if cmd_opts.train:
+    def train():
+        initialize()
 
+        train_args = json.loads(cmd_opts.train_args)
+
+        sd_models_s3uri = cmd_opts.sd_models_s3uri
+        db_models_s3uri = cmd_opts.db_models_s3uri
+        lora_models_s3uri = cmd_opts.lora_models_s3uri
+
+        train_dreambooth("", train_args, sd_models_s3uri, db_models_s3uri, lora_models_s3uri, "")
 
 if __name__ == "__main__":
-    if cmd_opts.nowebui:
+    if cmd_opts.train:
+        train()
+    elif cmd_opts.nowebui:
         api_only()
     else:
         webui()

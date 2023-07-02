@@ -20,6 +20,54 @@ from typing import Optional
 
 demo = None
 
+models_s3_bucket = None
+s3_folder_sd = None
+s3_folder_cn = None
+s3_folder_lora = None
+syncLock = threading.Lock()
+tmp_models_dir = '/tmp/models'
+tmp_cache_dir = '/tmp/model_sync_cache'
+class ModelsRef:
+    def __init__(self):
+        self.models_ref = {}
+
+    def get_models_ref_dict(self):
+        return self.models_ref
+
+    def add_models_ref(self, model_name):
+        if model_name in self.models_ref:
+            self.models_ref[model_name] += 1
+        else:
+            self.models_ref[model_name] = 0
+
+    def remove_model_ref(self,model_name):
+        if self.models_ref.get(model_name):
+            del self.models_ref[model_name]
+
+    def get_models_ref(self, model_name):
+        return self.models_ref.get(model_name)
+
+    def get_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+
+    def pop_least_ref_model(self):
+        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        if sorted_models:
+            least_ref_model, least_counter = sorted_models[0]
+            del self.models_ref[least_ref_model]
+            return least_ref_model,least_counter
+        else:
+            return None,None
+
+sd_models_Ref = ModelsRef()
+cn_models_Ref = ModelsRef()
+lora_models_Ref = ModelsRef()
+
 parser = cmd_args.parser
 
 script_loading.preload_extensions(extensions_dir, parser)
@@ -854,3 +902,104 @@ def walk_files(path, allowed_extensions=None):
                 continue
 
             yield os.path.join(root, filename)
+
+import boto3
+import requests
+from botocore.exceptions import ClientError
+import glob
+
+cache = dict()
+region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd_opts.region_name
+s3_client = boto3.client('s3', region_name=region_name)
+endpointUrl = s3_client.meta.endpoint_url
+s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
+s3_resource= boto3.resource('s3')
+generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
+
+def get_bucket_and_key(s3uri):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+    return bucket, key
+
+def s3_download(s3uri, path):
+    global cache
+
+    print('---path---', path)
+    os.system(f'ls -l {os.path.dirname(path)}')
+
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    objects = []
+    paginator = s3_client.get_paginator('list_objects_v2')
+    page_iterator = paginator.paginate(Bucket=bucket, Prefix=key)
+    for page in page_iterator:
+        if 'Contents' in page:
+            for obj in page['Contents']:
+                objects.append(obj)
+        if 'NextContinuationToken' in page:
+            page_iterator = paginator.paginate(Bucket=bucket, Prefix=key,
+                                                ContinuationToken=page['NextContinuationToken'])
+
+    try:
+        if os.path.isfile('cache'):
+            cache = json.load(open('cache', 'r'))
+    except:
+        pass
+
+    for obj in objects:
+        if obj['Size'] == 0:
+            continue
+        response = s3_client.head_object(
+            Bucket = bucket,
+            Key =  obj['Key']
+        )
+        obj_key = 's3://{0}/{1}'.format(bucket, obj['Key'])
+        if obj_key not in cache or cache[obj_key] != response['ETag']:
+            filename = obj['Key'][obj['Key'].rfind('/') + 1 : ]
+
+            s3_client.download_file(bucket, obj['Key'], os.path.join(path, filename))
+            cache[obj_key] = response['ETag']
+
+    json.dump(cache, open('cache', 'w'))
+
+def http_download(httpuri, path):
+    with requests.get(httpuri, stream=True) as r:
+        r.raise_for_status()
+        with open(path, 'wb') as f:
+            for chunk in r.iter_content(chunk_size=8192):
+                f.write(chunk)
+
+def upload_s3files(s3uri, file_path_with_pattern):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for file_path in glob.glob(file_path_with_pattern):
+            file_name = os.path.basename(file_path)
+            __s3file = f'{key}{file_name}'
+            print(file_path, __s3file)
+            s3_client.upload_file(file_path, bucket, __s3file)
+    except ClientError as e:
+        print(e)
+        return False
+    return True
+
+def upload_s3folder(s3uri, file_path):
+    pos = s3uri.find('/', 5)
+    bucket = s3uri[5 : pos]
+    key = s3uri[pos + 1 : ]
+
+    try:
+        for path, _, files in os.walk(file_path):
+            for file in files:
+                dest_path = path.replace(file_path,"")
+                __s3file = f'{key}{dest_path}/{file}'
+                __local_file = os.path.join(path, file)
+                print(__local_file, __s3file)
+                s3_client.upload_file(__local_file, bucket, __s3file)
+    except Exception as e:
+        print(e)
