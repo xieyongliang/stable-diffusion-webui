@@ -26,7 +26,7 @@ lark==1.1.2
 inflection==0.5.1
 GitPython==3.1.27
 torchsde==0.2.5
-safetensors==0.2.5
+safetensors==0.3.1
 fastapi==0.90.1
 boto3
 psutil
