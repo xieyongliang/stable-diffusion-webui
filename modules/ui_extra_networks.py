@@ -333,7 +333,7 @@ def create_ui(container, button, tabname):
 
         return ui.pages_contents
 
-    button_refresh.click(fn=refresh, inputs=[], outputs=ui.pages)
+    button_refresh.click(fn=refresh, inputs=[shared.sagemaker_endpoint_component], outputs=ui.pages)
 
     return ui
 
