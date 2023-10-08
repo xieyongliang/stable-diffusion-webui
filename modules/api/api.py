@@ -898,6 +898,9 @@ class Api:
                         shared.opts.data[key] = options[key]
 
                 if req.task == 'text-to-image':
+                    response = requests.get('http://0.0.0.0:8080/controlnet/model_list', params={'update': True})
+                    print('Controlnet models: ', response.text)
+
                     if embeddings_s3uri != '':
                         shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                         sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
@@ -905,6 +908,9 @@ class Api:
                     response.images = self.post_invocations(response.images, quality)
                     return response
                 elif req.task == 'image-to-image':
+                    response = requests.get('http://0.0.0.0:8080/controlnet/model_list', params={'update': True})
+                    print('Controlnet models: ', response.text)
+
                     if embeddings_s3uri != '':
                         shared.s3_download(embeddings_s3uri, shared.cmd_opts.embeddings_dir)
                         sd_hijack.model_hijack.embedding_db.load_textual_inversion_embeddings()
