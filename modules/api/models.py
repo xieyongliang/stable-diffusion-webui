@@ -312,6 +312,44 @@ class ScriptInfo(BaseModel):
     is_img2img: bool = Field(default=None, title="IsImg2img", description="Flag specifying whether this script is an img2img script")
     args: List[ScriptArg] = Field(title="Arguments", description="List of script's arguments")
 
+class TaggerInterrogateRequest(InterrogateRequest):
+    """Interrogate request model"""
+    model: str = Field(
+        title='Model',
+        description='The interrogate model used.',
+    )
+    threshold: float = Field(
+        title='Threshold',
+        description='The threshold used for the interrogate model.',
+        default=0.0,
+    )
+    queue: str = Field(
+        title='Queue',
+        description='name of queue; leave empty for single response',
+        default='',
+    )
+    name_in_queue: str = Field(
+        title='Name',
+        description='name to queue image as or use <sha256>. leave empty to '
+                    'retrieve the final response',
+        default='',
+    )
+
+
+class TaggerInterrogateResponse(BaseModel):
+    """Interrogate response model"""
+    caption: Dict[str, Dict[str, float]] = Field(
+        title='Caption',
+        description='The generated captions for the image.'
+    )
+
+
+class TaggerInterrogatorsResponse(BaseModel):
+    """Interrogators response model"""
+    models: List[str] = Field(
+        title='Models',
+        description=''
+    )
 
 class InvocationsRequest(BaseModel):
     task: str
@@ -325,7 +363,7 @@ class InvocationsRequest(BaseModel):
     extras_single_payload: Optional[ExtrasSingleImageRequest]
     extras_batch_payload: Optional[ExtrasBatchImagesRequest]
     interrogate_payload: Optional[InterrogateRequest]
-
+    tagger_interrogate_payload: Optional[TaggerInterrogateRequest]
 
 class InvocationsErrorResponse(BaseModel):
     error: str = Field(title="Invocation error", description="Error response from invocation.")

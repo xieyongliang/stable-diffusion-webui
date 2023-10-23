@@ -300,7 +300,21 @@ class Api:
         self.add_api_route("/sdapi/v1/reload-checkpoint", self.reloadapi, methods=["POST"])
         self.add_api_route("/sdapi/v1/scripts", self.get_scripts_list, methods=["GET"], response_model=models.ScriptsList)
         self.add_api_route("/sdapi/v1/script-info", self.get_script_info, methods=["GET"], response_model=List[models.ScriptInfo])
-        self.add_api_route("/invocations", self.invocations, methods=["POST"], response_model=Union[models.TextToImageResponse, models.ImageToImageResponse, models.ExtrasSingleImageResponse, models.ExtrasBatchImagesResponse, models.InvocationsErrorResponse, models.InterrogateResponse])
+        self.add_api_route("/invocations",
+                            self.invocations,
+                            methods=["POST"],
+                            response_model=Union[
+                                models.TextToImageResponse,
+                                models.ImageToImageResponse,
+                                models.ExtrasSingleImageResponse,
+                                models.ExtrasBatchImagesResponse,
+                                models.InvocationsErrorResponse,
+                                models.InterrogateResponse,
+                                models.TaggerInterrogateResponse,
+                                models.TaggerInterrogatorsResponse,
+                                str
+                            ]
+                        )
         self.add_api_route("/ping", self.ping, methods=["GET"], response_model=models.PingResponse)
 
         if shared.cmd_opts.api_server_stop:
@@ -927,6 +941,15 @@ class Api:
                     return response
                 elif req.task == 'interrogate':
                     response = self.interrogateapi(req.interrogate_payload)
+                    return response
+                elif req.task == 'tagger_interrogate':
+                    response = requests.post('http://0.0.0.0:8080//tagger/v1/interrogate', params=req.tagger_interrogate_payload)
+                    return response
+                elif req.task == 'tagger_interrogators':
+                    response = requests.get('http://0.0.0.0:8080//tagger/v1/interrogators')
+                    return response
+                elif req.task == 'tagger_unload-interrogators':
+                    response = requests.post('http://0.0.0.0:8080//tagger/v1/unload-interrogators')
                     return response
                 else:
                     return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
