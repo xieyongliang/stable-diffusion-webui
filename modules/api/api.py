@@ -943,13 +943,13 @@ class Api:
                     response = self.interrogateapi(req.interrogate_payload)
                     return response
                 elif req.task == 'tagger_interrogate':
-                    response = requests.post('http://0.0.0.0:8080//tagger/v1/interrogate', params=req.tagger_interrogate_payload)
+                    response = requests.post('http://0.0.0.0:8080/tagger/v1/interrogate', params=req.tagger_interrogate_payload)
                     return response
                 elif req.task == 'tagger_interrogators':
-                    response = requests.get('http://0.0.0.0:8080//tagger/v1/interrogators')
+                    response = requests.get('http://0.0.0.0:8080/tagger/v1/interrogators')
                     return response
                 elif req.task == 'tagger_unload-interrogators':
-                    response = requests.post('http://0.0.0.0:8080//tagger/v1/unload-interrogators')
+                    response = requests.post('http://0.0.0.0:8080/tagger/v1/unload-interrogators')
                     return response
                 else:
                     return models.InvocationsErrorResponse(error = f'Invalid task - {req.task}')
