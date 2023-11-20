@@ -928,6 +928,16 @@ class Api:
                 elif req.task == 'interrogate':
                     response = self.interrogateapi(req.interrogate_payload)
                     return response
+                elif req.task.startswith('/fooocus-api'):
+                    task = req.task[len('/fooocus-api'):]
+                    if req.extra_payload:
+                        response = requests.post(url=f'http://0.0.0.0:8888{task}', json=req.extra_payload)
+                    else:
+                        response = requests.get(url=f'http://0.0.0.0:8888{task}')
+                    if response.status_code == 200:
+                        return json.loads(response.text)
+                    else:
+                        raise HTTPException(status_code=response.status_code, detail=response.text)
                 elif req.task.startswith('/'):
                     if req.extra_payload:
                         response = requests.post(url=f'http://0.0.0.0:8080{req.task}', json=req.extra_payload)
