@@ -86,55 +86,6 @@ refresh_checkpoints = shared_items.refresh_checkpoints
 list_samplers = shared_items.list_samplers
 reload_hypernetworks = shared_items.reload_hypernetworks
 
-import threading
-models_s3_bucket = None
-s3_folder_sd = None
-s3_folder_cn = None
-s3_folder_lora = None
-syncLock = threading.Lock()
-tmp_models_dir = '/tmp/models'
-tmp_cache_dir = '/tmp/model_sync_cache'
-class ModelsRef:
-    def __init__(self):
-        self.models_ref = {}
-
-    def get_models_ref_dict(self):
-        return self.models_ref
-
-    def add_models_ref(self, model_name):
-        if model_name in self.models_ref:
-            self.models_ref[model_name] += 1
-        else:
-            self.models_ref[model_name] = 0
-
-    def remove_model_ref(self,model_name):
-        if self.models_ref.get(model_name):
-            del self.models_ref[model_name]
-
-    def get_models_ref(self, model_name):
-        return self.models_ref.get(model_name)
-
-    def get_least_ref_model(self):
-        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
-        if sorted_models:
-            least_ref_model, least_counter = sorted_models[0]
-            return least_ref_model,least_counter
-        else:
-            return None,None
-
-    def pop_least_ref_model(self):
-        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
-        if sorted_models:
-            least_ref_model, least_counter = sorted_models[0]
-            del self.models_ref[least_ref_model]
-            return least_ref_model,least_counter
-        else:
-            return None,None
-
-sd_models_Ref = ModelsRef()
-cn_models_Ref = ModelsRef()
-lora_models_Ref = ModelsRef()
-
 import os
 import json
 import boto3
@@ -147,7 +98,6 @@ region_name = boto3.session.Session().region_name if not cmd_opts.train else cmd
 s3_client = boto3.client('s3', region_name=region_name)
 endpointUrl = s3_client.meta.endpoint_url
 s3_client = boto3.client('s3', endpoint_url=endpointUrl, region_name=region_name)
-s3_resource= boto3.resource('s3')
 generated_images_s3uri = os.environ.get('generated_images_s3uri', None)
 
 def get_bucket_and_key(s3uri):

@@ -18,7 +18,6 @@ from huggingface_hub import hf_hub_download
 import boto3
 import sys
 import json
-from modules.sync_models import initial_s3_download,sync_s3_folder
 from modules.shared_cmd_options import cmd_opts
 
 sys.path.append(os.path.join(os.path.dirname(__file__), 'extensions/sd-webui-controlnet'))
@@ -109,27 +108,80 @@ def webui():
                 name = http_model['name']
                 shared.http_download(uri, f'/tmp/models/{name}/{filename}')
 
-        print(os.system('df -h'))
-        sd_models_tmp_dir = f"{shared.tmp_models_dir}/Stable-diffusion/"
-        cn_models_tmp_dir = f"{shared.tmp_models_dir}/ControlNet/"
-        lora_models_tmp_dir = f"{shared.tmp_models_dir}/Lora/"
-        cache_dir = f"{shared.tmp_cache_dir}/"
+        from modules.call_queue import queue_lock
+        from modules.sd_models import list_models, model_hash
+        from modules.sync_models import ModelSync
+        import threading
+
+        sync_lock = threading.Lock()
         session = boto3.Session()
         region_name = session.region_name
         sts_client = session.client('sts')
         account_id = sts_client.get_caller_identity()['Account']
         sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
-        if not shared.models_s3_bucket:
-            shared.models_s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
-            shared.s3_folder_sd = "stable-diffusion-webui/models/Stable-diffusion"
-            shared.s3_folder_cn = "stable-diffusion-webui/models/ControlNet"
-            shared.s3_folder_lora = "stable-diffusion-webui/models/Lora"
-        #only download the cn models and the first sd model from default bucket, to accerlate the startup time
-        initial_s3_download(shared.s3_client, shared.s3_folder_sd, sd_models_tmp_dir,cache_dir,'sd')
-        sync_s3_folder(sd_models_tmp_dir, cache_dir, 'sd')
-        sync_s3_folder(cn_models_tmp_dir, cache_dir, 'cn')
-        sync_s3_folder(lora_models_tmp_dir, cache_dir, 'lora')
+        s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
 
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/Stable-diffusion",
+            local_folder=f"/tmp/models/Stable-diffusion/",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash,
+            refresh_callback=list_models
+        )
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/ControlNet",
+            local_folder=f"/tmp/models/ControlNet/",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash
+        )
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/Lora",
+            local_folder=f"/tmp/models/Lora/",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash
+        )
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/fooocus/checkpoints",
+            local_folder=f"/tmp/models/fooocus/checkpoints",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash
+        )
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/fooocus/controlnet",
+            local_folder=f"/tmp/models/fooocus/controlnet",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash
+        )
+        ModelSync(
+            s3_client=shared.s3_client,
+            s3_bucket=s3_bucket,
+            s3_folder="stable-diffusion-webui/models/fooocus/loras",
+            local_folder=f"/tmp/models/fooocus/loras",
+            queue_lock=queue_lock,
+            sync_lock=sync_lock,
+            cache_dir='/tmp/sync_cache',
+            model_hash=model_hash
+        )
     initialize.initialize()
 
     from modules import shared, ui_tempdir, script_callbacks, ui, progress, ui_extra_networks
