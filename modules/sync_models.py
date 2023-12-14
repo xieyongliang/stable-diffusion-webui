@@ -135,8 +135,8 @@ class ModelSync:
         md = hashlib.md5()
         md.update(f's3://{self.s3_bucket}/{self.s3_folder}'.encode('utf-8'))
         etag_cache = md.hexdigest()
-        os.makedirs(os.path.dirname(self.local_folder), exist_ok=True)
-        os.makedirs(os.path.dirname(self.cache_dir), exist_ok=True)
+        os.makedirs(self.local_folder, exist_ok=True)
+        os.makedirs(self.cache_dir, exist_ok=True)
         s3_file_name = os.path.join(self.cache_dir, etag_cache)
         # Create an empty file if not exist
         if os.path.isfile(s3_file_name) == False:
@@ -145,7 +145,7 @@ class ModelSync:
                 json.dump(s3_files, f)
 
         # List all objects in the S3 folder
-        s3_objects = self.list_s3_objects(s3_client=self.s3_client, bucket_name=self.s3_bucket, prefix=self.get_models_ref_dicts3_folder)
+        s3_objects = self.list_s3_objects()
         # Check if there are any new or deleted files
         s3_files = {}
         for obj in s3_objects:
@@ -183,7 +183,7 @@ class ModelSync:
             registerflag = True
             retry = 3 ##retry limit times to prevent dead loop in case other folders is empty
             while retry:
-                ret = self.check_space_s3_download(self, file, s3_files[file][1])
+                ret = self.check_space_s3_download(file, s3_files[file][1])
                 #if the space is not enough free
                 if ret:
                     retry = 0
