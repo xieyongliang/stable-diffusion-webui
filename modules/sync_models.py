@@ -22,7 +22,6 @@ class ModelSync:
         thread = threading.Thread(target=self.sync_thread)
         thread.start()
         print (f's3://{self.s3_bucket}/{self.s3_folder} sync thread start')
-        return thread
 
     def get_models_ref_dict(self):
         return self.models_ref
