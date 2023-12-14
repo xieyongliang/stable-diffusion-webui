@@ -19,7 +19,7 @@ class ModelSync:
         self.refresh_callback = refresh_callback
         self.available_freespace = available_freespace
 
-        thread = threading.Thread(target=self.sync_thread, args=[self])
+        thread = threading.Thread(target=self.sync_thread)
         thread.start()
         print (f's3://{self.s3_bucket}/{self.s3_folder} sync thread start')
         return thread
