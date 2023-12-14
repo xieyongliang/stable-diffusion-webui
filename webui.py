@@ -121,6 +121,11 @@ def webui():
         sg_s3_bucket = f"sagemaker-{region_name}-{account_id}"
         s3_bucket = os.environ['sg_default_bucket'] if os.environ.get('sg_default_bucket') else sg_s3_bucket
 
+        import requests
+        def refresh_fooocus_models():
+            response = requests.post(url=f'http://0.0.0.0:8888/v1/engines/refresh-models')
+            print(response)
+
         ModelSync(
             s3_client=shared.s3_client,
             s3_bucket=s3_bucket,
@@ -150,7 +155,8 @@ def webui():
             queue_lock=queue_lock,
             sync_lock=sync_lock,
             cache_dir='/tmp/sync_cache',
-            model_hash=model_hash
+            model_hash=model_hash,
+            refresh_callback=refresh_fooocus_models
         )
         ModelSync(
             s3_client=shared.s3_client,
@@ -180,7 +186,8 @@ def webui():
             queue_lock=queue_lock,
             sync_lock=sync_lock,
             cache_dir='/tmp/sync_cache',
-            model_hash=model_hash
+            model_hash=model_hash,
+            refresh_callback=refresh_fooocus_models
         )
     initialize.initialize()
 

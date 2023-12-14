@@ -326,6 +326,7 @@ class InvocationsRequest(BaseModel):
     extras_batch_payload: Optional[ExtrasBatchImagesRequest]
     interrogate_payload: Optional[InterrogateRequest]
     extra_payload: Optional[dict]
+    extra_method: Optional[str]
 
 
 class InvocationsErrorResponse(BaseModel):

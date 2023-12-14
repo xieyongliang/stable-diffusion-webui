@@ -930,19 +930,31 @@ class Api:
                     return response
                 elif req.task.startswith('/fooocus-api'):
                     task = req.task[len('/fooocus-api'):]
-                    if req.extra_payload:
-                        response = requests.post(url=f'http://0.0.0.0:8888{task}', json=req.extra_payload)
+                    if req.extra_method and req.extra_method.upper() == 'POST':
+                        if req.extra_payload:
+                            response = requests.post(url=f'http://0.0.0.0:8888{task}', json=req.extra_payload)
+                        else:
+                            response = requests.post(url=f'http://0.0.0.0:8888{task}')
                     else:
-                        response = requests.get(url=f'http://0.0.0.0:8888{task}')
+                        if req.extra_payload:
+                            response = requests.get(url=f'http://0.0.0.0:8888{task}', params=req.extra_payload)
+                        else:
+                            response = requests.get(url=f'http://0.0.0.0:8888{task}')
                     if response.status_code == 200:
                         return json.loads(response.text)
                     else:
                         raise HTTPException(status_code=response.status_code, detail=response.text)
                 elif req.task.startswith('/'):
-                    if req.extra_payload:
-                        response = requests.post(url=f'http://0.0.0.0:8080{req.task}', json=req.extra_payload)
+                    if req.extra_method and req.extra_method.upper() == 'POST':
+                        if req.extra_payload:
+                            response = requests.post(url=f'http://0.0.0.0:8080{req.task}', json=req.extra_payload)
+                        else:
+                            response = requests.post(url=f'http://0.0.0.0:8080{req.task}')
                     else:
-                        response = requests.get(url=f'http://0.0.0.0:8080{req.task}')
+                        if req.extra_payload:
+                            response = requests.get(url=f'http://0.0.0.0:8080{req.task}', params=req.extra_payload)
+                        else:
+                            response = requests.get(url=f'http://0.0.0.0:8080{req.task}')
                     if response.status_code == 200:
                         return json.loads(response.text)
                     else:
