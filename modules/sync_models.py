@@ -190,10 +190,10 @@ class ModelSync:
                     self.free_local_disk(s3_files[file][1])
                     retry = retry - 1
         if registerflag:
-            if self.callback:
+            if self.refresh_callback:
                 #Refreshing Model List
                 with self.queue_lock:
-                    self.callback()
+                    self.refresh_callback()
 
     # Create a thread function to keep syncing with the S3 folder
     def sync_thread(self):
