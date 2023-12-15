@@ -7,7 +7,7 @@ import hashlib
 
 class ModelSync:
     def __init__(self, s3_client, s3_bucket, s3_folder, local_folder, queue_lock, model_hash, sync_lock, cache_dir, refresh_callback=None, available_freespace=20):
-        self.models_ref = {}
+        self.model_ref = {}
         self.s3_client = s3_client
         self.s3_bucket = s3_bucket
         self.s3_folder = s3_folder
@@ -23,24 +23,24 @@ class ModelSync:
         thread.start()
         print (f's3://{self.s3_bucket}/{self.s3_folder} sync thread start')
 
-    def get_models_ref_dict(self):
-        return self.models_ref
+    def get_model_ref_dict(self):
+        return self.model_ref
 
-    def add_models_ref(self, model_name):
-        if model_name in self.models_ref:
-            self.models_ref[model_name] += 1
+    def add_model_ref(self, model_name):
+        if model_name in self.model_ref:
+            self.model_ref[model_name] += 1
         else:
-            self.models_ref[model_name] = 0
+            self.model_ref[model_name] = 0
 
     def remove_model_ref(self,model_name):
-        if self.models_ref.get(model_name):
-            del self.models_ref[model_name]
+        if self.model_ref.get(model_name):
+            del self.model_ref[model_name]
 
-    def get_models_ref(self, model_name):
-        return self.models_ref.get(model_name)
+    def get_model_ref(self, model_name):
+        return self.model_ref.get(model_name)
 
     def get_least_ref_model(self):
-        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        sorted_models = sorted(self.model_ref.items(), key=lambda item: item[1])
         if sorted_models:
             least_ref_model, least_counter = sorted_models[0]
             return least_ref_model,least_counter
@@ -48,10 +48,10 @@ class ModelSync:
             return None,None
 
     def pop_least_ref_model(self):
-        sorted_models = sorted(self.models_ref.items(), key=lambda item: item[1])
+        sorted_models = sorted(self.model_ref.items(), key=lambda item: item[1])
         if sorted_models:
             least_ref_model, least_counter = sorted_models[0]
-            del self.models_ref[least_ref_model]
+            del self.model_ref[least_ref_model]
             return least_ref_model,least_counter
         else:
             return None,None
@@ -61,8 +61,7 @@ class ModelSync:
         freespace = disk_usage.free/(1024**3)
         if freespace - size >= self.available_freespace:
             return
-        models_Ref = None
-        model_name,ref_cnt  = models_Ref.get_least_ref_model()
+        model_name,ref_cnt  = self.get_least_ref_model()
         if model_name and ref_cnt:
             filename = model_name[:model_name.rfind("[")]
             os.remove(os.path.join(self.local_folder, filename))
@@ -71,7 +70,7 @@ class ModelSync:
             print(f"Remove file: {os.path.join(self.local_folder, filename)} now left space:{freespace}")
         else:
             ## if ref_cnt == 0, then delete the oldest zero_ref one
-            zero_ref_models = set([model[:model.rfind(" [")] for model, count in models_Ref.get_models_ref_dict().items() if count == 0])
+            zero_ref_models = set([model[:model.rfind(" [")] for model, count in self.get_model_ref_dict().items() if count == 0])
             local_files = set(os.listdir(self.local_folder))
             # join with local
             files = [(os.path.join(self.local_folder, file), os.path.getctime(os.path.join(self.local_folder, file))) for file in zero_ref_models.intersection(local_files)]
@@ -102,7 +101,7 @@ class ModelSync:
                 self.s3_client.download_file(self.s3_bucket, src, dist)
                 #init ref cnt to 0, when the model file first time download
                 hash = self.model_hash(dist)
-                self.model_ref.add_models_ref('{0} [{1}]'.format(file, hash))
+                self.add_model_ref('{0} [{1}]'.format(file, hash))
                 print(f'download_file success:from {self.s3_bucket}/{src} to {dist}')
             except Exception as e:
                 print(f'download_file error: from {self.s3_bucket}/{src} to {dist}')
@@ -188,7 +187,7 @@ class ModelSync:
                 if ret:
                     retry = 0
                 else:
-                    self.free_local_disk(self.local_folder,s3_files[file][1])
+                    self.free_local_disk(s3_files[file][1])
                     retry = retry - 1
         if registerflag:
             if self.callback:
