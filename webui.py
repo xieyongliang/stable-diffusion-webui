@@ -166,7 +166,8 @@ def webui():
             queue_lock=queue_lock,
             sync_lock=sync_lock,
             cache_dir='/tmp/sync_cache',
-            model_hash=model_hash
+            model_hash=model_hash,
+            refresh_callback=refresh_fooocus_models
         )
         ModelSync(
             s3_client=shared.s3_client,
